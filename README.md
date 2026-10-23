@@ -5,9 +5,9 @@ observably true about an address, the block that observation comes from, and wha
 observation does *not* show. It never asks for private keys, seed phrases or signatures, and
 it has no code path that signs or broadcasts transactions.
 
-> **Status: Phase 2 (ERC-20 approvals).** The security timeline, address-poisoning
-> detection, the web UI, the threat graph and incident replay are planned and **not
-> implemented yet** (see [Roadmap](#roadmap)).
+> **Status: Phase 3 (wallet security timeline).** Address-poisoning detection, the web UI,
+> the threat graph and incident replay are planned and **not implemented yet** (see
+> [Roadmap](#roadmap)).
 
 ## What works today
 
@@ -23,9 +23,14 @@ it has no code path that signs or broadcasts transactions.
 | Current-state verification: `allowance()`, `balanceOf()`, `decimals()`, `symbol()` and spender code at one pinned block | Implemented |
 | Exposure upper bound `min(balance, allowance)`, unlimited/effectively-unlimited detection, evidence-classed signals | Implemented |
 | ERC-721-shaped `Approval` logs recognized and kept apart from fungible allowances | Implemented (NFT approvals not analyzed) |
-| CLI (`inspect`, `approvals`, `status`, `serve`, `purge`, `demo-addresses`) | Implemented |
+| Wallet security snapshots at a confirmed block, with incremental (checkpointed) approval discovery and cumulative coverage including explicit gaps | Implemented |
+| Deterministic deltas between snapshots (allowance granted/increased/reduced/revoked/unverifiable, delegation set/changed/cleared), each located between two blocks and tied to a transaction only when an observed event explains it | Implemented |
+| Versioned rule engine (`cg-rules` 1.0.0) with separate severity and confidence, deterministic finding fingerprints | Implemented |
+| Finding lifecycle: new → active → acknowledged → resolved / superseded, reopen, audit trail; never resolved on unverifiable data | Implemented |
+| Reorg handling for history: orphaned snapshots detected, marked and rebased | Implemented |
+| CLI (`inspect`, `approvals`, `snapshot`, `timeline`, `findings`, `ack`, `status`, `serve`, `purge`, `demo-addresses`) | Implemented |
 | Explicit demo mode with clearly labelled fictional fixtures | Implemented |
-| NFT/Permit2 approvals, timeline, poisoning detector, UI, graph, replay, ML | Not yet |
+| Scheduled monitoring loop, NFT/Permit2 approvals, poisoning detector, UI, graph, replay, ML | Not yet |
 
 ## Install (Windows PowerShell)
 
@@ -76,6 +81,13 @@ uv run cryptoguard approvals <address>
 uv run cryptoguard approvals <address> --lookback 50000
 uv run cryptoguard approvals <address> --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 
+# Security timeline: each snapshot is compared with the previous one
+uv run cryptoguard snapshot <address>            # first run = baseline
+uv run cryptoguard snapshot <address>            # later runs list what changed and why
+uv run cryptoguard timeline <address>
+uv run cryptoguard findings <address> [--all]
+uv run cryptoguard ack <finding-id>
+
 # Fictional fixtures, no RPC needed (output is labelled SIMULATED):
 uv run cryptoguard demo-addresses
 uv run cryptoguard inspect <fixture-address> --demo
@@ -96,6 +108,12 @@ API:
 | POST | `/api/v1/analyze/address` | `{"address": "0x…"}` → inspection (persisted idempotently) |
 | POST | `/api/v1/wallets/{address}/approvals/scan` | `{"lookback_blocks"?, "from_block"?, "tokens"?}` → approval scan report (send `{}` for defaults) |
 | GET | `/api/v1/wallets/{address}/approvals` | Latest stored approval scan (404 if none) |
+| POST | `/api/v1/wallets/{address}/snapshots` | `{"block"?, "tokens"?, "lookback_blocks"?}` → snapshot with changes and finding transitions |
+| GET | `/api/v1/wallets/{address}/timeline` | Snapshots newest first with deltas, finding events, coverage (`limit`, `offset`, `include_orphaned`) |
+| GET | `/api/v1/wallets/{address}/findings` | Findings (`status=open` default, `all`, or a single status) |
+| GET | `/api/v1/findings/{finding_id}` | Finding with evidence and full transition history |
+| POST | `/api/v1/findings/{finding_id}/acknowledge` | Mark a new/active finding acknowledged (`{}` body) |
+| GET | `/api/v1/rules` | The ruleset: id, version, severities, rule descriptions |
 | GET | `/api/v1/wallets/{address}/observations` | Stored observations, paginated (`limit`, `offset`) |
 | GET | `/api/v1/demo/addresses` | Fixture addresses (demo mode only) |
 
@@ -116,8 +134,9 @@ $env:CRYPTOGUARD_LIVE_RPC_URL = "https://ethereum-rpc.publicnode.com"; uv run py
 ## Roadmap
 
 1. ~~Backend foundation~~
-2. ~~ERC-20 approval discovery and allowance verification~~ (this milestone)
-3. Wallet security timeline: snapshots, deterministic deltas, finding lifecycle
+2. ~~ERC-20 approval discovery and allowance verification~~
+3. ~~Wallet security timeline: snapshots, deterministic deltas, finding lifecycle~~ (this
+   milestone; a scheduled monitoring loop is still to come)
 4. Address-poisoning detector with false-positive fixtures
 5. Web UI (Next.js, TypeScript, Tailwind)
 6. Threat graph

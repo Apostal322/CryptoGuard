@@ -7,7 +7,6 @@ import logging
 import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -17,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from cryptoguard import __version__
+from cryptoguard.api.history_routes import router as history_router
 from cryptoguard.api.ratelimit import TokenBucketLimiter
 from cryptoguard.api.schemas import (
     AnalyzeAddressRequest,
@@ -27,19 +27,20 @@ from cryptoguard.api.schemas import (
     DemoAddress,
     DemoAddressList,
     ErrorBody,
-    ErrorResponse,
     HealthResponse,
     ObservationItem,
     ObservationPage,
     RpcMetricsView,
     StatusResponse,
 )
+from cryptoguard.api.state import AppState, error_response, get_state
 from cryptoguard.blockchain.provider import EthereumProvider, RpcEthereumProvider
 from cryptoguard.core.address import to_checksum_address
-from cryptoguard.core.chains import ChainInfo, get_chain
+from cryptoguard.core.chains import get_chain
 from cryptoguard.core.config import Settings
 from cryptoguard.core.errors import CryptoGuardError, UnsupportedChainError
-from cryptoguard.database.repository import ObservationRepository, open_repository
+from cryptoguard.database.history import HistoryRepository
+from cryptoguard.database.repository import open_repository
 from cryptoguard.services.approvals import (
     APPROVAL_SCAN_OBSERVATION_TYPE,
     ApprovalScanReport,
@@ -63,23 +64,8 @@ _SECURITY_HEADERS = {
 }
 
 
-@dataclass
-class AppState:
-    settings: Settings
-    chain: ChainInfo
-    provider: EthereumProvider | None
-    repository: ObservationRepository
-
-
-def _state(request: Request) -> AppState:
-    state: AppState = request.app.state.cryptoguard
-    return state
-
-
-def _error(status: int, code: str, message: str, **details: object) -> JSONResponse:
-    body = ErrorResponse(error=ErrorBody(code=code, message=message, details=dict(details)))
-    return JSONResponse(status_code=status, content=body.model_dump(mode="json"))
-
+_state = get_state
+_error = error_response
 
 router = APIRouter(prefix="/api/v1")
 
@@ -263,7 +249,7 @@ def create_app(
     settings: Settings | None = None,
     *,
     provider_factory: ProviderFactory = build_provider,
-    repository: ObservationRepository | None = None,
+    repository: HistoryRepository | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     chain = get_chain(settings.chain_id)
@@ -336,6 +322,7 @@ def create_app(
         return _error(500, "internal_error", "An internal error occurred.")
 
     app.include_router(router)
+    app.include_router(history_router)
     return app
 
 

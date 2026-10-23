@@ -22,6 +22,9 @@
   RPC concurrency, a response-size cap, bounded `eth_getLogs` block ranges, a request-body
   limit (POST requires `Content-Length`), and per-client rate limiting with bounded memory.
 - **CORS** is restricted to configured origins; wildcards are rejected; no credentials.
+- **Local, single-user API.** There is no authentication: anyone who can reach the API can
+  take snapshots or acknowledge findings. Bind to `127.0.0.1` (the default) and do not expose
+  it to a network without an authenticating reverse proxy.
 
 ## Threat model (summary)
 

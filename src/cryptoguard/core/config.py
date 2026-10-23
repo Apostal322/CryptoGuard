@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     approval_max_log_requests: int = Field(default=300, ge=1, le=10_000)
     approval_max_pairs: int = Field(default=200, ge=1, le=5_000)
 
+    # Snapshots are taken this many blocks behind the head, so shallow reorgs rarely
+    # invalidate them (reorgs that do happen are detected and rebased).
+    snapshot_confirmations: int = Field(default=12, ge=0, le=128)
+
     database_url: str = "sqlite:///./data/cryptoguard.db"
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]

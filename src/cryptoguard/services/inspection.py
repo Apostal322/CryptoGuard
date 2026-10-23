@@ -152,14 +152,23 @@ async def _read_finality(
 
 
 async def inspect_address(
-    provider: EthereumProvider, address: str, *, chain: ChainInfo
+    provider: EthereumProvider,
+    address: str,
+    *,
+    chain: ChainInfo,
+    at: BlockHeader | None = None,
 ) -> AddressInspection:
+    """Inspect ``address`` at the head block, or at ``at`` when the caller pins the block.
+
+    With ``at``, a reorg is not retried here: the caller pinned the block and must decide.
+    """
     checksummed = to_checksum_address(address)
     await provider.verify_chain()
 
-    for attempt in range(_MAX_REORG_RETRIES + 1):
+    attempts = 1 if at is not None else _MAX_REORG_RETRIES + 1
+    for attempt in range(attempts):
         head = await provider.block_number()
-        header: BlockHeader = await provider.get_block(head)
+        header: BlockHeader = at if at is not None else await provider.get_block(head)
         balance, code = await asyncio.gather(
             provider.get_balance(checksummed, header.number),
             provider.get_code(checksummed, header.number),
@@ -180,7 +189,7 @@ async def inspect_address(
         recheck = await provider.get_block(header.number)
         if recheck.hash == header.hash:
             break
-        if attempt == _MAX_REORG_RETRIES:
+        if attempt == attempts - 1:
             raise ReorgDetectedError(
                 "The chain reorganized repeatedly during inspection; try again shortly."
             )

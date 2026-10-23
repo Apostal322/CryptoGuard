@@ -10,7 +10,8 @@ from cryptoguard.api.app import create_app
 from cryptoguard.blockchain.eip7702 import DELEGATION_PREFIX
 from cryptoguard.blockchain.provider import EthereumProvider, build_rpc_provider
 from cryptoguard.core.config import Settings
-from cryptoguard.database.repository import ObservationRepository, create_db_engine, init_schema
+from cryptoguard.database.history import HistoryRepository
+from cryptoguard.database.repository import create_db_engine, init_schema
 from cryptoguard.services.demo import DEMO_ACCOUNTS
 from tests.conftest import SleepRecorder
 from tests.fakenode import FakeNode, rpc_error
@@ -26,10 +27,10 @@ def make_settings(**overrides: object) -> Settings:
     return Settings(_env_file=None, **base)  # type: ignore[arg-type]
 
 
-def memory_repository() -> ObservationRepository:
+def memory_repository() -> HistoryRepository:
     engine = create_db_engine("sqlite://")
     init_schema(engine)
-    return ObservationRepository(engine)
+    return HistoryRepository(engine)
 
 
 @pytest.fixture
@@ -234,7 +235,7 @@ def test_demo_mode_is_explicit_and_labelled() -> None:
 
 
 def test_unexpected_errors_are_generic(node: FakeNode) -> None:
-    class Boom(ObservationRepository):
+    class Boom(HistoryRepository):
         def ping(self) -> bool:
             raise RuntimeError("secret internal detail")
 

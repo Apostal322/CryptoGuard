@@ -82,6 +82,63 @@ not a safety verdict and an unlabelled spender is not suspicious by itself.
 Not covered yet: ERC-721/ERC-1155 approvals (including `ApprovalForAll`), Permit2
 sub-allowances, EIP-2612 nonces, and approvals granted before the scanned window.
 
+## Security timeline (`history/`, version `wallet-snapshot/1`)
+
+A **snapshot** is the wallet's canonical state at one block `B` (default `head − 12`):
+verified approvals and the account-code / delegation observation. Its `state_hash` is
+keccak-256 of the canonical JSON (sorted keys), so identical observations hash identically.
+
+Approval discovery is **incremental**: the first snapshot scans a bounded lookback; each later
+one scans only `(previous B, B]`, then re-verifies every pair not known to be zero plus the
+new ones. Coverage is the merged list of scanned ranges; any unscanned window (e.g. a gap
+longer than `APPROVAL_MAX_SCAN_BLOCKS`) is listed as a gap. Pairs beyond the pair limit are
+carried forward with their last verification block and treated as unverifiable.
+
+**Delta** `previous_state → current_state` (sorted by subject, then kind):
+
+| Kind | Rule |
+|---|---|
+| `allowance_granted` | none/0 → known > 0 |
+| `allowance_discovered_unverified` | new pair whose allowance is unreadable |
+| `allowance_increased` / `allowance_reduced` | known → larger / smaller nonzero |
+| `allowance_revoked` | known > 0 → 0 |
+| `allowance_became_unknown` / `allowance_became_known` | verifiability changed |
+| `delegation_set` / `delegation_changed` / `delegation_cleared` | EIP-7702 indicator appeared / target changed / cleared |
+| `account_code_changed` | any other code-hash change |
+
+Every change is located in `(from_block, to_block]`. The **cause** is an `approval_event` (with
+its transaction hash) only if the latest Approval event in that interval sets exactly the new
+allowance; otherwise it is `state_comparison` with no transaction hash. This is common and
+expected: tokens often reduce allowances in `transferFrom` without an event, and an approval
+can be partly spent in the same block. Delegation causes are always `state_comparison`
+(set-code transactions are not indexed yet). A pair carried forward without re-verification
+never produces a change.
+
+## Rules (`risk/rules.py`, ruleset `cg-rules` 1.0.0)
+
+Severity (`informational`, `review_recommended`, `elevated_risk`, `critical_evidence`,
+`unknown`) is independent of confidence (`high`, `medium`, `low`). No current rule emits
+`critical_evidence`; it is reserved for independently verifiable evidence of harm.
+
+| Rule | Fires when | Severity / confidence | False-positive considerations |
+|---|---|---|---|
+| CG-APR-001 | Active unlimited or effectively unlimited allowance | review_recommended if balance > 0, else informational / high | Standard for DEX routers and Permit2 |
+| CG-APR-002 | Active allowance to a spender with no code | elevated_risk / medium | Counterfactual smart accounts, some OTC flows |
+| CG-APR-003 | Approval exists but `allowance()` is unreadable | unknown / low | Non-standard or self-destructed tokens |
+| CG-DEL-001 | Active EIP-7702 delegation | review_recommended / high | Intended smart-account upgrades |
+| CG-DEL-002 | Delegation target has no code | elevated_risk / medium | Target deployed later by the intended party |
+| CG-COD-001 | `0xef0100` prefix with wrong length | unknown / low | Indicates provider/data problems, not user risk |
+
+**Fingerprint** = keccak(`rule | ruleset major | chain | wallet | subject`); the subject is the
+`token:spender` pair or `delegation:<target>`. The same condition is always the same finding.
+
+**Lifecycle**: first observation → `new`; observed again → `active`; user acknowledgement →
+`acknowledged` (persists while the condition holds); condition gone → `resolved`; reappears →
+`new` again (`reopen_count` increments); open findings from an older ruleset major →
+`superseded`. An open finding whose subject could not be verified at the snapshot block is
+left unchanged and counted as not re-verified, never resolved. Every transition is stored with
+its snapshot and reason.
+
 ## Finality
 
 `finalized` if the observed block number ≤ the provider's `finalized` block, otherwise

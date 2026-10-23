@@ -5,16 +5,26 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Engine, create_engine, delete, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from cryptoguard.blockchain.erc20 import ApprovalEvent
-from cryptoguard.database.models import AddressObservation, ApprovalEventRecord, Base
+from cryptoguard.database.models import (
+    AddressObservation,
+    ApprovalEventRecord,
+    Base,
+    FindingRecord,
+    FindingTransitionRecord,
+    WalletSnapshotRecord,
+)
+
+if TYPE_CHECKING:
+    from cryptoguard.database.history import HistoryRepository
 from cryptoguard.services.approvals import APPROVAL_SCAN_OBSERVATION_TYPE, ApprovalScanReport
 from cryptoguard.services.inspection import OBSERVATION_TYPE, AddressInspection
 
@@ -31,8 +41,44 @@ def create_db_engine(database_url: str) -> Engine:
 
 
 def init_schema(engine: Engine) -> None:
-    """Create tables. Versioned Alembic migrations replace this before schemas evolve."""
+    """Create missing tables. Alembic migrations must replace this before an existing table
+    changes; so far every schema change has only added tables."""
     Base.metadata.create_all(engine)
+
+
+def insert_approval_events(
+    session: Session, chain_id: int, data_source: str, events: Sequence[ApprovalEvent]
+) -> int:
+    """Insert events not yet stored (identity: chain, block hash, log index). Returns count."""
+    if not events:
+        return 0
+    hashes = {e.block_hash for e in events}
+    rows = session.execute(
+        select(ApprovalEventRecord.block_hash, ApprovalEventRecord.log_index).where(
+            (ApprovalEventRecord.chain_id == chain_id) & ApprovalEventRecord.block_hash.in_(hashes)
+        )
+    )
+    existing = {(block_hash, log_index) for block_hash, log_index in rows}
+    new = [e for e in events if (e.block_hash, e.log_index) not in existing]
+    now = datetime.now(UTC)
+    session.add_all(
+        ApprovalEventRecord(
+            chain_id=chain_id,
+            token=e.token,
+            owner=e.owner,
+            spender=e.spender,
+            value=str(e.value),
+            block_number=e.block_number,
+            block_hash=e.block_hash,
+            transaction_hash=e.transaction_hash,
+            transaction_index=e.transaction_index,
+            log_index=e.log_index,
+            data_source=data_source,
+            ingested_at=now,
+        )
+        for e in new
+    )
+    return len(new)
 
 
 class ObservationRepository:
@@ -98,37 +144,8 @@ class ObservationRepository:
     def _insert_events(
         self, chain_id: int, data_source: str, events: Sequence[ApprovalEvent]
     ) -> int:
-        if not events:
-            return 0
-        hashes = {e.block_hash for e in events}
-        now = datetime.now(UTC)
         with self._sessions() as session, session.begin():
-            rows = session.execute(
-                select(ApprovalEventRecord.block_hash, ApprovalEventRecord.log_index).where(
-                    (ApprovalEventRecord.chain_id == chain_id)
-                    & ApprovalEventRecord.block_hash.in_(hashes)
-                )
-            )
-            existing = {(block_hash, log_index) for block_hash, log_index in rows}
-            new = [e for e in events if (e.block_hash, e.log_index) not in existing]
-            session.add_all(
-                ApprovalEventRecord(
-                    chain_id=chain_id,
-                    token=e.token,
-                    owner=e.owner,
-                    spender=e.spender,
-                    value=str(e.value),
-                    block_number=e.block_number,
-                    block_hash=e.block_hash,
-                    transaction_hash=e.transaction_hash,
-                    transaction_index=e.transaction_index,
-                    log_index=e.log_index,
-                    data_source=data_source,
-                    ingested_at=now,
-                )
-                for e in new
-            )
-        return len(new)
+            return insert_approval_events(session, chain_id, data_source, events)
 
     def list_for_address(
         self,
@@ -178,19 +195,32 @@ class ObservationRepository:
         return int(total or 0)
 
     def purge(self, address: str | None = None) -> int:
-        """Delete locally stored observations and events (all, or for one address)."""
+        """Delete all locally stored data (or one address's): observations, events, snapshots,
+        findings and their transitions. Returns the number of rows removed."""
+        finding_ids = select(FindingRecord.id)
+        transitions = delete(FindingTransitionRecord)
+        findings = delete(FindingRecord)
+        snapshots = delete(WalletSnapshotRecord)
         observations = delete(AddressObservation)
         events = delete(ApprovalEventRecord)
         if address is not None:
+            finding_ids = finding_ids.where(FindingRecord.address == address)
+            transitions = transitions.where(FindingTransitionRecord.finding_id.in_(finding_ids))
+            findings = findings.where(FindingRecord.address == address)
+            snapshots = snapshots.where(WalletSnapshotRecord.address == address)
             observations = observations.where(AddressObservation.address == address)
             events = events.where(ApprovalEventRecord.owner == address)
+        removed = 0
         with self._sessions() as session, session.begin():
-            removed = session.execute(observations)
-            removed_events = session.execute(events)
-        return sum(int(getattr(r, "rowcount", 0) or 0) for r in (removed, removed_events))
+            # Children first, so foreign keys hold on databases that enforce them.
+            for statement in (transitions, findings, snapshots, observations, events):
+                removed += int(getattr(session.execute(statement), "rowcount", 0) or 0)
+        return removed
 
 
-def open_repository(database_url: str) -> ObservationRepository:
+def open_repository(database_url: str) -> HistoryRepository:
+    from cryptoguard.database.history import HistoryRepository
+
     engine = create_db_engine(database_url)
     init_schema(engine)
-    return ObservationRepository(engine)
+    return HistoryRepository(engine)

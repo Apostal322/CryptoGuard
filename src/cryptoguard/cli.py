@@ -23,7 +23,9 @@ from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.chains import get_chain
 from cryptoguard.core.config import Settings, secret_fragments
 from cryptoguard.core.errors import CryptoGuardError
+from cryptoguard.core.hexutil import parse_hash32
 from cryptoguard.core.logging import configure_logging
+from cryptoguard.risk.lifecycle import OPEN_STATUSES
 from cryptoguard.services.approvals import (
     AllowanceLevel,
     ApprovalScanReport,
@@ -34,6 +36,7 @@ from cryptoguard.services.approvals import (
 from cryptoguard.services.demo import DEMO_ACCOUNTS
 from cryptoguard.services.inspection import AddressInspection, inspect_address
 from cryptoguard.services.providers import build_provider, require_provider
+from cryptoguard.services.snapshots import SnapshotOutcome, take_snapshot
 
 
 def _load_settings(demo: bool) -> Settings:
@@ -173,6 +176,103 @@ async def _approvals(
     return scan.report
 
 
+def _render_snapshot(outcome: SnapshotOutcome) -> str:
+    lines = ["*** SIMULATED DEMO DATA ***"] if outcome.simulated else []
+    since = f"since block {outcome.previous_block}" if outcome.previous_block is not None else ""
+    lines += [
+        f"Snapshot #{outcome.snapshot_id} of {outcome.owner} at block {outcome.block_number} "
+        f"({outcome.block_timestamp.isoformat()}, {outcome.lag_blocks} blocks behind head) "
+        + ("[baseline]" if outcome.is_baseline else since),
+        f"Coverage: {outcome.coverage.description}",
+    ]
+    if not outcome.created:
+        lines.append("(already recorded; nothing re-read)")
+    if outcome.changes:
+        lines.append("Changes:")
+        for change in outcome.changes:
+            cause = change.cause.transaction_hash or "state comparison"
+            lines.append(f"  - {change.explanation} Cause: {cause}.")
+            lines.append(f"    Why it matters: {change.why_it_matters}")
+    elif not outcome.is_baseline:
+        lines.append("Changes: none observed.")
+    if outcome.finding_events:
+        lines.append("Findings:")
+        for event in outcome.finding_events:
+            lines.append(
+                f"  - [{event.severity}/{event.confidence}] {event.title}: "
+                f"{event.from_status or '-'} -> {event.to_status} ({event.reason})"
+            )
+    if outcome.findings_not_reverified:
+        lines.append(
+            f"{outcome.findings_not_reverified} open finding(s) could not be re-verified and "
+            "were left unchanged."
+        )
+    lines += [f"Note: {note}" for note in outcome.notes]
+    return "\n".join(lines)
+
+
+async def _snapshot(
+    settings: Settings,
+    address: str,
+    *,
+    block: int | None,
+    tokens: list[str] | None,
+    lookback: int | None,
+) -> SnapshotOutcome:
+    from cryptoguard.database.repository import open_repository
+
+    provider = require_provider(build_provider(settings))
+    try:
+        return await take_snapshot(
+            provider,
+            open_repository(settings.database_url),
+            address,
+            chain=get_chain(settings.chain_id),
+            limits=ScanLimits.from_settings(settings),
+            confirmations=settings.snapshot_confirmations,
+            block=block,
+            tokens=tokens,
+            lookback_blocks=lookback,
+        )
+    finally:
+        await provider.aclose()
+
+
+def _print_timeline(settings: Settings, address: str, limit: int) -> None:
+    from cryptoguard.database.repository import open_repository
+
+    rows, total = open_repository(settings.database_url).timeline(
+        settings.chain_id, to_checksum_address(address), limit=limit, offset=0
+    )
+    print(f"{total} snapshot(s); newest first.")
+    for row in rows:
+        s = row.snapshot
+        tag = " [SIMULATED]" if s.data_source == "demo_fixture" else ""
+        kind = "baseline" if s.is_baseline else f"since block {row.previous_block}"
+        print(f"\n#{s.id} block {s.block_number} {s.block_timestamp.isoformat()} ({kind}){tag}")
+        for change in s.changes:
+            print(f"  change: {change['explanation']}")
+        for event in row.finding_events:
+            print(f"  finding: {event.title} {event.from_status or '-'} -> {event.to_status}")
+
+
+def _print_findings(settings: Settings, address: str, show_all: bool) -> None:
+    from cryptoguard.database.repository import open_repository
+
+    statuses = None if show_all else [s.value for s in OPEN_STATUSES]
+    findings = open_repository(settings.database_url).list_findings(
+        settings.chain_id, to_checksum_address(address), statuses
+    )
+    print(f"{len(findings)} finding(s).")
+    for f in findings:
+        tag = " [SIMULATED]" if f.data_source == "demo_fixture" else ""
+        print(
+            f"\n{f.fingerprint}{tag}\n  {f.rule_id} [{f.severity}/{f.confidence}] {f.status}: "
+            f"{f.title}\n  {f.explanation}\n  first seen block {f.first_seen_block}, "
+            f"last seen block {f.last_seen_block}"
+        )
+
+
 async def _status(settings: Settings) -> dict[str, object]:
     provider = build_provider(settings)
     result: dict[str, object] = {
@@ -219,6 +319,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_approvals.add_argument("--json", action="store_true", help="print JSON")
     p_approvals.add_argument("--no-store", action="store_true", help="do not save the scan")
 
+    p_snapshot = sub.add_parser("snapshot", help="record a security snapshot on the timeline")
+    p_snapshot.add_argument("address")
+    p_snapshot.add_argument(
+        "--block", type=int, help="snapshot block (default: head - confirmations)"
+    )
+    p_snapshot.add_argument("--token", action="append", dest="tokens", help="token scope")
+    p_snapshot.add_argument("--lookback", type=int, help="discovery window for the first snapshot")
+    p_snapshot.add_argument("--demo", action="store_true")
+    p_snapshot.add_argument("--json", action="store_true")
+
+    p_timeline = sub.add_parser("timeline", help="show stored snapshots and their changes")
+    p_timeline.add_argument("address")
+    p_timeline.add_argument("--limit", type=int, default=20)
+    p_timeline.add_argument("--demo", action="store_true")
+
+    p_findings = sub.add_parser("findings", help="list stored findings (open by default)")
+    p_findings.add_argument("address")
+    p_findings.add_argument("--all", action="store_true", help="include resolved/superseded")
+    p_findings.add_argument("--demo", action="store_true")
+
+    p_ack = sub.add_parser("ack", help="acknowledge a finding by id")
+    p_ack.add_argument("finding_id")
+
     p_status = sub.add_parser("status", help="check configuration and provider connectivity")
     p_status.add_argument("--demo", action="store_true")
 
@@ -264,6 +387,44 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             print(report.model_dump_json(indent=2) if args.json else _render_approvals(report))
+            return 0
+
+        if args.command == "snapshot":
+            outcome = asyncio.run(
+                _snapshot(
+                    settings,
+                    args.address,
+                    block=args.block,
+                    tokens=args.tokens,
+                    lookback=args.lookback,
+                )
+            )
+            print(outcome.model_dump_json(indent=2) if args.json else _render_snapshot(outcome))
+            return 0
+
+        if args.command == "timeline":
+            _print_timeline(settings, args.address, args.limit)
+            return 0
+
+        if args.command == "findings":
+            _print_findings(settings, args.address, args.all)
+            return 0
+
+        if args.command == "ack":
+            from cryptoguard.database.repository import open_repository
+            from cryptoguard.risk.lifecycle import InvalidTransitionError
+
+            try:
+                finding = open_repository(settings.database_url).acknowledge_finding(
+                    parse_hash32(args.finding_id)
+                )
+            except (InvalidTransitionError, ValueError) as exc:
+                print(f"error [invalid_transition]: {exc}", file=sys.stderr)
+                return 1
+            if finding is None:
+                print("error [finding_not_found]: no finding with this id", file=sys.stderr)
+                return 1
+            print(f"Acknowledged: {finding.title}")
             return 0
 
         if args.command == "status":

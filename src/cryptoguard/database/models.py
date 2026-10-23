@@ -10,7 +10,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, Index, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
@@ -96,3 +107,92 @@ class ApprovalEventRecord(Base):
     log_index: Mapped[int] = mapped_column(BigInteger)
     data_source: Mapped[str] = mapped_column(String(32))
     ingested_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class WalletSnapshotRecord(Base):
+    """A wallet's security state at one block, plus the delta from the previous snapshot.
+
+    ``orphaned`` marks snapshots whose block was later reorganized out of the canonical chain;
+    they stay for audit but are never used as a comparison base.
+    """
+
+    __tablename__ = "wallet_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "chain_id", "address", "block_hash", "data_source", name="uq_wallet_snapshot_block"
+        ),
+        Index("ix_wallet_snapshot_wallet_block", "chain_id", "address", "block_number"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chain_id: Mapped[int] = mapped_column(BigInteger)
+    address: Mapped[str] = mapped_column(String(42))
+    block_number: Mapped[int] = mapped_column(BigInteger)
+    block_hash: Mapped[str] = mapped_column(String(66))
+    block_timestamp: Mapped[datetime] = mapped_column(UTCDateTime())
+    head_block_number: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    data_source: Mapped[str] = mapped_column(String(32))
+    schema_version: Mapped[str] = mapped_column(String(64))
+    ruleset_version: Mapped[str] = mapped_column(String(32))
+    previous_snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("wallet_snapshots.id"), nullable=True
+    )
+    is_baseline: Mapped[bool] = mapped_column(Boolean)
+    orphaned: Mapped[bool] = mapped_column(Boolean, default=False)
+    token_scope: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    coverage: Mapped[dict[str, Any]] = mapped_column(JSON)
+    state: Mapped[dict[str, Any]] = mapped_column(JSON)
+    state_hash: Mapped[str] = mapped_column(String(66))
+    changes: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+
+
+class FindingRecord(Base):
+    """A security finding, identified by its deterministic fingerprint per wallet."""
+
+    __tablename__ = "findings"
+    __table_args__ = (
+        UniqueConstraint("chain_id", "address", "fingerprint", name="uq_finding_fingerprint"),
+        Index("ix_finding_wallet_status", "chain_id", "address", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chain_id: Mapped[int] = mapped_column(BigInteger)
+    address: Mapped[str] = mapped_column(String(42))
+    fingerprint: Mapped[str] = mapped_column(String(66))
+    rule_id: Mapped[str] = mapped_column(String(32))
+    ruleset_version: Mapped[str] = mapped_column(String(32))
+    category: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))
+    severity: Mapped[str] = mapped_column(String(32))
+    confidence: Mapped[str] = mapped_column(String(16))
+    subject: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(String(300))
+    explanation: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    data_source: Mapped[str] = mapped_column(String(32))
+    first_seen_snapshot_id: Mapped[int] = mapped_column(ForeignKey("wallet_snapshots.id"))
+    first_seen_block: Mapped[int] = mapped_column(BigInteger)
+    last_seen_snapshot_id: Mapped[int] = mapped_column(ForeignKey("wallet_snapshots.id"))
+    last_seen_block: Mapped[int] = mapped_column(BigInteger)
+    resolved_block: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    reopen_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class FindingTransitionRecord(Base):
+    """Audit trail of every finding status change, with the snapshot that caused it (if any)."""
+
+    __tablename__ = "finding_transitions"
+    __table_args__ = (Index("ix_finding_transition_snapshot", "snapshot_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id"))
+    snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("wallet_snapshots.id"), nullable=True
+    )
+    from_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(String(300))
+    block_number: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())

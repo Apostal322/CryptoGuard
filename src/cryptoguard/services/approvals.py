@@ -414,34 +414,52 @@ def _signals(
     return signals
 
 
-async def scan_approvals(
+Pair = tuple[str, str]
+
+
+@dataclass(frozen=True)
+class ApprovalDiscovery:
+    """ERC-20 Approval events found in one scanned window, deduplicated and position-ordered."""
+
+    events: list[ApprovalEvent]
+    coverage: ScanCoverage
+    log_counts: LogCounts
+
+    def latest_by_pair(self) -> dict[Pair, ApprovalEvent]:
+        latest: dict[Pair, ApprovalEvent] = {}
+        for event in self.events:  # ordered by position, so the last write wins
+            latest[(event.token, event.spender)] = event
+        return latest
+
+    def occurrences(self) -> dict[Pair, int]:
+        counts: dict[Pair, int] = {}
+        for event in self.events:
+            key = (event.token, event.spender)
+            counts[key] = counts.get(key, 0) + 1
+        return counts
+
+
+def normalize_token_scope(tokens: list[str] | None) -> list[str] | None:
+    if not tokens:
+        return None
+    scope = sorted({to_checksum_address(t) for t in tokens})
+    if len(scope) > MAX_SCOPED_TOKENS:
+        raise InvalidScanRequestError(
+            f"At most {MAX_SCOPED_TOKENS} token contracts can be scanned at once."
+        )
+    return scope
+
+
+async def discover_approvals(
     provider: EthereumProvider,
     owner: str,
     *,
-    chain: ChainInfo,
+    from_block: int,
+    to_block: int,
     limits: ScanLimits,
-    from_block: int | None = None,
-    lookback_blocks: int | None = None,
-    tokens: list[str] | None = None,
-) -> ApprovalScan:
-    """Scan ``owner``'s approvals. ``tokens`` limits discovery to those contracts, which also
-    makes scans possible on providers that refuse address-less ``eth_getLogs`` queries."""
-    owner = to_checksum_address(owner)
-    token_scope: list[str] | None = None
-    if tokens:
-        token_scope = sorted({to_checksum_address(t) for t in tokens})
-        if len(token_scope) > MAX_SCOPED_TOKENS:
-            raise InvalidScanRequestError(
-                f"At most {MAX_SCOPED_TOKENS} token contracts can be scanned at once."
-            )
-    await provider.verify_chain()
-    head = await provider.block_number()
-    header: BlockHeader = await provider.get_block(head)
-    to_block = header.number
-
-    if from_block is None:
-        lookback = lookback_blocks or limits.lookback_blocks
-        from_block = max(0, to_block - lookback + 1)
+    token_scope: list[str] | None,
+) -> ApprovalDiscovery:
+    """Find ``owner``'s ERC-20 Approval events in ``[from_block, to_block]`` (bounded)."""
     if from_block < 0 or from_block > to_block:
         raise BlockRangeTooLargeError(f"from_block must be between 0 and {to_block}.")
     span = to_block - from_block + 1
@@ -449,7 +467,6 @@ async def scan_approvals(
         raise BlockRangeTooLargeError(
             f"Requested {span} blocks; the maximum per scan is {limits.max_scan_blocks}."
         )
-
     try:
         raw_logs, coverage = await _scan_logs(
             provider, owner, from_block, to_block, limits, token_scope
@@ -464,31 +481,46 @@ async def scan_approvals(
         ) from None
 
     counts = dict.fromkeys(ApprovalLogShape, 0)
-    latest: dict[tuple[str, str], ApprovalEvent] = {}
-    occurrences: dict[tuple[str, str], int] = {}
-    seen_logs: set[tuple[str, int]] = set()
-    unique_events: list[ApprovalEvent] = []
+    seen: set[tuple[str, int]] = set()
+    events: list[ApprovalEvent] = []
     for log in raw_logs:
         shape, event = classify_approval_log(log)
         counts[shape] += 1
         if event is None or event.owner != owner:
             continue
         identity = (event.block_hash, event.log_index)
-        if identity in seen_logs:  # overlapping/duplicated provider results
+        if identity in seen:  # overlapping/duplicated provider results
             continue
-        seen_logs.add(identity)
-        unique_events.append(event)
-        key = (event.token, event.spender)
-        occurrences[key] = occurrences.get(key, 0) + 1
-        if key not in latest or event.position > latest[key].position:
-            latest[key] = event
+        seen.add(identity)
+        events.append(event)
+    events.sort(key=lambda e: e.position)
+    return ApprovalDiscovery(
+        events=events,
+        coverage=coverage,
+        log_counts=LogCounts(
+            erc20_approvals=counts[ApprovalLogShape.ERC20],
+            erc721_shaped_approvals=counts[ApprovalLogShape.ERC721_SHAPED],
+            removed=counts[ApprovalLogShape.REMOVED],
+            malformed=counts[ApprovalLogShape.MALFORMED],
+        ),
+    )
 
-    ranked = sorted(latest.items(), key=lambda kv: kv[1].position, reverse=True)
-    kept = ranked[: limits.max_pairs]
-    block = header.number
 
-    tokens = sorted({token for (token, _), _ in kept})
-    spenders = sorted({spender for (_, spender), _ in kept})
+async def verify_approval_pairs(
+    provider: EthereumProvider,
+    owner: str,
+    latest: dict[Pair, ApprovalEvent],
+    occurrences: dict[Pair, int],
+    *,
+    chain: ChainInfo,
+    block: int,
+) -> list[ApprovalEntry]:
+    """Read current allowance, balance and metadata for each pair at ``block``.
+
+    The caller owns reorg detection: it must re-check ``block``'s hash afterwards.
+    """
+    tokens = sorted({token for token, _ in latest})
+    spenders = sorted({spender for _, spender in latest})
     token_states = dict(
         zip(
             tokens,
@@ -515,14 +547,13 @@ async def scan_approvals(
             decode_uint256,
         )
 
-    allowances = await asyncio.gather(*(allowance_of(t, s) for (t, s), _ in kept))
-
-    recheck = await provider.get_block(block)
-    if recheck.hash != header.hash:
-        raise ReorgDetectedError("The chain reorganized during the approval scan; try again.")
+    pairs = sorted(latest)
+    allowances = await asyncio.gather(*(allowance_of(t, s) for t, s in pairs))
+    simulated = provider.source == "demo_fixture"
 
     entries: list[ApprovalEntry] = []
-    for ((token, spender), event), (allowance, reason) in zip(kept, allowances, strict=True):
+    for (token, spender), (allowance, reason) in zip(pairs, allowances, strict=True):
+        event = latest[(token, spender)]
         state = token_states[token]
         balance = int(state.balance.raw) if state.balance.raw is not None else None
         level = _allowance_level(allowance)
@@ -532,7 +563,6 @@ async def scan_approvals(
         else:
             exposure = Reading(status="unknown", unknown_reason="allowance_or_balance_unknown")
         known = lookup_known_contract(chain.chain_id, spender)
-        simulated = provider.source == "demo_fixture"
         entries.append(
             ApprovalEntry(
                 token=TokenView(
@@ -560,7 +590,7 @@ async def scan_approvals(
                     if simulated
                     else explorer_tx_url(chain, event.transaction_hash),
                 ),
-                events_in_range=occurrences[(token, spender)],
+                events_in_range=occurrences.get((token, spender), 0),
                 current_allowance=_reading(allowance, reason, state.decimals),
                 allowance_level=level,
                 active=None if allowance is None else allowance > 0,
@@ -569,11 +599,20 @@ async def scan_approvals(
                 signals=_signals(allowance, balance, level, event, spender_kinds[spender], state),
             )
         )
-    entries.sort(key=lambda e: (e.token.address, e.spender.address))
+    return entries
 
-    simulated = provider.source == "demo_fixture"
+
+def rank_pairs(latest: dict[Pair, ApprovalEvent], max_pairs: int) -> tuple[list[Pair], list[Pair]]:
+    """Split pairs into (kept, dropped), keeping the ``max_pairs`` most recently approved."""
+    ranked = sorted(latest, key=lambda pair: latest[pair].position, reverse=True)
+    return ranked[:max_pairs], ranked[max_pairs:]
+
+
+def approval_limitations(
+    coverage_description: str, dropped_pairs: int, max_pairs: int, simulated: bool
+) -> list[str]:
     limitations = [
-        coverage.description,
+        coverage_description,
         "Only ERC-20 allowances are analyzed. ERC-721/ERC-1155 approvals (including "
         "ApprovalForAll) and Permit2 sub-allowances are not covered yet.",
         "Exposure is min(balance, allowance) at the observed block: a visible upper bound, not a "
@@ -581,14 +620,61 @@ async def scan_approvals(
         "fee-on-transfer or upgradeable tokens may behave differently.",
         "Token symbols are contract-supplied, untrusted text and can impersonate other tokens.",
     ]
-    if len(ranked) > len(kept):
+    if dropped_pairs:
         limitations.append(
-            f"{len(ranked) - len(kept)} older token/spender pairs were not verified "
-            f"(limit {limits.max_pairs} pairs per scan)."
+            f"{dropped_pairs} older token/spender pairs were not verified "
+            f"(limit {max_pairs} pairs per scan)."
         )
     if simulated:
         limitations.insert(0, "SIMULATED DATA: fictional demo fixture, not Ethereum state.")
+    return limitations
 
+
+async def scan_approvals(
+    provider: EthereumProvider,
+    owner: str,
+    *,
+    chain: ChainInfo,
+    limits: ScanLimits,
+    from_block: int | None = None,
+    lookback_blocks: int | None = None,
+    tokens: list[str] | None = None,
+) -> ApprovalScan:
+    """Scan ``owner``'s approvals. ``tokens`` limits discovery to those contracts, which also
+    makes scans possible on providers that refuse address-less ``eth_getLogs`` queries."""
+    owner = to_checksum_address(owner)
+    token_scope = normalize_token_scope(tokens)
+    await provider.verify_chain()
+    head = await provider.block_number()
+    header: BlockHeader = await provider.get_block(head)
+    to_block = header.number
+    if from_block is None:
+        lookback = lookback_blocks or limits.lookback_blocks
+        from_block = max(0, to_block - lookback + 1)
+
+    discovery = await discover_approvals(
+        provider,
+        owner,
+        from_block=from_block,
+        to_block=to_block,
+        limits=limits,
+        token_scope=token_scope,
+    )
+    latest = discovery.latest_by_pair()
+    kept, dropped = rank_pairs(latest, limits.max_pairs)
+    entries = await verify_approval_pairs(
+        provider,
+        owner,
+        {pair: latest[pair] for pair in kept},
+        discovery.occurrences(),
+        chain=chain,
+        block=to_block,
+    )
+    recheck = await provider.get_block(to_block)
+    if recheck.hash != header.hash:
+        raise ReorgDetectedError("The chain reorganized during the approval scan; try again.")
+
+    simulated = provider.source == "demo_fixture"
     report = ApprovalScanReport(
         data_source=provider.source,
         simulated=simulated,
@@ -600,19 +686,15 @@ async def scan_approvals(
         block_hash=header.hash,
         block_timestamp=header.timestamp_utc,
         observed_at=datetime.now(UTC),
-        coverage=coverage,
-        log_counts=LogCounts(
-            erc20_approvals=counts[ApprovalLogShape.ERC20],
-            erc721_shaped_approvals=counts[ApprovalLogShape.ERC721_SHAPED],
-            removed=counts[ApprovalLogShape.REMOVED],
-            malformed=counts[ApprovalLogShape.MALFORMED],
-        ),
+        coverage=discovery.coverage,
         token_scope=token_scope,
-        pairs_discovered=len(ranked),
-        pairs_truncated=len(ranked) - len(kept),
+        log_counts=discovery.log_counts,
+        pairs_discovered=len(latest),
+        pairs_truncated=len(dropped),
         approvals=entries,
         exposure_model="min(current_balance, current_allowance) at the observed block",
-        limitations=limitations,
+        limitations=approval_limitations(
+            discovery.coverage.description, len(dropped), limits.max_pairs, simulated
+        ),
     )
-    unique_events.sort(key=lambda e: e.position)
-    return ApprovalScan(report=report, events=unique_events)
+    return ApprovalScan(report=report, events=discovery.events)

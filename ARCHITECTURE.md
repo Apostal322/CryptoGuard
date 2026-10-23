@@ -29,6 +29,13 @@ SQLAlchemy or the CLI, so detectors added later can be run, tested and replayed 
 | `core/known_contracts.py` | Cited display labels for a few published spender contracts |
 | `services/inspection.py` | Point-in-time address inspection (observed facts, no risk judgement) |
 | `services/approvals.py` | Bounded approval discovery, pinned-block allowance verification, exposure |
+| `history/state.py` | Canonical, hashable wallet state at one block |
+| `history/delta.py` | Deterministic `previous → current` change list with honest causes |
+| `risk/rules.py` | Versioned ruleset `cg-rules`; finding candidates and fingerprints |
+| `risk/lifecycle.py` | Pure finding-lifecycle reconciliation |
+| `services/snapshots.py` | Snapshot orchestration: reorg rebase, incremental discovery, verify, diff, rules |
+| `database/history.py` | Snapshot/finding/transition persistence; lifecycle applied in one transaction |
+| `api/history_routes.py` | Snapshot, timeline, finding and ruleset endpoints |
 | `services/demo.py` | Demo provider over fictional, deterministic fixtures |
 | `services/providers.py` | Mode → provider selection; no silent fallback |
 | `database/` | ORM models, idempotent observation repository |
@@ -59,6 +66,17 @@ live in `apps/web` when Phase 5 starts; shared schemas will be generated from th
 4. At block `N`: token code, `balanceOf`, `decimals`, `symbol`, spender code, `allowance`.
 5. Re-check block `N`'s hash (reorg → error), build the report, persist report + events.
 
+## Data flow: `POST /api/v1/wallets/{address}/snapshots`
+
+1. Load the last ≤10 non-orphaned snapshots; re-fetch each block's hash. Snapshots whose block
+   was reorganized out are marked `orphaned`, stored Approval events above the surviving base
+   are deleted (they are re-ingested from the canonical chain), and the base moves back.
+2. Pick block `B` (default `head − SNAPSHOT_CONFIRMATIONS`); `B` must not precede the base.
+   Same block as the base → return it unchanged.
+3. Inspect account code at `B`; discover events in `(base, B]`; re-verify carried + new pairs.
+4. Re-check `B`'s hash; build state; delta vs. base; evaluate rules.
+5. One transaction: insert events, snapshot row, finding creates/updates and transitions.
+
 ## Storage
 
 `address_observations` stores each observation with block number, block hash, block
@@ -66,6 +84,10 @@ timestamp (chain time) and `observed_at` (CryptoGuard time) as separate columns,
 schema version and data source. Inspections and approval-scan reports both live here,
 distinguished by `observation_type`. `approval_events` stores each decoded `Approval` log,
 unique on `(chain_id, block_hash, log_index)`, with the uint256 value as a decimal string.
+`wallet_snapshots` (unique per chain, wallet, block hash, data source) stores canonical state,
+`state_hash`, the delta, cumulative coverage, token scope, ruleset version and the link to the
+previous snapshot. `findings` (unique per chain, wallet, fingerprint) holds current status,
+severity, confidence and evidence; `finding_transitions` is the append-only audit trail.
 All times are UTC. Schema creation currently uses
 `create_all`; Alembic migrations must be introduced before the first schema change.
 
@@ -88,9 +110,13 @@ All times are UTC. Schema creation currently uses
 
 ## Known gaps / technical debt
 
-- No Alembic migrations yet (`create_all` only).
-- Approval scans are on-demand; there is no forward-monitoring loop or ingestion checkpoint
-  yet, and stored `approval_events` are not yet reconciled after reorgs (Phase 3).
+- No Alembic migrations yet (`create_all` only). Every schema change so far only added tables;
+  migrations are required before any existing table changes.
+- Snapshots are taken on request; there is no scheduled monitoring loop yet. The previous
+  snapshot acts as the ingestion checkpoint.
+- Reorg rebase looks back at most 10 snapshots; findings first seen in an orphaned snapshot
+  keep that reference (their status is still reconciled by the next canonical snapshot).
+- A wallet's token scope is fixed at its first snapshot; changing it requires a purge.
 - ERC-20 call results are trusted to follow the standard; tokens with non-standard
   `transferFrom` semantics (rebasing, fee-on-transfer, blocklists) can make the exposure bound
   inexact.

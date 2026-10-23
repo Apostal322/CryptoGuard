@@ -7,6 +7,7 @@ from cryptoguard.database.repository import open_repository
 from cryptoguard.services.approvals import ScanLimits, scan_approvals
 from cryptoguard.services.demo import DEMO_ACCOUNTS, DemoProvider
 from cryptoguard.services.inspection import inspect_address
+from cryptoguard.services.snapshots import take_snapshot
 
 
 async def test_observations_survive_restart_and_can_be_purged(tmp_path: Path) -> None:
@@ -51,3 +52,22 @@ async def test_approval_events_are_idempotent_and_purgeable(tmp_path: Path) -> N
 
     assert repo.purge(wallet) == 5  # 1 report + 4 events
     assert repo.count_approval_events(1, wallet) == 0
+
+
+async def test_purge_removes_snapshots_findings_and_transitions(tmp_path: Path) -> None:
+    repo = open_repository(f"sqlite:///{(tmp_path / 'cg.db').as_posix()}")
+    wallet = next(a.address for a in DEMO_ACCOUNTS if a.label == "plain-wallet")
+    outcome = await take_snapshot(
+        DemoProvider(1),
+        repo,
+        wallet,
+        chain=get_chain(1),
+        limits=ScanLimits(10_000, 100_000, 1000, 100, 50),
+        confirmations=0,
+    )
+    assert outcome.finding_events
+    assert repo.list_findings(1, wallet)
+    removed = repo.purge(wallet)
+    assert removed >= 1 + len(outcome.finding_events) * 2  # snapshot, findings, transitions
+    assert repo.list_findings(1, wallet) == []
+    assert repo.timeline(1, wallet, limit=10, offset=0)[1] == 0
