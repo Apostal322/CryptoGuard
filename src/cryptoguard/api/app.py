@@ -1,0 +1,303 @@
+"""FastAPI application factory, middleware and routes."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import math
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Literal
+
+from fastapi import APIRouter, FastAPI, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from cryptoguard import __version__
+from cryptoguard.api.ratelimit import TokenBucketLimiter
+from cryptoguard.api.schemas import (
+    AnalyzeAddressRequest,
+    AnalyzeAddressResponse,
+    DemoAddress,
+    DemoAddressList,
+    ErrorBody,
+    ErrorResponse,
+    HealthResponse,
+    ObservationItem,
+    ObservationPage,
+    RpcMetricsView,
+    StatusResponse,
+)
+from cryptoguard.blockchain.provider import EthereumProvider, RpcEthereumProvider
+from cryptoguard.core.address import to_checksum_address
+from cryptoguard.core.chains import ChainInfo, get_chain
+from cryptoguard.core.config import Settings
+from cryptoguard.core.errors import CryptoGuardError, UnsupportedChainError
+from cryptoguard.database.repository import ObservationRepository, open_repository
+from cryptoguard.services.demo import DEMO_ACCOUNTS
+from cryptoguard.services.inspection import inspect_address
+from cryptoguard.services.providers import build_provider, require_provider
+
+logger = logging.getLogger(__name__)
+
+ProviderFactory = Callable[[Settings], EthereumProvider | None]
+
+_UNLIMITED_PATHS = frozenset({"/api/v1/health"})
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Resource-Policy": "same-origin",
+}
+
+
+@dataclass
+class AppState:
+    settings: Settings
+    chain: ChainInfo
+    provider: EthereumProvider | None
+    repository: ObservationRepository
+
+
+def _state(request: Request) -> AppState:
+    state: AppState = request.app.state.cryptoguard
+    return state
+
+
+def _error(status: int, code: str, message: str, **details: object) -> JSONResponse:
+    body = ErrorResponse(error=ErrorBody(code=code, message=message, details=dict(details)))
+    return JSONResponse(status_code=status, content=body.model_dump(mode="json"))
+
+
+router = APIRouter(prefix="/api/v1")
+
+
+@router.get("/health", response_model=HealthResponse)
+async def health(request: Request, response: Response) -> HealthResponse:
+    database_ok = await asyncio.to_thread(_state(request).repository.ping)
+    if not database_ok:
+        response.status_code = 503
+    return HealthResponse(
+        status="ok" if database_ok else "degraded", database="ok" if database_ok else "error"
+    )
+
+
+@router.get("/status", response_model=StatusResponse)
+async def status(request: Request) -> StatusResponse:
+    state = _state(request)
+    provider = state.provider
+    chain_verified: bool | None = None
+    head: int | None = None
+    provider_error: ErrorBody | None = None
+    if provider is not None:
+        try:
+            await provider.verify_chain()
+            chain_verified = True
+            head = await provider.block_number()
+        except CryptoGuardError as exc:
+            chain_verified = False if exc.code == "chain_mismatch" else None
+            provider_error = ErrorBody(code=exc.code, message=exc.message)
+    metrics = None
+    if isinstance(provider, RpcEthereumProvider):
+        m = provider.client.metrics
+        metrics = RpcMetricsView(
+            requests=m.requests,
+            failures=m.failures,
+            retries=m.retries,
+            requests_by_method=dict(m.requests_by_method),
+            last_error_code=m.last_error_code,
+            last_error_at=m.last_error_at,
+        )
+    return StatusResponse(
+        version=__version__,
+        mode=state.settings.mode,
+        simulated=state.settings.mode == "demo",
+        chain_id=state.chain.chain_id,
+        chain_name=state.chain.name,
+        rpc_configured=state.settings.rpc_url is not None,
+        provider=provider.endpoint_display if provider is not None else None,
+        chain_verified=chain_verified,
+        head_block=head,
+        provider_error=provider_error,
+        rpc_metrics=metrics,
+        checked_at=datetime.now(UTC),
+    )
+
+
+@router.post("/analyze/address", response_model=AnalyzeAddressResponse)
+async def analyze_address(request: Request, body: AnalyzeAddressRequest) -> AnalyzeAddressResponse:
+    state = _state(request)
+    if body.chain_id is not None and body.chain_id != state.chain.chain_id:
+        raise UnsupportedChainError(
+            f"This server is configured for chain id {state.chain.chain_id}; "
+            f"requests for chain id {body.chain_id} are not served."
+        )
+    provider = require_provider(state.provider)
+    inspection = await inspect_address(provider, body.address, chain=state.chain)
+    persistence: Literal["stored", "already_stored", "failed"]
+    try:
+        stored = await asyncio.to_thread(state.repository.save_inspection, inspection)
+        persistence = "stored" if stored else "already_stored"
+    except Exception:
+        logger.exception("failed to persist inspection")
+        persistence = "failed"
+    return AnalyzeAddressResponse(inspection=inspection, persistence=persistence)
+
+
+@router.get("/wallets/{address}/observations", response_model=ObservationPage)
+async def list_observations(
+    request: Request,
+    address: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=100_000),
+) -> ObservationPage:
+    state = _state(request)
+    checksummed = to_checksum_address(address)
+    rows, total = await asyncio.to_thread(
+        state.repository.list_for_address,
+        state.chain.chain_id,
+        checksummed,
+        limit=limit,
+        offset=offset,
+    )
+    return ObservationPage(
+        items=[
+            ObservationItem(
+                id=row.id,
+                block_number=row.block_number,
+                block_hash=row.block_hash,
+                block_timestamp=row.block_timestamp,
+                observed_at=row.observed_at,
+                observation_type=row.observation_type,
+                schema_version=row.schema_version,
+                data_source=row.data_source,
+                payload=row.payload,
+            )
+            for row in rows
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/demo/addresses", response_model=DemoAddressList)
+async def demo_addresses(request: Request) -> DemoAddressList | JSONResponse:
+    if _state(request).settings.mode != "demo":
+        return _error(404, "not_in_demo_mode", "Demo fixtures are only served in demo mode.")
+    return DemoAddressList(
+        notice="Fictional fixtures for demonstration. They do not describe Ethereum state.",
+        addresses=[
+            DemoAddress(label=a.label, description=a.description, address=a.address)
+            for a in DEMO_ACCOUNTS
+        ],
+    )
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    provider_factory: ProviderFactory = build_provider,
+    repository: ObservationRepository | None = None,
+) -> FastAPI:
+    settings = settings or Settings()
+    chain = get_chain(settings.chain_id)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        repo = repository or open_repository(settings.database_url)
+        provider = provider_factory(settings)
+        app.state.cryptoguard = AppState(settings, chain, provider, repo)
+        logger.info(
+            "cryptoguard api started",
+            extra={
+                "ctx": {
+                    "mode": settings.mode,
+                    "chain_id": chain.chain_id,
+                    "provider": provider.endpoint_display if provider else None,
+                }
+            },
+        )
+        try:
+            yield
+        finally:
+            if provider is not None:
+                await provider.aclose()
+
+    app = FastAPI(
+        title="CryptoGuard API",
+        version=__version__,
+        description="Read-only, explainable Ethereum wallet security analysis.",
+        lifespan=lifespan,
+    )
+    limiter = TokenBucketLimiter(settings.rate_limit_per_minute)
+
+    @app.middleware("http")
+    async def guard(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await _enforce_limits(request, call_next, settings, limiter)
+        for header, value in _SECURITY_HEADERS.items():
+            response.headers.setdefault(header, value)
+        if request.url.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "no-store")
+            response.headers.setdefault("Content-Security-Policy", "default-src 'none'")
+        return response
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+        allow_credentials=False,
+    )
+
+    @app.exception_handler(CryptoGuardError)
+    async def _domain_error(request: Request, exc: CryptoGuardError) -> JSONResponse:
+        return _error(exc.http_status, exc.code, exc.message, **exc.details)
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # Input values are deliberately not echoed back.
+        fields = [
+            {"loc": [str(part) for part in err.get("loc", ())], "msg": str(err.get("msg", ""))}
+            for err in exc.errors()[:20]
+        ]
+        return _error(422, "invalid_request", "Request validation failed.", fields=fields)
+
+    @app.exception_handler(Exception)
+    async def _unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("unhandled error", extra={"ctx": {"path": request.url.path}})
+        return _error(500, "internal_error", "An internal error occurred.")
+
+    app.include_router(router)
+    return app
+
+
+async def _enforce_limits(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+    settings: Settings,
+    limiter: TokenBucketLimiter,
+) -> Response:
+    if request.method == "POST":
+        length = request.headers.get("content-length")
+        if length is None:
+            return _error(411, "length_required", "POST requests must send Content-Length.")
+        if not length.isdigit() or int(length) > settings.max_request_body_bytes:
+            return _error(
+                413,
+                "request_too_large",
+                f"Request body exceeds {settings.max_request_body_bytes} bytes.",
+            )
+    if request.url.path.startswith("/api/") and request.url.path not in _UNLIMITED_PATHS:
+        client = request.client.host if request.client else "unknown"
+        wait = limiter.acquire(client)
+        if wait > 0:
+            response = _error(429, "rate_limited", "Too many requests; slow down.")
+            response.headers["Retry-After"] = str(math.ceil(wait))
+            return response
+    return await call_next(request)
