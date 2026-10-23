@@ -9,15 +9,23 @@ import os
 
 import pytest
 
-from cryptoguard.blockchain.abi import APPROVAL_TOPIC, SEL_ALLOWANCE, decode_uint256, encode_call
+from cryptoguard.blockchain.abi import (
+    APPROVAL_TOPIC,
+    SEL_ALLOWANCE,
+    TRANSFER_TOPIC,
+    decode_uint256,
+    encode_call,
+)
 from cryptoguard.blockchain.eip7702 import CodeKind, classify_code
-from cryptoguard.blockchain.erc20 import classify_approval_log
+from cryptoguard.blockchain.erc20 import classify_approval_log, classify_transfer_log
 from cryptoguard.blockchain.provider import build_rpc_provider
 from cryptoguard.core.chains import get_chain
 from cryptoguard.core.config import Settings
 from cryptoguard.core.known_contracts import KNOWN_CONTRACTS
 from cryptoguard.services.approvals import ScanLimits, scan_approvals
 from cryptoguard.services.inspection import inspect_address
+from cryptoguard.services.poisoning import scan_poisoning
+from cryptoguard.services.snapshots import DetectionOptions
 
 pytestmark = pytest.mark.live
 
@@ -77,6 +85,36 @@ async def test_live_scoped_approval_scan_matches_raw_allowance(live_settings: Se
             report.block_number,
         )
         assert entry.current_allowance.raw == str(decode_uint256(raw))
+    finally:
+        await provider.aclose()
+
+
+async def test_live_poisoning_scan_on_a_zero_value_recipient(live_settings: Settings) -> None:
+    """Scan a wallet that just appeared as the 'from' of a zero-value USDC transfer (the
+    classic poisoning fingerprint). Real outcomes vary, so this checks soundness, not counts."""
+    provider = build_rpc_provider(live_settings)
+    try:
+        head = await provider.block_number()
+        logs = await provider.get_logs(
+            from_block=head - 10, to_block=head, address=USDC, topics=[TRANSFER_TOPIC]
+        )
+        zero = [e for _, e in map(classify_transfer_log, logs) if e is not None and e.value == 0]
+        if not zero:
+            pytest.skip("no zero-value USDC transfers in the last 10 blocks")
+        report = await scan_poisoning(
+            provider,
+            zero[-1].sender,
+            chain=get_chain(1),
+            limits=ScanLimits.from_settings(live_settings),
+            options=DetectionOptions.from_settings(live_settings),
+            lookback_blocks=1000,
+            tokens=[USDC],
+        )
+        assert report.transfers_analyzed >= 1
+        for case in report.cases:
+            assert case.suspect != case.reference
+            assert case.prefix_match + case.suffix_match >= 7
+            assert case.signals
     finally:
         await provider.aclose()
 

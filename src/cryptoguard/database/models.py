@@ -196,3 +196,36 @@ class FindingTransitionRecord(Base):
     reason: Mapped[str] = mapped_column(String(300))
     block_number: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class TokenTransferRecord(Base):
+    """An ERC-20 Transfer involving a monitored wallet (either direction).
+
+    Identity is (chain, wallet, block hash, log index), so re-scans are idempotent and a
+    reorged-out log is a different row. ``tx_sender`` is the transaction signer when it was
+    looked up, otherwise NULL (unknown).
+    """
+
+    __tablename__ = "token_transfers"
+    __table_args__ = (
+        UniqueConstraint(
+            "chain_id", "wallet", "block_hash", "log_index", name="uq_token_transfer_log"
+        ),
+        Index("ix_token_transfer_wallet_block", "chain_id", "wallet", "block_number"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chain_id: Mapped[int] = mapped_column(BigInteger)
+    wallet: Mapped[str] = mapped_column(String(42))
+    token: Mapped[str] = mapped_column(String(42))
+    sender: Mapped[str] = mapped_column(String(42))
+    recipient: Mapped[str] = mapped_column(String(42))
+    value: Mapped[str] = mapped_column(String(78))
+    block_number: Mapped[int] = mapped_column(BigInteger)
+    block_hash: Mapped[str] = mapped_column(String(66))
+    transaction_hash: Mapped[str] = mapped_column(String(66))
+    transaction_index: Mapped[int] = mapped_column(BigInteger)
+    log_index: Mapped[int] = mapped_column(BigInteger)
+    tx_sender: Mapped[str | None] = mapped_column(String(42), nullable=True)
+    data_source: Mapped[str] = mapped_column(String(32))
+    ingested_at: Mapped[datetime] = mapped_column(UTCDateTime())

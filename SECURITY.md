@@ -43,7 +43,7 @@
 ## Privacy
 
 Watched-address history can link a person to wallets. Data is stored locally (`data/`,
-git-ignored); `cryptoguard purge --yes` deletes it. Inspected addresses are sent to the
+git-ignored); `cryptoguard purge --yes` deletes it, including stored transfer history. Inspected addresses are sent to the
 configured RPC provider and nowhere else. There are no accounts or analytics.
 
 ## Supported environments

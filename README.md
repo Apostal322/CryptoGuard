@@ -5,9 +5,8 @@ observably true about an address, the block that observation comes from, and wha
 observation does *not* show. It never asks for private keys, seed phrases or signatures, and
 it has no code path that signs or broadcasts transactions.
 
-> **Status: Phase 3 (wallet security timeline).** Address-poisoning detection, the web UI,
-> the threat graph and incident replay are planned and **not implemented yet** (see
-> [Roadmap](#roadmap)).
+> **Status: Phase 4 (address-poisoning detection).** The web UI, the threat graph and
+> incident replay are planned and **not implemented yet** (see [Roadmap](#roadmap)).
 
 ## What works today
 
@@ -28,9 +27,12 @@ it has no code path that signs or broadcasts transactions.
 | Versioned rule engine (`cg-rules` 1.0.0) with separate severity and confidence, deterministic finding fingerprints | Implemented |
 | Finding lifecycle: new → active → acknowledged → resolved / superseded, reopen, audit trail; never resolved on unverifiable data | Implemented |
 | Reorg handling for history: orphaned snapshots detected, marked and rebased | Implemented |
-| CLI (`inspect`, `approvals`, `snapshot`, `timeline`, `findings`, `ack`, `status`, `serve`, `purge`, `demo-addresses`) | Implemented |
+| ERC-20 transfer discovery (both directions) with bounded transaction-signer lookups, stored per wallet | Implemented |
+| Address-poisoning detector: full-address prefix/suffix similarity, zero-value / spoofed / unsolicited transfer context, wallet-sent-to-lookalike evidence, configurable thresholds, false-positive guards | Implemented |
+| Detector framework (pure, versioned detectors merged into the finding lifecycle) | Implemented |
+| CLI (`inspect`, `approvals`, `poisoning`, `snapshot`, `timeline`, `findings`, `ack`, `status`, `serve`, `purge`, `demo-addresses`) | Implemented |
 | Explicit demo mode with clearly labelled fictional fixtures | Implemented |
-| Scheduled monitoring loop, NFT/Permit2 approvals, poisoning detector, UI, graph, replay, ML | Not yet |
+| Scheduled monitoring loop, native-ETH transfers, NFT/Permit2 approvals, UI, graph, replay, ML | Not yet |
 
 ## Install (Windows PowerShell)
 
@@ -81,6 +83,10 @@ uv run cryptoguard approvals <address>
 uv run cryptoguard approvals <address> --lookback 50000
 uv run cryptoguard approvals <address> --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 
+# Address poisoning: one-off scan of recent ERC-20 transfers (nothing stored).
+# Snapshots run the same detector over the wallet's stored transfer history.
+uv run cryptoguard poisoning <address> --lookback 5000
+
 # Security timeline: each snapshot is compared with the previous one
 uv run cryptoguard snapshot <address>            # first run = baseline
 uv run cryptoguard snapshot <address>            # later runs list what changed and why
@@ -113,6 +119,7 @@ API:
 | GET | `/api/v1/wallets/{address}/findings` | Findings (`status=open` default, `all`, or a single status) |
 | GET | `/api/v1/findings/{finding_id}` | Finding with evidence and full transition history |
 | POST | `/api/v1/findings/{finding_id}/acknowledge` | Mark a new/active finding acknowledged (`{}` body) |
+| POST | `/api/v1/wallets/{address}/poisoning/scan` | `{"lookback_blocks"?, "tokens"?}` → poisoning cases with similarity features, signals and evidence |
 | GET | `/api/v1/rules` | The ruleset: id, version, severities, rule descriptions |
 | GET | `/api/v1/wallets/{address}/observations` | Stored observations, paginated (`limit`, `offset`) |
 | GET | `/api/v1/demo/addresses` | Fixture addresses (demo mode only) |
@@ -135,9 +142,9 @@ $env:CRYPTOGUARD_LIVE_RPC_URL = "https://ethereum-rpc.publicnode.com"; uv run py
 
 1. ~~Backend foundation~~
 2. ~~ERC-20 approval discovery and allowance verification~~
-3. ~~Wallet security timeline: snapshots, deterministic deltas, finding lifecycle~~ (this
-   milestone; a scheduled monitoring loop is still to come)
-4. Address-poisoning detector with false-positive fixtures
+3. ~~Wallet security timeline: snapshots, deterministic deltas, finding lifecycle~~ (a
+   scheduled monitoring loop is still to come)
+4. ~~Address-poisoning detector with false-positive fixtures~~ (this milestone)
 5. Web UI (Next.js, TypeScript, Tailwind)
 6. Threat graph
 7. Historical incident replay with point-in-time guarantees

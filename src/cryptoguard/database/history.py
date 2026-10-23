@@ -14,14 +14,19 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from cryptoguard.blockchain.erc20 import ApprovalEvent
+from cryptoguard.blockchain.erc20 import ApprovalEvent, TransferEvent
 from cryptoguard.database.models import (
     ApprovalEventRecord,
     FindingRecord,
     FindingTransitionRecord,
+    TokenTransferRecord,
     WalletSnapshotRecord,
 )
-from cryptoguard.database.repository import ObservationRepository, insert_approval_events
+from cryptoguard.database.repository import (
+    ObservationRepository,
+    insert_approval_events,
+    insert_transfers,
+)
 from cryptoguard.history.delta import Change
 from cryptoguard.history.state import SNAPSHOT_SCHEMA_VERSION, WalletState, state_hash
 from cryptoguard.risk.lifecycle import (
@@ -134,10 +139,54 @@ class HistoryRepository(ObservationRepository):
                     & (ApprovalEventRecord.block_number > keep_up_to_block)
                 )
             )
+            session.execute(
+                delete(TokenTransferRecord).where(
+                    (TokenTransferRecord.chain_id == chain_id)
+                    & (TokenTransferRecord.wallet == address)
+                    & (TokenTransferRecord.block_number > keep_up_to_block)
+                )
+            )
         return int(getattr(result, "rowcount", 0) or 0)
 
+    def load_transfers(
+        self, chain_id: int, wallet: str, data_source: str, limit: int
+    ) -> list[TransferEvent]:
+        """The wallet's stored transfers (most recent ``limit``), in chain order."""
+        with self._sessions() as session:
+            rows = session.scalars(
+                select(TokenTransferRecord)
+                .where(
+                    (TokenTransferRecord.chain_id == chain_id)
+                    & (TokenTransferRecord.wallet == wallet)
+                    & (TokenTransferRecord.data_source == data_source)
+                )
+                .order_by(
+                    TokenTransferRecord.block_number.desc(), TokenTransferRecord.log_index.desc()
+                )
+                .limit(limit)
+            ).all()
+        return [
+            TransferEvent(
+                token=r.token,
+                sender=r.sender,
+                recipient=r.recipient,
+                value=int(r.value),
+                block_number=r.block_number,
+                block_hash=r.block_hash,
+                transaction_hash=r.transaction_hash,
+                transaction_index=r.transaction_index,
+                log_index=r.log_index,
+                tx_sender=r.tx_sender,
+            )
+            for r in reversed(rows)
+        ]
+
     def record_snapshot(
-        self, new: NewSnapshot, events: Sequence[ApprovalEvent], evaluation: RuleEvaluation
+        self,
+        new: NewSnapshot,
+        events: Sequence[ApprovalEvent],
+        evaluation: RuleEvaluation,
+        transfers: Sequence[TransferEvent] = (),
     ) -> RecordedSnapshot:
         now = datetime.now(UTC)
         with self._sessions() as session, session.begin():
@@ -153,6 +202,7 @@ class HistoryRepository(ObservationRepository):
                 return RecordedSnapshot(existing.id, False, 0, [], [])
 
             new_events = insert_approval_events(session, new.chain_id, new.data_source, events)
+            insert_transfers(session, new.chain_id, new.address, new.data_source, transfers)
             row = WalletSnapshotRecord(
                 chain_id=new.chain_id,
                 address=new.address,

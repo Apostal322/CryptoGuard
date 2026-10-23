@@ -21,8 +21,10 @@ from cryptoguard.history.delta import Change
 from cryptoguard.risk.lifecycle import OPEN_STATUSES, FindingStatus, InvalidTransitionError
 from cryptoguard.risk.rules import RULES, RULESET_ID, RULESET_VERSION, Severity
 from cryptoguard.services.approvals import ScanLimits
+from cryptoguard.services.poisoning import PoisoningReport, scan_poisoning
 from cryptoguard.services.providers import require_provider
 from cryptoguard.services.snapshots import (
+    DetectionOptions,
     FindingEventView,
     SnapshotCoverage,
     SnapshotOutcome,
@@ -204,6 +206,7 @@ async def create_snapshot(request: Request, address: str, body: SnapshotRequest)
         block=body.block,
         tokens=body.tokens,
         lookback_blocks=body.lookback_blocks,
+        options=DetectionOptions.from_settings(state.settings),
     )
 
 
@@ -277,6 +280,30 @@ async def acknowledge_finding(request: Request, finding_id: str) -> FindingDetai
     found = await asyncio.to_thread(repo.get_finding, fingerprint)
     assert found is not None
     return _detail(*found)
+
+
+class PoisoningScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lookback_blocks: int | None = Field(default=None, ge=1)
+    tokens: list[str] | None = Field(default=None, max_length=25)
+
+
+@router.post("/wallets/{address}/poisoning/scan", response_model=PoisoningReport)
+async def poisoning_scan(
+    request: Request, address: str, body: PoisoningScanRequest
+) -> PoisoningReport:
+    """One-off address-poisoning scan of recent ERC-20 transfers (nothing is stored)."""
+    state = get_state(request)
+    return await scan_poisoning(
+        require_provider(state.provider),
+        to_checksum_address(address),
+        chain=state.chain,
+        limits=ScanLimits.from_settings(state.settings),
+        options=DetectionOptions.from_settings(state.settings),
+        lookback_blocks=body.lookback_blocks,
+        tokens=body.tokens,
+    )
 
 
 @router.get("/rules", response_model=RulesetView)

@@ -23,7 +23,7 @@ from cryptoguard.history.state import ApprovalState, WalletState
 from cryptoguard.services.approvals import AllowanceLevel
 
 RULESET_ID = "cg-rules"
-RULESET_VERSION = "1.0.0"
+RULESET_VERSION = "1.1.0"
 RULESET_MAJOR = RULESET_VERSION.split(".")[0]
 
 
@@ -82,12 +82,31 @@ RULES: tuple[Rule, ...] = (
         "data_integrity",
         "Account code starts with 0xef0100 but is not a valid 23-byte delegation indicator.",
     ),
+    Rule(
+        "CG-POI-001",
+        "address_poisoning",
+        "A lookalike of an address the wallet sent to appears in its transfer history together "
+        "with poisoning context (zero-value transfer, spoofed outgoing transfer, or unsolicited "
+        "incoming transfer).",
+    ),
+    Rule(
+        "CG-POI-002",
+        "address_poisoning",
+        "A lookalike of an address the wallet sent to appears in its transfer history without "
+        "other poisoning context (informational; low confidence).",
+    ),
+    Rule(
+        "CG-POI-003",
+        "address_poisoning",
+        "The wallet itself sent tokens to a lookalike of an address it had used before "
+        "(possible loss to address poisoning).",
+    ),
 )
 _RULES = {rule.rule_id: rule for rule in RULES}
 
 
 class EvidenceRef(BaseModel):
-    kind: Literal["approval_state", "approval_event", "account_code"]
+    kind: Literal["approval_state", "approval_event", "account_code", "transfer_event"]
     description: str
     block_number: int
     transaction_hash: str | None = None
@@ -119,7 +138,7 @@ def fingerprint(rule_id: str, chain_id: int, wallet: str, subject: str) -> str:
     return "0x" + keccak256(material.encode()).hex()
 
 
-def _candidate(
+def make_candidate(
     rule_id: str,
     *,
     chain_id: int,
@@ -176,7 +195,7 @@ def _evaluate_approval(
         out.unverifiable_subjects.add(subject)
         if int(approval.latest_event.value) > 0:
             out.candidates.append(
-                _candidate(
+                make_candidate(
                     "CG-APR-003",
                     chain_id=chain_id,
                     wallet=wallet,
@@ -197,7 +216,7 @@ def _evaluate_approval(
     if approval.level in (AllowanceLevel.UNLIMITED, AllowanceLevel.EFFECTIVELY_UNLIMITED):
         has_balance = approval.balance is not None and int(approval.balance) > 0
         out.candidates.append(
-            _candidate(
+            make_candidate(
                 "CG-APR-001",
                 chain_id=chain_id,
                 wallet=wallet,
@@ -219,7 +238,7 @@ def _evaluate_approval(
         )
     if approval.spender_code_kind is CodeKind.NO_CODE:
         out.candidates.append(
-            _candidate(
+            make_candidate(
                 "CG-APR-002",
                 chain_id=chain_id,
                 wallet=wallet,
@@ -250,7 +269,7 @@ def evaluate(state: WalletState, *, chain_id: int, wallet: str, block: int) -> R
     if account.code_kind is CodeKind.EIP7702_DELEGATION and account.target:
         subject = f"delegation:{account.target}"
         out.candidates.append(
-            _candidate(
+            make_candidate(
                 "CG-DEL-001",
                 chain_id=chain_id,
                 wallet=wallet,
@@ -265,7 +284,7 @@ def evaluate(state: WalletState, *, chain_id: int, wallet: str, block: int) -> R
         )
         if account.target_code_kind is CodeKind.NO_CODE:
             out.candidates.append(
-                _candidate(
+                make_candidate(
                     "CG-DEL-002",
                     chain_id=chain_id,
                     wallet=wallet,
@@ -280,7 +299,7 @@ def evaluate(state: WalletState, *, chain_id: int, wallet: str, block: int) -> R
             )
     elif account.code_kind is CodeKind.MALFORMED_DELEGATION_PREFIX:
         out.candidates.append(
-            _candidate(
+            make_candidate(
                 "CG-COD-001",
                 chain_id=chain_id,
                 wallet=wallet,

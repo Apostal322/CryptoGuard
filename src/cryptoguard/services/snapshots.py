@@ -16,6 +16,7 @@ Coverage is cumulative and explicit: windows that were never scanned are listed 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
 
@@ -25,8 +26,11 @@ from cryptoguard.blockchain.erc20 import ApprovalEvent
 from cryptoguard.blockchain.provider import EthereumProvider
 from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.chains import ChainInfo
+from cryptoguard.core.config import Settings
 from cryptoguard.core.errors import InvalidScanRequestError, ReorgDetectedError
 from cryptoguard.database.history import FindingEvent, HistoryRepository, NewSnapshot, SnapshotRef
+from cryptoguard.detectors.base import DetectionContext, StateRulesDetector, run_detectors
+from cryptoguard.detectors.poisoning import PoisoningConfig, PoisoningDetector
 from cryptoguard.history.delta import Change, compute_delta
 from cryptoguard.history.state import (
     ApprovalState,
@@ -36,7 +40,6 @@ from cryptoguard.history.state import (
     pair_key,
     state_hash,
 )
-from cryptoguard.risk.rules import evaluate
 from cryptoguard.services.approvals import (
     Pair,
     ScanLimits,
@@ -46,6 +49,7 @@ from cryptoguard.services.approvals import (
     verify_approval_pairs,
 )
 from cryptoguard.services.inspection import inspect_address
+from cryptoguard.services.transfers import discover_transfers
 
 REORG_LOOKBACK_SNAPSHOTS = 10
 
@@ -60,6 +64,34 @@ class SnapshotCoverage(BaseModel):
     gaps: list[CoverageRange]
     unverified_pairs: int
     description: str
+    # Snapshots recorded before transfer monitoring existed have no transfer coverage.
+    transfers_scanned: list[CoverageRange] = []
+    transfer_gaps: list[CoverageRange] = []
+
+
+@dataclass(frozen=True)
+class DetectionOptions:
+    poisoning: PoisoningConfig
+    max_sender_lookups: int
+    history_limit: int
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> DetectionOptions:
+        return cls(
+            poisoning=PoisoningConfig(
+                min_prefix=settings.poisoning_min_prefix,
+                min_suffix=settings.poisoning_min_suffix,
+                min_affix_total=settings.poisoning_min_affix_total,
+                reaction_window_blocks=settings.poisoning_reaction_window_blocks,
+            ),
+            max_sender_lookups=settings.transfer_max_sender_lookups,
+            history_limit=settings.transfer_history_limit,
+        )
+
+
+DEFAULT_DETECTION = DetectionOptions(
+    PoisoningConfig(), max_sender_lookups=100, history_limit=20_000
+)
 
 
 class FindingEventView(BaseModel):
@@ -128,30 +160,47 @@ def _gaps(scanned: list[CoverageRange]) -> list[CoverageRange]:
     ]
 
 
+def _extend(base: SnapshotRef | None, key: str, new: CoverageRange) -> list[CoverageRange]:
+    previous = [CoverageRange.model_validate(r) for r in base.coverage.get(key, [])] if base else []
+    return _merge([*previous, new])
+
+
+def _ranges(ranges: list[CoverageRange]) -> str:
+    return ", ".join(f"{r.from_block}-{r.to_block}" for r in ranges)
+
+
 def _coverage(
     base: SnapshotRef | None,
     scanned_from: int,
+    transfers_from: int,
     to_block: int,
     token_scope: list[str] | None,
     unverified: int,
 ) -> SnapshotCoverage:
-    previous = (
-        [CoverageRange.model_validate(r) for r in base.coverage.get("scanned", [])] if base else []
+    scanned = _extend(base, "scanned", CoverageRange(from_block=scanned_from, to_block=to_block))
+    transfers = _extend(
+        base, "transfers_scanned", CoverageRange(from_block=transfers_from, to_block=to_block)
     )
-    scanned = _merge([*previous, CoverageRange(from_block=scanned_from, to_block=to_block)])
-    gaps = _gaps(scanned)
+    gaps, transfer_gaps = _gaps(scanned), _gaps(transfers)
     scope = f"token contracts {', '.join(token_scope)}" if token_scope else "all token contracts"
     text = (
-        f"Approval events scanned for {scope} in "
-        + ", ".join(f"{r.from_block}-{r.to_block}" for r in scanned)
-        + ". Approvals granted outside these ranges are not discovered."
+        f"Approval events scanned for {scope} in {_ranges(scanned)}; ERC-20 transfers in "
+        f"{_ranges(transfers)}. Activity outside these ranges is not discovered, and native ETH "
+        "transfers are not visible."
     )
     if gaps:
-        text += " NOT scanned: " + ", ".join(f"{g.from_block}-{g.to_block}" for g in gaps) + "."
+        text += f" Approvals NOT scanned: {_ranges(gaps)}."
+    if transfer_gaps:
+        text += f" Transfers NOT scanned: {_ranges(transfer_gaps)}."
     if unverified:
         text += f" {unverified} token/spender pair(s) could not be re-verified (pair limit)."
     return SnapshotCoverage(
-        scanned=scanned, gaps=gaps, unverified_pairs=unverified, description=text
+        scanned=scanned,
+        gaps=gaps,
+        unverified_pairs=unverified,
+        description=text,
+        transfers_scanned=transfers,
+        transfer_gaps=transfer_gaps,
     )
 
 
@@ -186,6 +235,7 @@ async def take_snapshot(
     block: int | None = None,
     tokens: list[str] | None = None,
     lookback_blocks: int | None = None,
+    options: DetectionOptions = DEFAULT_DETECTION,
 ) -> SnapshotOutcome:
     owner = to_checksum_address(owner)
     source = provider.source
@@ -248,6 +298,15 @@ async def take_snapshot(
         chain=chain,
         block=target,
     )
+    transfers = await discover_transfers(
+        provider,
+        owner,
+        from_block=scan_from,
+        to_block=target,
+        limits=limits,
+        token_scope=token_scope,
+        max_sender_lookups=options.max_sender_lookups,
+    )
     if (await provider.get_block(target)).hash != header.hash:
         raise ReorgDetectedError("The chain reorganized during the snapshot; try again.")
 
@@ -278,9 +337,32 @@ async def take_snapshot(
         if base is not None
         else []
     )
-    evaluation = evaluate(state, chain_id=chain.chain_id, wallet=owner, block=target)
+    stored = await asyncio.to_thread(
+        repo.load_transfers, chain.chain_id, owner, source, options.history_limit
+    )
+    known = {(t.block_hash, t.log_index) for t in stored}
+    history = [
+        *stored,
+        *(t for t in transfers.transfers if (t.block_hash, t.log_index) not in known),
+    ]
     coverage = _coverage(
-        base, discovery.coverage.scanned_from_block, target, token_scope, len(dropped)
+        base,
+        discovery.coverage.scanned_from_block,
+        transfers.scanned_from,
+        target,
+        token_scope,
+        len(dropped),
+    )
+    evaluation = run_detectors(
+        [StateRulesDetector(), PoisoningDetector(options.poisoning)],
+        DetectionContext(
+            chain_id=chain.chain_id,
+            wallet=owner,
+            block=target,
+            state=state,
+            transfers=history,
+            transfer_coverage=coverage.description,
+        ),
     )
     recorded = await asyncio.to_thread(
         repo.record_snapshot,
@@ -300,6 +382,7 @@ async def take_snapshot(
         ),
         discovery.events,
         evaluation,
+        transfers.transfers,
     )
     notes = _notes(base, simulated, orphaned)
     return SnapshotOutcome(

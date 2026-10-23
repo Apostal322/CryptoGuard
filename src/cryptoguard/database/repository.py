@@ -13,13 +13,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from cryptoguard.blockchain.erc20 import ApprovalEvent
+from cryptoguard.blockchain.erc20 import ApprovalEvent, TransferEvent
 from cryptoguard.database.models import (
     AddressObservation,
     ApprovalEventRecord,
     Base,
     FindingRecord,
     FindingTransitionRecord,
+    TokenTransferRecord,
     WalletSnapshotRecord,
 )
 
@@ -77,6 +78,49 @@ def insert_approval_events(
             ingested_at=now,
         )
         for e in new
+    )
+    return len(new)
+
+
+def insert_transfers(
+    session: Session,
+    chain_id: int,
+    wallet: str,
+    data_source: str,
+    transfers: Sequence[TransferEvent],
+) -> int:
+    """Insert transfers not yet stored for ``wallet``. Returns the number inserted."""
+    if not transfers:
+        return 0
+    hashes = {t.block_hash for t in transfers}
+    rows = session.execute(
+        select(TokenTransferRecord.block_hash, TokenTransferRecord.log_index).where(
+            (TokenTransferRecord.chain_id == chain_id)
+            & (TokenTransferRecord.wallet == wallet)
+            & TokenTransferRecord.block_hash.in_(hashes)
+        )
+    )
+    existing = {(block_hash, log_index) for block_hash, log_index in rows}
+    new = [t for t in transfers if (t.block_hash, t.log_index) not in existing]
+    now = datetime.now(UTC)
+    session.add_all(
+        TokenTransferRecord(
+            chain_id=chain_id,
+            wallet=wallet,
+            token=t.token,
+            sender=t.sender,
+            recipient=t.recipient,
+            value=str(t.value),
+            block_number=t.block_number,
+            block_hash=t.block_hash,
+            transaction_hash=t.transaction_hash,
+            transaction_index=t.transaction_index,
+            log_index=t.log_index,
+            tx_sender=t.tx_sender,
+            data_source=data_source,
+            ingested_at=now,
+        )
+        for t in new
     )
     return len(new)
 
@@ -203,7 +247,9 @@ class ObservationRepository:
         snapshots = delete(WalletSnapshotRecord)
         observations = delete(AddressObservation)
         events = delete(ApprovalEventRecord)
+        transfers = delete(TokenTransferRecord)
         if address is not None:
+            transfers = transfers.where(TokenTransferRecord.wallet == address)
             finding_ids = finding_ids.where(FindingRecord.address == address)
             transitions = transitions.where(FindingTransitionRecord.finding_id.in_(finding_ids))
             findings = findings.where(FindingRecord.address == address)
@@ -213,7 +259,7 @@ class ObservationRepository:
         removed = 0
         with self._sessions() as session, session.begin():
             # Children first, so foreign keys hold on databases that enforce them.
-            for statement in (transitions, findings, snapshots, observations, events):
+            for statement in (transitions, findings, snapshots, observations, events, transfers):
                 removed += int(getattr(session.execute(statement), "rowcount", 0) or 0)
         return removed
 

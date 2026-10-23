@@ -35,8 +35,9 @@ from cryptoguard.services.approvals import (
 )
 from cryptoguard.services.demo import DEMO_ACCOUNTS
 from cryptoguard.services.inspection import AddressInspection, inspect_address
+from cryptoguard.services.poisoning import PoisoningReport, scan_poisoning
 from cryptoguard.services.providers import build_provider, require_provider
-from cryptoguard.services.snapshots import SnapshotOutcome, take_snapshot
+from cryptoguard.services.snapshots import DetectionOptions, SnapshotOutcome, take_snapshot
 
 
 def _load_settings(demo: bool) -> Settings:
@@ -233,9 +234,53 @@ async def _snapshot(
             block=block,
             tokens=tokens,
             lookback_blocks=lookback,
+            options=DetectionOptions.from_settings(settings),
         )
     finally:
         await provider.aclose()
+
+
+async def _poisoning(
+    settings: Settings, address: str, *, lookback: int | None, tokens: list[str] | None
+) -> PoisoningReport:
+    provider = require_provider(build_provider(settings))
+    try:
+        return await scan_poisoning(
+            provider,
+            address,
+            chain=get_chain(settings.chain_id),
+            limits=ScanLimits.from_settings(settings),
+            options=DetectionOptions.from_settings(settings),
+            lookback_blocks=lookback,
+            tokens=tokens,
+        )
+    finally:
+        await provider.aclose()
+
+
+def _render_poisoning(report: PoisoningReport) -> str:
+    lines = ["*** SIMULATED DEMO DATA ***"] if report.simulated else []
+    lines += [
+        f"Address-poisoning scan of {report.owner} at block {report.block_number}: "
+        f"{report.transfers_analyzed} ERC-20 transfer(s) analyzed, {len(report.cases)} case(s).",
+    ]
+    for case in report.cases:
+        lines += [
+            "",
+            f"  [{case.severity.value}/{case.confidence.value}] {case.rule_id}",
+            f"  Suspect:   {case.suspect}",
+            f"  Imitates:  {case.reference} (first used block {case.reference_first_used_block}"
+            + ("" if case.reference_confirmed else ", signer unverified")
+            + ")",
+            f"  Match:     first {case.prefix_match} / last {case.suffix_match} hex chars "
+            f"({case.displayed_as}); random odds {case.random_match_odds}",
+        ]
+        for signal in case.signals:
+            tx = f" tx {signal.transaction_hash}" if signal.transaction_hash else ""
+            lines.append(f"    - {signal.code}: {signal.description}{tx}")
+        lines.append(f"  Action:    {case.recommended_action}")
+    lines += ["", "Limitations:"] + [f"  - {item}" for item in report.limitations]
+    return "\n".join(lines)
 
 
 def _print_timeline(settings: Settings, address: str, limit: int) -> None:
@@ -329,6 +374,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_snapshot.add_argument("--demo", action="store_true")
     p_snapshot.add_argument("--json", action="store_true")
 
+    p_poison = sub.add_parser("poisoning", help="one-off address-poisoning scan (not stored)")
+    p_poison.add_argument("address")
+    p_poison.add_argument("--lookback", type=int, help="number of recent blocks to scan")
+    p_poison.add_argument("--token", action="append", dest="tokens", help="token scope")
+    p_poison.add_argument("--demo", action="store_true")
+    p_poison.add_argument("--json", action="store_true")
+
     p_timeline = sub.add_parser("timeline", help="show stored snapshots and their changes")
     p_timeline.add_argument("address")
     p_timeline.add_argument("--limit", type=int, default=20)
@@ -400,6 +452,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
             print(outcome.model_dump_json(indent=2) if args.json else _render_snapshot(outcome))
+            return 0
+
+        if args.command == "poisoning":
+            poison_report = asyncio.run(
+                _poisoning(settings, args.address, lookback=args.lookback, tokens=args.tokens)
+            )
+            print(
+                poison_report.model_dump_json(indent=2)
+                if args.json
+                else _render_poisoning(poison_report)
+            )
             return 0
 
         if args.command == "timeline":

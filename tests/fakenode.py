@@ -21,6 +21,7 @@ from cryptoguard.blockchain.abi import (
     SEL_BALANCE_OF,
     SEL_DECIMALS,
     SEL_SYMBOL,
+    TRANSFER_TOPIC,
     address_topic,
     decode_address_word,
 )
@@ -86,6 +87,7 @@ class FakeNode:
         self.logs: list[dict[str, Any]] = []
         self.max_log_range: int | None = None  # emulate a provider's eth_getLogs range cap
         self.require_log_address = False  # emulate providers that reject address-less queries
+        self.tx_senders: dict[str, str] = {}  # tx hash -> signer, served by getTransactionByHash
 
     # -- helpers ---------------------------------------------------------------------------
     def set_account(self, address: str, *, balance: int = 0, code: bytes = b"") -> None:
@@ -97,6 +99,34 @@ class FakeNode:
         self.tokens[address.lower()] = token
         self.code.setdefault(address.lower(), bytes.fromhex("6080604052"))
         return token
+
+    def add_transfer_log(
+        self,
+        token: str,
+        sender: str,
+        recipient: str,
+        value: int,
+        *,
+        block: int,
+        signer: str,
+        log_index: int = 0,
+    ) -> dict[str, Any]:
+        """Add an ERC-20 Transfer log and record ``signer`` as its transaction's ``from``."""
+        tx_hash = "0x" + keccak256(f"transfer-tx:{block}:{log_index}".encode()).hex()
+        log = {
+            "address": to_checksum_address(token).lower(),
+            "topics": [TRANSFER_TOPIC, address_topic(sender), address_topic(recipient)],
+            "data": "0x" + value.to_bytes(32, "big").hex(),
+            "blockNumber": hex(block),
+            "blockHash": block_hash(block, self.fork),
+            "transactionHash": tx_hash,
+            "transactionIndex": "0x0",
+            "logIndex": hex(log_index),
+            "removed": False,
+        }
+        self.logs.append(log)
+        self.tx_senders[tx_hash] = signer.lower()
+        return log
 
     def add_approval_log(
         self,
@@ -187,6 +217,9 @@ class FakeNode:
             return "0x" + self.code.get(params[0].lower(), b"").hex()
         if method == "eth_getLogs":
             return self._get_logs(params[0])
+        if method == "eth_getTransactionByHash":
+            sender = self.tx_senders.get(params[0])
+            return {"hash": params[0], "from": sender} if sender else None
         if method == "eth_call":
             token = self.tokens.get(params[0]["to"].lower())
             output = token.call(bytes.fromhex(params[0]["data"][2:])) if token else None

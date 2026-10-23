@@ -37,6 +37,7 @@ from cryptoguard.blockchain.abi import (
 )
 from cryptoguard.blockchain.eip7702 import CodeKind, classify_code
 from cryptoguard.blockchain.erc20 import ApprovalEvent, ApprovalLogShape, classify_approval_log
+from cryptoguard.blockchain.logscan import scan_logs
 from cryptoguard.blockchain.provider import BlockHeader, DataSource, EthereumProvider
 from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.chains import ChainInfo, explorer_tx_url
@@ -44,11 +45,8 @@ from cryptoguard.core.config import Settings
 from cryptoguard.core.errors import (
     BlockRangeTooLargeError,
     InvalidScanRequestError,
-    LogFilterRestrictedError,
-    LogQueryTooLargeError,
     ReorgDetectedError,
     RpcError,
-    ScanBudgetExceededError,
 )
 from cryptoguard.core.known_contracts import lookup_known_contract
 from cryptoguard.core.units import format_units
@@ -206,55 +204,21 @@ async def _scan_logs(
     limits: ScanLimits,
     tokens: list[str] | None,
 ) -> tuple[list[dict[str, object]], ScanCoverage]:
-    owner_topic = address_topic(owner)
-    pending: list[tuple[int, int]] = []
-    next_high = to_block
-    lowest_scanned = to_block + 1
-    requests = splits = 0
-    logs: list[dict[str, object]] = []
-    exhausted = False
-
-    while True:
-        if not pending:
-            if next_high < from_block:
-                break
-            low = max(from_block, next_high - limits.chunk_blocks + 1)
-            pending.append((low, next_high))
-            next_high = low - 1
-        if requests >= limits.max_log_requests:
-            exhausted = True
-            break
-        low, high = pending.pop()
-        requests += 1
-        try:
-            batch = await provider.get_logs(
-                from_block=low,
-                to_block=high,
-                address=tokens,
-                topics=[APPROVAL_TOPIC, owner_topic],
-            )
-        except (LogQueryTooLargeError, BlockRangeTooLargeError):
-            if low == high:
-                raise
-            middle = (low + high) // 2
-            pending.append((low, middle))
-            pending.append((middle + 1, high))  # popped first: keeps newest-first contiguity
-            splits += 1
-            continue
-        logs.extend(batch)
-        lowest_scanned = low
-
-    if lowest_scanned > to_block:
-        raise ScanBudgetExceededError(
-            "The log request budget was exhausted before any block range was scanned."
-        )
-    complete = not exhausted and lowest_scanned == from_block
+    scan = await scan_logs(
+        provider,
+        topics=[APPROVAL_TOPIC, address_topic(owner)],
+        from_block=from_block,
+        to_block=to_block,
+        chunk_blocks=limits.chunk_blocks,
+        max_requests=limits.max_log_requests,
+        address=tokens,
+    )
     description = (
-        f"Approval events were scanned in blocks {lowest_scanned} to {to_block}"
+        f"Approval events were scanned in blocks {scan.scanned_from} to {to_block}"
         + (
             "."
-            if complete
-            else f"; blocks {from_block} to {lowest_scanned - 1} were NOT scanned "
+            if scan.complete
+            else f"; blocks {from_block} to {scan.scanned_from - 1} were NOT scanned "
             "because the request budget ran out."
         )
         + " Approvals granted before the scanned range are not discovered."
@@ -264,14 +228,14 @@ async def _scan_logs(
             else " All token contracts were included."
         )
     )
-    return logs, ScanCoverage(
+    return list(scan.logs), ScanCoverage(
         requested_from_block=from_block,
         requested_to_block=to_block,
-        scanned_from_block=lowest_scanned,
+        scanned_from_block=scan.scanned_from,
         scanned_to_block=to_block,
-        complete_for_requested_range=complete,
-        log_requests=requests,
-        log_query_splits=splits,
+        complete_for_requested_range=scan.complete,
+        log_requests=scan.requests,
+        log_query_splits=scan.splits,
         description=description,
     )
 
@@ -467,18 +431,9 @@ async def discover_approvals(
         raise BlockRangeTooLargeError(
             f"Requested {span} blocks; the maximum per scan is {limits.max_scan_blocks}."
         )
-    try:
-        raw_logs, coverage = await _scan_logs(
-            provider, owner, from_block, to_block, limits, token_scope
-        )
-    except LogFilterRestrictedError as exc:
-        if token_scope is not None:
-            raise
-        raise LogFilterRestrictedError(
-            exc.message + " Name specific token contracts to scan (API: tokens, CLI: --token), "
-            "or configure a provider that serves wallet-wide log queries.",
-            details=exc.details,
-        ) from None
+    raw_logs, coverage = await _scan_logs(
+        provider, owner, from_block, to_block, limits, token_scope
+    )
 
     counts = dict.fromkeys(ApprovalLogShape, 0)
     seen: set[tuple[str, int]] = set()

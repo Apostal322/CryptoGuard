@@ -120,7 +120,8 @@ async def test_discovery_is_incremental(
         for m, p in node.requests
         if m == "eth_getLogs"
     ]
-    assert ranges == [(previous + 1, node.head)]
+    # Approvals, outgoing transfers and incoming transfers: each only over the new blocks.
+    assert ranges == [(previous + 1, node.head)] * 3
     assert [(r.from_block, r.to_block) for r in second.coverage.scanned] == [
         (previous - 999, node.head)
     ]

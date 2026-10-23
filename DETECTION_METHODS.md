@@ -139,6 +139,63 @@ Severity (`informational`, `review_recommended`, `elevated_risk`, `critical_evid
 left unchanged and counted as not re-verified, never resolved. Every transition is stored with
 its snapshot and reason.
 
+## Address poisoning (`detectors/poisoning.py`, detector `address-poisoning` 1.0.0)
+
+**Attack.** After a wallet pays address R, an attacker generates a vanity address C with R's
+first and last characters (what wallets display) and plants it in the wallet's history, most
+often with `transferFrom(wallet, C, 0)`, which many tokens allow without any allowance, or
+with dust or fake-token transfers from C. The victim later copies C from history.
+
+**Inputs.** ERC-20 `Transfer` logs in both directions (3 topics + 32-byte data only; ERC-721
+shapes are excluded), plus `tx.from` of outgoing transfers (bounded lookups, newest first).
+Snapshots keep this history, so lookalikes are compared against every reference seen since
+the wallet's first snapshot.
+
+**References** are recipients of nonzero outgoing transfers that the wallet signed. A
+foreign signer on a plain EOA means the transfer was spoofed: it is never a reference. For
+wallets with code (smart accounts, EIP-7702 delegations) a relayer may sign legitimately, so
+foreign signers make the reference *unconfirmed* instead.
+
+**Similarity** compares the full 40-hex-character bodies (never the shortened display):
+common prefix ≥ `POISONING_MIN_PREFIX` (2), common suffix ≥ `POISONING_MIN_SUFFIX` (2), and
+together ≥ `POISONING_MIN_AFFIX_TOTAL` (7). If the shared prefix is only zeros, the suffix
+must be ≥ 4. A random address matches n characters with probability 16⁻ⁿ; each case reports
+these odds.
+
+**Signals** on the lookalike
+
+| Signal | Meaning |
+|---|---|
+| `zero_value_transfer` | zero-value transfer between wallet and lookalike (signer named if foreign) |
+| `spoofed_outgoing_transfer` | nonzero "outgoing" transfer in a transaction the wallet did not sign (fake tokens) |
+| `unsolicited_incoming_transfer` | incoming transfer from the lookalike before the wallet ever paid it |
+| `appeared_soon_after_reference_use` | first appearance within `POISONING_REACTION_WINDOW_BLOCKS` (≈1 week) of the reference's first use |
+| `unverified_outgoing_to_lookalike` | nonzero send to the lookalike whose signer is unknown |
+| `wallet_sent_to_lookalike` | the wallet signed a nonzero send to the lookalike after paying the reference |
+
+**Rules**
+
+| Rule | Fires when | Severity / confidence |
+|---|---|---|
+| CG-POI-003 | `wallet_sent_to_lookalike` | critical_evidence / medium if poisoning context preceded the send; else elevated_risk / low |
+| CG-POI-001 | similarity + zero-value, spoofed or unsolicited transfer | elevated_risk / high (zero-value or spoofed) or medium |
+| CG-POI-002 | similarity with no other context | informational / low |
+
+Each case lists the suspect, the imitated address, prefix/suffix lengths, a display example,
+the random-match odds, every signal with its transaction, and a verification action ("compare
+the full address with a trusted source; never copy from history"). No action ever involves
+keys or signing.
+
+**False-positive guards (each covered by tests):** identical addresses; the wallet itself;
+the zero and `…dEaD` burn addresses; curated known contracts; shared zero-only prefixes
+(vanity contracts) with short suffixes; similarity below thresholds; unrelated token spam
+(similarity is always required); relayer-signed transfers of smart accounts; and ordering:
+of two similar references, the one used first is the original.
+
+**Known gaps.** Native-ETH transfers (a common poisoning vector) are invisible over JSON-RPC.
+Lookalikes of addresses paid before the scanned history are not recognized. Signer lookups are
+budgeted; skipped ones are reported.
+
 ## Finality
 
 `finalized` if the observed block number ≤ the provider's `finalized` block, otherwise

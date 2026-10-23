@@ -17,6 +17,7 @@ from cryptoguard.blockchain.abi import (
     SEL_BALANCE_OF,
     SEL_DECIMALS,
     SEL_SYMBOL,
+    TRANSFER_TOPIC,
     UINT256_MAX,
     address_topic,
     decode_address_word,
@@ -43,6 +44,13 @@ def _demo_address(label: str) -> str:
 
 def _demo_block_hash(number: int) -> str:
     return "0x" + keccak256(f"cryptoguard-demo-block:{number}".encode()).hex()
+
+
+def _lookalike(address: str) -> str:
+    """Same first and last 5 hex characters, a different middle (an attacker's vanity copy)."""
+    middle = keccak256(f"cryptoguard-demo-lookalike:{address}".encode()).hex()[:30]
+    body = address[2:7].lower() + middle + address[-5:].lower()
+    return to_checksum_address("0x" + body)
 
 
 @dataclass(frozen=True)
@@ -108,6 +116,20 @@ DEMO_ACCOUNTS: tuple[DemoAccount, ...] = (
         0,
         b"",
     ),
+    DemoAccount(
+        "demo-friend",
+        "Fictional account the plain wallet paid.",
+        _demo_address("demo-friend"),
+        0,
+        b"",
+    ),
+    DemoAccount(
+        "demo-lookalike",
+        "Fictional vanity lookalike of demo-friend (same first and last 5 hex characters).",
+        _lookalike(_demo_address("demo-friend")),
+        0,
+        b"",
+    ),
 )
 
 _BY_ADDRESS = {account.address: account for account in DEMO_ACCOUNTS}
@@ -159,6 +181,57 @@ DEMO_APPROVALS: tuple[DemoApproval, ...] = (
         0,
     ),
 )
+
+
+@dataclass(frozen=True)
+class DemoTransfer:
+    """A fixture Transfer log and the account that signed its transaction."""
+
+    sender: str
+    recipient: str
+    value: int
+    signer: str
+    block_number: int
+    log_index: int
+
+    @property
+    def tx_hash(self) -> str:
+        material = f"cryptoguard-demo-transfer-tx:{self.block_number}:{self.log_index}"
+        return "0x" + keccak256(material.encode()).hex()
+
+
+_WALLET, _FRIEND, _LOOKALIKE = (
+    _BY_LABEL["plain-wallet"],
+    _BY_LABEL["demo-friend"],
+    _BY_LABEL["demo-lookalike"],
+)
+DEMO_TRANSFERS: tuple[DemoTransfer, ...] = (
+    # The wallet pays a friend (signed by the wallet)...
+    DemoTransfer(_WALLET, _FRIEND, 250 * _UNIT, _WALLET, DEMO_HEAD_BLOCK - 5_000, 2),
+    # ...then the lookalike calls transferFrom(wallet, lookalike, 0): no allowance needed.
+    DemoTransfer(_WALLET, _LOOKALIKE, 0, _LOOKALIKE, DEMO_HEAD_BLOCK - 4_990, 4),
+    # ...and sends dust so it shows up as an incoming sender too.
+    DemoTransfer(_LOOKALIKE, _WALLET, 1, _LOOKALIKE, DEMO_HEAD_BLOCK - 4_985, 1),
+)
+_DEMO_TX_SIGNERS = {t.tx_hash: t.signer for t in DEMO_TRANSFERS}
+
+
+def _demo_transfer_log(transfer: DemoTransfer) -> dict[str, Any]:
+    return {
+        "address": DEMO_TOKEN,
+        "topics": [
+            TRANSFER_TOPIC,
+            address_topic(transfer.sender),
+            address_topic(transfer.recipient),
+        ],
+        "data": "0x" + transfer.value.to_bytes(32, "big").hex(),
+        "blockNumber": hex(transfer.block_number),
+        "blockHash": _demo_block_hash(transfer.block_number),
+        "transactionHash": transfer.tx_hash,
+        "transactionIndex": "0x0",
+        "logIndex": hex(transfer.log_index),
+        "removed": False,
+    }
 
 
 def _demo_log(approval: DemoApproval) -> dict[str, Any]:
@@ -264,7 +337,9 @@ class DemoProvider:
         raise ContractCallFailedError("Fixture token does not implement this call.")
 
     async def get_transaction(self, tx_hash: str) -> dict[str, Any] | None:
-        raise RpcUnsupportedMethodError("Transactions are not part of the demo fixtures.")
+        """Only the fixture transfers' transactions exist, and only their signer is given."""
+        signer = _DEMO_TX_SIGNERS.get(tx_hash.lower())
+        return {"hash": tx_hash.lower(), "from": signer} if signer else None
 
     async def get_transaction_receipt(self, tx_hash: str) -> dict[str, Any] | None:
         raise RpcUnsupportedMethodError("Receipts are not part of the demo fixtures.")
@@ -278,6 +353,11 @@ class DemoProvider:
         topics: list[str | list[str] | None] | None = None,
     ) -> list[dict[str, Any]]:
         logs = [_demo_log(a) for a in DEMO_APPROVALS if from_block <= a.block_number <= to_block]
+        logs += [
+            _demo_transfer_log(t)
+            for t in DEMO_TRANSFERS
+            if from_block <= t.block_number <= to_block
+        ]
         wanted = None
         if address is not None:
             wanted = {

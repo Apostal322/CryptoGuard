@@ -75,6 +75,14 @@ class Settings(BaseSettings):
     # invalidate them (reorgs that do happen are detected and rebased).
     snapshot_confirmations: int = Field(default=12, ge=0, le=128)
 
+    # Address-poisoning detection thresholds (hex characters of the 40-character body).
+    poisoning_min_prefix: int = Field(default=2, ge=1, le=20)
+    poisoning_min_suffix: int = Field(default=2, ge=1, le=20)
+    poisoning_min_affix_total: int = Field(default=7, ge=4, le=40)
+    poisoning_reaction_window_blocks: int = Field(default=50_400, ge=1, le=10_000_000)
+    transfer_max_sender_lookups: int = Field(default=100, ge=0, le=5_000)
+    transfer_history_limit: int = Field(default=20_000, ge=100, le=500_000)
+
     database_url: str = "sqlite:///./data/cryptoguard.db"
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]

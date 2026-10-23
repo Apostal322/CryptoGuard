@@ -30,6 +30,8 @@ SEL_SYMBOL = selector("symbol()")
 # ERC-20 and ERC-721 share this signature. ERC-20 indexes owner and spender (3 topics, 32-byte
 # data); ERC-721 additionally indexes tokenId (4 topics, empty data).
 APPROVAL_TOPIC = event_topic("Approval(address,address,uint256)")
+# Same ambiguity: ERC-20 Transfer has 3 topics + 32 data bytes; ERC-721 indexes tokenId too.
+TRANSFER_TOPIC = event_topic("Transfer(address,address,uint256)")
 
 
 def encode_address_word(address: str) -> bytes:

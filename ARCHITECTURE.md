@@ -33,7 +33,12 @@ SQLAlchemy or the CLI, so detectors added later can be run, tested and replayed 
 | `history/delta.py` | Deterministic `previous → current` change list with honest causes |
 | `risk/rules.py` | Versioned ruleset `cg-rules`; finding candidates and fingerprints |
 | `risk/lifecycle.py` | Pure finding-lifecycle reconciliation |
-| `services/snapshots.py` | Snapshot orchestration: reorg rebase, incremental discovery, verify, diff, rules |
+| `blockchain/logscan.py` | Shared bounded, newest-first `eth_getLogs` scanner (split, budget) |
+| `services/transfers.py` | ERC-20 transfer discovery (both directions) and signer lookups |
+| `detectors/base.py` | `Detector` protocol, `DetectionContext`, merging runner; state-rules adapter |
+| `detectors/poisoning.py` | Pure address-poisoning detector |
+| `services/poisoning.py` | One-off poisoning scan (no storage) |
+| `services/snapshots.py` | Snapshot orchestration: reorg rebase, incremental discovery, verify, diff, detectors |
 | `database/history.py` | Snapshot/finding/transition persistence; lifecycle applied in one transaction |
 | `api/history_routes.py` | Snapshot, timeline, finding and ruleset endpoints |
 | `services/demo.py` | Demo provider over fictional, deterministic fixtures |
@@ -73,9 +78,12 @@ live in `apps/web` when Phase 5 starts; shared schemas will be generated from th
    are deleted (they are re-ingested from the canonical chain), and the base moves back.
 2. Pick block `B` (default `head − SNAPSHOT_CONFIRMATIONS`); `B` must not precede the base.
    Same block as the base → return it unchanged.
-3. Inspect account code at `B`; discover events in `(base, B]`; re-verify carried + new pairs.
-4. Re-check `B`'s hash; build state; delta vs. base; evaluate rules.
-5. One transaction: insert events, snapshot row, finding creates/updates and transitions.
+3. Inspect account code at `B`; discover Approval and Transfer events in `(base, B]`;
+   look up outgoing transfers' signers; re-verify carried + new approval pairs.
+4. Re-check `B`'s hash; build state; delta vs. base; run the detectors (state rules, and
+   address poisoning over stored + new transfers).
+5. One transaction: insert events and transfers, snapshot row, finding creates/updates and
+   transitions.
 
 ## Storage
 
@@ -88,14 +96,18 @@ unique on `(chain_id, block_hash, log_index)`, with the uint256 value as a decim
 `state_hash`, the delta, cumulative coverage, token scope, ruleset version and the link to the
 previous snapshot. `findings` (unique per chain, wallet, fingerprint) holds current status,
 severity, confidence and evidence; `finding_transitions` is the append-only audit trail.
+`token_transfers` holds each wallet's ERC-20 transfers (unique per chain, wallet, block hash,
+log index) with the transaction signer when known.
 All times are UTC. Schema creation currently uses
 `create_all`; Alembic migrations must be introduced before the first schema change.
 
 ## Extension points
 
 - New chain-data sources implement `EthereumProvider` (e.g. an indexed-history provider).
-- Detectors (Phase 2+) will consume observations through a `DetectionContext` and emit
-  versioned `Finding`s; they must not depend on `api/`.
+- Detectors implement `Detector` (`detector_id`, `version`, `analyze(DetectionContext)`).
+  They are synchronous and pure: services do all chain I/O first, so detectors are
+  deterministic and can be replayed on stored data. They return finding candidates only;
+  the lifecycle, storage and presentation stay elsewhere.
 
 ## Decision record (Phase 1)
 
