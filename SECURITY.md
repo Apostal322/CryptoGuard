@@ -14,7 +14,8 @@
   the URL).
 - **Untrusted chain data.** Every RPC value is shape- and size-checked; malformed data raises
   `rpc_invalid_response` instead of being guessed. Provider error text is never echoed to API
-  clients. Responses are JSON only (`Content-Security-Policy: default-src 'none'`,
+  clients. Token `symbol()` output is decoded with strict length bounds, stripped of markup
+  characters and truncated, and is always labelled untrusted. Responses are JSON only (`Content-Security-Policy: default-src 'none'`,
   `nosniff`), and validation errors do not echo input.
 - **Chain verification.** `eth_chainId` must match the configured chain before any state read.
 - **Resource limits.** Request timeouts, bounded retries (with capped `Retry-After`), bounded

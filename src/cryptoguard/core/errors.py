@@ -30,6 +30,11 @@ class UnsupportedChainError(CryptoGuardError):
     http_status = 422
 
 
+class InvalidScanRequestError(CryptoGuardError):
+    code = "invalid_scan_request"
+    http_status = 422
+
+
 class BlockRangeTooLargeError(CryptoGuardError):
     code = "block_range_too_large"
     http_status = 422
@@ -112,3 +117,26 @@ class RpcRequestRejectedError(RpcError):
 
 class RpcInvalidResponseError(RpcError):
     code = "rpc_invalid_response"
+
+
+class ContractCallFailedError(RpcError):
+    """``eth_call`` reverted or the contract does not implement the function."""
+
+    code = "contract_call_failed"
+
+
+class LogQueryTooLargeError(RpcError):
+    """The provider refused an ``eth_getLogs`` range or result size; split and retry."""
+
+    code = "log_query_too_large"
+
+
+class LogFilterRestrictedError(RpcError):
+    """The provider only serves ``eth_getLogs`` when filtered by contract address."""
+
+    code = "log_filter_restricted"
+
+
+class ScanBudgetExceededError(CryptoGuardError):
+    code = "scan_budget_exceeded"
+    http_status = 422

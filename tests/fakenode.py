@@ -10,17 +10,64 @@ from __future__ import annotations
 import json
 from collections import defaultdict, deque
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
+from cryptoguard.blockchain.abi import (
+    APPROVAL_TOPIC,
+    SEL_ALLOWANCE,
+    SEL_BALANCE_OF,
+    SEL_DECIMALS,
+    SEL_SYMBOL,
+    address_topic,
+    decode_address_word,
+)
+from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.hashing import keccak256
+from cryptoguard.services.demo import topics_match
 
 Responder = Callable[[dict[str, Any]], httpx.Response]
 
 
 def block_hash(number: int, fork: str = "main") -> str:
     return "0x" + keccak256(f"test-block:{fork}:{number}".encode()).hex()
+
+
+def abi_string(text: bytes) -> bytes:
+    padded = text.ljust((len(text) + 31) // 32 * 32 or 32, b"\0")
+    return (32).to_bytes(32, "big") + len(text).to_bytes(32, "big") + padded
+
+
+@dataclass
+class FakeToken:
+    """An ERC-20 contract. ``reverts`` lists selectors that revert; ``returns`` overrides output."""
+
+    balances: dict[str, int] = field(default_factory=dict)
+    allowances: dict[tuple[str, str], int] = field(default_factory=dict)
+    decimals: int = 18
+    symbol: bytes = field(default_factory=lambda: abi_string(b"TKN"))
+    reverts: set[bytes] = field(default_factory=set)
+    returns: dict[bytes, bytes] = field(default_factory=dict)
+
+    def call(self, data: bytes) -> bytes | None:
+        """Return output bytes, or None to signal a revert."""
+        sel, words = data[:4], [data[4 + i : 36 + i] for i in range(0, len(data) - 4, 32)]
+        if sel in self.reverts:
+            return None
+        if sel in self.returns:
+            return self.returns[sel]
+        if sel == SEL_DECIMALS:
+            return self.decimals.to_bytes(32, "big")
+        if sel == SEL_SYMBOL:
+            return self.symbol
+        if sel == SEL_BALANCE_OF:
+            return self.balances.get(decode_address_word(words[0]), 0).to_bytes(32, "big")
+        if sel == SEL_ALLOWANCE:
+            key = (decode_address_word(words[0]), decode_address_word(words[1]))
+            return self.allowances.get(key, 0).to_bytes(32, "big")
+        return None
 
 
 class FakeNode:
@@ -35,11 +82,53 @@ class FakeNode:
         self.requests: list[tuple[str, list[Any]]] = []
         self.scripted: dict[str, deque[Responder]] = defaultdict(deque)
         self.on_call: Callable[[str], None] | None = None
+        self.tokens: dict[str, FakeToken] = {}
+        self.logs: list[dict[str, Any]] = []
+        self.max_log_range: int | None = None  # emulate a provider's eth_getLogs range cap
+        self.require_log_address = False  # emulate providers that reject address-less queries
 
     # -- helpers ---------------------------------------------------------------------------
     def set_account(self, address: str, *, balance: int = 0, code: bytes = b"") -> None:
         self.balances[address.lower()] = balance
         self.code[address.lower()] = code
+
+    def add_token(self, address: str, token: FakeToken | None = None) -> FakeToken:
+        token = token or FakeToken()
+        self.tokens[address.lower()] = token
+        self.code.setdefault(address.lower(), bytes.fromhex("6080604052"))
+        return token
+
+    def add_approval_log(
+        self,
+        token: str,
+        owner: str,
+        spender: str,
+        value: int,
+        *,
+        block: int,
+        log_index: int = 0,
+        removed: bool = False,
+        nft_token_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Add an Approval log; ``nft_token_id`` makes it ERC-721-shaped (4 topics, no data)."""
+        topics = [APPROVAL_TOPIC, address_topic(owner), address_topic(spender)]
+        data = "0x" + value.to_bytes(32, "big").hex()
+        if nft_token_id is not None:
+            topics.append("0x" + nft_token_id.to_bytes(32, "big").hex())
+            data = "0x"
+        log = {
+            "address": to_checksum_address(token).lower(),
+            "topics": topics,
+            "data": data,
+            "blockNumber": hex(block),
+            "blockHash": block_hash(block, self.fork),
+            "transactionHash": "0x" + keccak256(f"tx:{block}:{log_index}".encode()).hex(),
+            "transactionIndex": "0x0",
+            "logIndex": hex(log_index),
+            "removed": removed,
+        }
+        self.logs.append(log)
+        return log
 
     def script(self, method: str, *responders: Responder) -> None:
         self.scripted[method].extend(responders)
@@ -61,6 +150,14 @@ class FakeNode:
             result = self._dispatch(method, payload["params"])
         except LookupError as exc:
             return rpc_error(-32601, str(exc))(payload)
+        except _Revert:
+            return rpc_error(3, "execution reverted")(payload)
+        except _TooLarge:
+            # Infura-style: -32005 is also used for rate limiting, so the message decides.
+            return rpc_error(-32005, "query returned more than 10000 results")(payload)
+        except _AddressRequired:
+            # The wording publicnode.com returned in a live check (2026-10-23).
+            return rpc_error(-32701, "Please specify an address in your request")(payload)
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": payload["id"], "result": result})
 
     def _block(self, number: int) -> dict[str, Any]:
@@ -89,8 +186,45 @@ class FakeNode:
         if method == "eth_getCode":
             return "0x" + self.code.get(params[0].lower(), b"").hex()
         if method == "eth_getLogs":
-            return []
+            return self._get_logs(params[0])
+        if method == "eth_call":
+            token = self.tokens.get(params[0]["to"].lower())
+            output = token.call(bytes.fromhex(params[0]["data"][2:])) if token else None
+            if output is None:
+                raise _Revert
+            return "0x" + output.hex()
         raise LookupError(f"the method {method} does not exist/is not available")
+
+    @staticmethod
+    def _address_filter(query: dict[str, Any]) -> set[str]:
+        wanted = query["address"]
+        return {a.lower() for a in ([wanted] if isinstance(wanted, str) else wanted)}
+
+    def _get_logs(self, query: dict[str, Any]) -> list[dict[str, Any]]:
+        if self.require_log_address and "address" not in query:
+            raise _AddressRequired
+        low, high = int(query["fromBlock"], 16), int(query["toBlock"], 16)
+        if self.max_log_range is not None and high - low + 1 > self.max_log_range:
+            raise _TooLarge
+        return [
+            log
+            for log in self.logs
+            if low <= int(log["blockNumber"], 16) <= high
+            and ("address" not in query or log["address"] in self._address_filter(query))
+            and topics_match(log["topics"], query.get("topics"))
+        ]
+
+
+class _Revert(Exception):
+    pass
+
+
+class _TooLarge(Exception):
+    pass
+
+
+class _AddressRequired(Exception):
+    pass
 
 
 def rpc_error(code: int, message: str) -> Responder:

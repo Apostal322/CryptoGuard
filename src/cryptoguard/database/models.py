@@ -67,3 +67,32 @@ class AddressObservation(Base):
     data_source: Mapped[str] = mapped_column(String(32))
     observed_at: Mapped[datetime] = mapped_column(UTCDateTime())
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class ApprovalEventRecord(Base):
+    """A decoded ERC-20 ``Approval`` log.
+
+    A log is identified by (chain, block hash, log index): the same transaction re-included in
+    a different block after a reorg is a distinct record, and re-scanning a range is idempotent.
+    ``value`` is a decimal string because uint256 exceeds every SQL integer type.
+    """
+
+    __tablename__ = "approval_events"
+    __table_args__ = (
+        UniqueConstraint("chain_id", "block_hash", "log_index", name="uq_approval_event_log"),
+        Index("ix_approval_event_owner_block", "chain_id", "owner", "block_number"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chain_id: Mapped[int] = mapped_column(BigInteger)
+    token: Mapped[str] = mapped_column(String(42))
+    owner: Mapped[str] = mapped_column(String(42))
+    spender: Mapped[str] = mapped_column(String(42))
+    value: Mapped[str] = mapped_column(String(78))
+    block_number: Mapped[int] = mapped_column(BigInteger)
+    block_hash: Mapped[str] = mapped_column(String(66))
+    transaction_hash: Mapped[str] = mapped_column(String(66))
+    transaction_index: Mapped[int] = mapped_column(BigInteger)
+    log_index: Mapped[int] = mapped_column(BigInteger)
+    data_source: Mapped[str] = mapped_column(String(32))
+    ingested_at: Mapped[datetime] = mapped_column(UTCDateTime())

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from cryptoguard.core.chains import get_chain
 from cryptoguard.database.repository import open_repository
+from cryptoguard.services.approvals import ScanLimits, scan_approvals
 from cryptoguard.services.demo import DEMO_ACCOUNTS, DemoProvider
 from cryptoguard.services.inspection import inspect_address
 
@@ -28,3 +29,25 @@ async def test_observations_survive_restart_and_can_be_purged(tmp_path: Path) ->
 
     assert reopened.purge(inspection.address) == 1
     assert reopened.list_for_address(1, inspection.address, limit=10, offset=0)[1] == 0
+
+
+async def test_approval_events_are_idempotent_and_purgeable(tmp_path: Path) -> None:
+    repo = open_repository(f"sqlite:///{(tmp_path / 'cg.db').as_posix()}")
+    wallet = next(a.address for a in DEMO_ACCOUNTS if a.label == "plain-wallet")
+    scan = await scan_approvals(
+        DemoProvider(1),
+        wallet,
+        chain=get_chain(1),
+        limits=ScanLimits(10_000, 100_000, 1000, 100, 50),
+    )
+    assert len(scan.events) == 4
+
+    assert repo.save_approval_scan(scan.report, scan.events) == (True, 4)
+    assert repo.save_approval_scan(scan.report, scan.events) == (False, 0)
+    assert repo.count_approval_events(1, wallet) == 4
+    payload = repo.latest_payload(1, wallet, "approval_scan")
+    assert payload is not None
+    assert payload["owner"] == wallet
+
+    assert repo.purge(wallet) == 5  # 1 report + 4 events
+    assert repo.count_approval_events(1, wallet) == 0

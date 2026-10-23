@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cryptoguard.services.approvals import ApprovalScanReport
 from cryptoguard.services.inspection import AddressInspection
 
 
@@ -61,6 +62,35 @@ class AnalyzeAddressRequest(BaseModel):
 class AnalyzeAddressResponse(BaseModel):
     inspection: AddressInspection
     persistence: Literal["stored", "already_stored", "failed"]
+
+
+class ApprovalScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lookback_blocks: int | None = Field(
+        default=None,
+        ge=1,
+        description="Scan this many most recent blocks (server default if unset).",
+    )
+    from_block: int | None = Field(
+        default=None, ge=0, description="Scan from this block to the head; overrides lookback."
+    )
+    tokens: list[str] | None = Field(
+        default=None,
+        max_length=25,
+        description="Limit discovery to these token contracts (needed on providers that refuse "
+        "wallet-wide log queries). Omit to scan all tokens.",
+    )
+
+
+class ApprovalScanPersistence(BaseModel):
+    report: Literal["stored", "already_stored", "failed"]
+    new_events: int
+
+
+class ApprovalScanResponse(BaseModel):
+    report: ApprovalScanReport
+    persistence: ApprovalScanPersistence
 
 
 class ObservationItem(BaseModel):

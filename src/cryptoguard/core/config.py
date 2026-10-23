@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     rpc_max_response_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
     max_log_block_range: int = Field(default=1000, ge=1, le=100_000)
 
+    # Approval discovery scans an explicit block window, never the whole chain.
+    approval_default_lookback_blocks: int = Field(default=10_000, ge=1, le=5_000_000)
+    approval_max_scan_blocks: int = Field(default=200_000, ge=1, le=5_000_000)
+    approval_max_log_requests: int = Field(default=300, ge=1, le=10_000)
+    approval_max_pairs: int = Field(default=200, ge=1, le=5_000)
+
     database_url: str = "sqlite:///./data/cryptoguard.db"
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]

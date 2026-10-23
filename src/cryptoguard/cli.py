@@ -1,6 +1,8 @@
 """Command-line interface.
 
 cryptoguard inspect <address> [--demo] [--json] [--no-store]
+cryptoguard approvals <address> [--lookback N | --from-block N] [--token T]... [--demo]
+                      [--json] [--no-store]
 cryptoguard status [--demo]
 cryptoguard demo-addresses
 cryptoguard serve [--host 127.0.0.1] [--port 8000] [--demo]
@@ -22,6 +24,13 @@ from cryptoguard.core.chains import get_chain
 from cryptoguard.core.config import Settings, secret_fragments
 from cryptoguard.core.errors import CryptoGuardError
 from cryptoguard.core.logging import configure_logging
+from cryptoguard.services.approvals import (
+    AllowanceLevel,
+    ApprovalScanReport,
+    Reading,
+    ScanLimits,
+    scan_approvals,
+)
 from cryptoguard.services.demo import DEMO_ACCOUNTS
 from cryptoguard.services.inspection import AddressInspection, inspect_address
 from cryptoguard.services.providers import build_provider, require_provider
@@ -84,6 +93,86 @@ async def _inspect(settings: Settings, address: str, *, store: bool) -> AddressI
     return inspection
 
 
+def _amount(reading: Reading, symbol: str) -> str:
+    if reading.status == "unknown":
+        return f"unknown ({reading.unknown_reason})"
+    if reading.formatted is None:
+        return f"{reading.raw} base units"
+    return f"{reading.formatted} {symbol}"
+
+
+def _render_approvals(report: ApprovalScanReport) -> str:
+    lines: list[str] = []
+    if report.simulated:
+        lines.append("*** SIMULATED DEMO DATA — fictional fixtures, not Ethereum state ***")
+    else:
+        lines.append(f"Real data via RPC provider {report.provider}")
+    lines += [
+        f"Owner:     {report.owner}",
+        f"Chain:     {report.chain_name} (chain id {report.chain_id})",
+        f"State at:  block #{report.block_number} {report.block_hash} "
+        f"({report.block_timestamp.isoformat()})",
+        f"Coverage:  {report.coverage.description}",
+        f"Found:     {report.pairs_discovered} token/spender pair(s) from "
+        f"{report.log_counts.erc20_approvals} ERC-20 Approval log(s); "
+        f"{report.log_counts.erc721_shaped_approvals} NFT-shaped log(s) not analyzed",
+    ]
+    active = [a for a in report.approvals if a.active is not False]
+    inactive = len(report.approvals) - len(active)
+    for entry in active:
+        symbol = entry.token.symbol or "?"
+        label = f" [{entry.spender.label}]" if entry.spender.label else ""
+        lines += [
+            "",
+            f"  Token     {entry.token.address} ({symbol}, untrusted symbol)",
+            f"  Spender   {entry.spender.address}{label} ({entry.spender.code_kind.value})",
+            f"  Allowance {entry.allowance_level.value}: "
+            + (
+                "max uint256"
+                if entry.allowance_level is AllowanceLevel.UNLIMITED
+                else _amount(entry.current_allowance, symbol)
+            ),
+            f"  Balance   {_amount(entry.owner_balance, symbol)}",
+            f"  Exposure  ≤ {_amount(entry.exposure_upper_bound, symbol)}",
+            f"  Last set  block #{entry.latest_event.block_number}, "
+            f"tx {entry.latest_event.transaction_hash}",
+        ]
+        lines += [f"  ! {s.code} ({s.evidence_class}): {s.explanation}" for s in entry.signals]
+    if inactive:
+        lines += ["", f"  {inactive} pair(s) have a current allowance of 0 (not shown)."]
+    lines += ["", "Limitations:"] + [f"  - {item}" for item in report.limitations]
+    return "\n".join(lines)
+
+
+async def _approvals(
+    settings: Settings,
+    address: str,
+    *,
+    lookback: int | None,
+    from_block: int | None,
+    tokens: list[str] | None,
+    store: bool,
+) -> ApprovalScanReport:
+    provider = require_provider(build_provider(settings))
+    try:
+        scan = await scan_approvals(
+            provider,
+            address,
+            chain=get_chain(settings.chain_id),
+            limits=ScanLimits.from_settings(settings),
+            from_block=from_block,
+            lookback_blocks=lookback,
+            tokens=tokens,
+        )
+    finally:
+        await provider.aclose()
+    if store:
+        from cryptoguard.database.repository import open_repository
+
+        open_repository(settings.database_url).save_approval_scan(scan.report, scan.events)
+    return scan.report
+
+
 async def _status(settings: Settings) -> dict[str, object]:
     provider = build_provider(settings)
     result: dict[str, object] = {
@@ -113,6 +202,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_inspect.add_argument("--demo", action="store_true", help="use simulated demo fixtures")
     p_inspect.add_argument("--json", action="store_true", help="print JSON")
     p_inspect.add_argument("--no-store", action="store_true", help="do not save the observation")
+
+    p_approvals = sub.add_parser(
+        "approvals", help="discover ERC-20 approvals in a block window and verify allowances"
+    )
+    p_approvals.add_argument("address")
+    p_approvals.add_argument("--lookback", type=int, help="number of recent blocks to scan")
+    p_approvals.add_argument("--from-block", type=int, help="scan from this block to the head")
+    p_approvals.add_argument(
+        "--token",
+        action="append",
+        dest="tokens",
+        help="limit discovery to this token contract (repeatable)",
+    )
+    p_approvals.add_argument("--demo", action="store_true", help="use simulated demo fixtures")
+    p_approvals.add_argument("--json", action="store_true", help="print JSON")
+    p_approvals.add_argument("--no-store", action="store_true", help="do not save the scan")
 
     p_status = sub.add_parser("status", help="check configuration and provider connectivity")
     p_status.add_argument("--demo", action="store_true")
@@ -145,6 +250,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(inspection.model_dump_json(indent=2))
             else:
                 print(_render(inspection))
+            return 0
+
+        if args.command == "approvals":
+            report = asyncio.run(
+                _approvals(
+                    settings,
+                    args.address,
+                    lookback=args.lookback,
+                    from_block=args.from_block,
+                    tokens=args.tokens,
+                    store=not args.no_store,
+                )
+            )
+            print(report.model_dump_json(indent=2) if args.json else _render_approvals(report))
             return 0
 
         if args.command == "status":

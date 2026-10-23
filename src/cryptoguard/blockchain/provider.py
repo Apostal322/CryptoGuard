@@ -64,7 +64,7 @@ class EthereumProvider(Protocol):
         *,
         from_block: int,
         to_block: int,
-        address: str | None = None,
+        address: str | list[str] | None = None,
         topics: list[str | list[str] | None] | None = None,
     ) -> list[dict[str, Any]]: ...
     async def aclose(self) -> None: ...
@@ -174,7 +174,7 @@ class RpcEthereumProvider:
         return _expect(lambda v: parse_data(v, max_bytes=_MAX_CODE_BYTES), raw, "account code")
 
     async def call(self, to: str, data: bytes, block: BlockRef) -> bytes:
-        """``eth_call`` — a local, read-only execution. Nothing is signed or broadcast."""
+        """``eth_call`` вЂ” a local, read-only execution. Nothing is signed or broadcast."""
         await self.verify_chain()
         tx = {"to": to_checksum_address(to), "data": "0x" + data.hex()}
         raw = await self._client.call("eth_call", [tx, _block_param(block)])
@@ -199,7 +199,7 @@ class RpcEthereumProvider:
         *,
         from_block: int,
         to_block: int,
-        address: str | None = None,
+        address: str | list[str] | None = None,
         topics: list[str | list[str] | None] | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch logs for an explicit, bounded block range (never open-ended)."""
@@ -216,7 +216,9 @@ class RpcEthereumProvider:
             "fromBlock": to_quantity(from_block),
             "toBlock": to_quantity(to_block),
         }
-        if address is not None:
+        if isinstance(address, list):
+            query["address"] = [to_checksum_address(a) for a in address]
+        elif address is not None:
             query["address"] = to_checksum_address(address)
         if topics is not None:
             query["topics"] = topics

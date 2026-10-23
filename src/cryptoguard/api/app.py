@@ -21,6 +21,9 @@ from cryptoguard.api.ratelimit import TokenBucketLimiter
 from cryptoguard.api.schemas import (
     AnalyzeAddressRequest,
     AnalyzeAddressResponse,
+    ApprovalScanPersistence,
+    ApprovalScanRequest,
+    ApprovalScanResponse,
     DemoAddress,
     DemoAddressList,
     ErrorBody,
@@ -37,6 +40,12 @@ from cryptoguard.core.chains import ChainInfo, get_chain
 from cryptoguard.core.config import Settings
 from cryptoguard.core.errors import CryptoGuardError, UnsupportedChainError
 from cryptoguard.database.repository import ObservationRepository, open_repository
+from cryptoguard.services.approvals import (
+    APPROVAL_SCAN_OBSERVATION_TYPE,
+    ApprovalScanReport,
+    ScanLimits,
+    scan_approvals,
+)
 from cryptoguard.services.demo import DEMO_ACCOUNTS
 from cryptoguard.services.inspection import inspect_address
 from cryptoguard.services.providers import build_provider, require_provider
@@ -182,6 +191,59 @@ async def list_observations(
         limit=limit,
         offset=offset,
     )
+
+
+@router.post("/wallets/{address}/approvals/scan", response_model=ApprovalScanResponse)
+async def scan_wallet_approvals(
+    request: Request, address: str, body: ApprovalScanRequest
+) -> ApprovalScanResponse:
+    """Discover ERC-20 approvals in a bounded block window and verify current allowances."""
+    state = _state(request)
+    owner = to_checksum_address(address)
+    provider = require_provider(state.provider)
+    scan = await scan_approvals(
+        provider,
+        owner,
+        chain=state.chain,
+        limits=ScanLimits.from_settings(state.settings),
+        from_block=body.from_block,
+        lookback_blocks=body.lookback_blocks,
+        tokens=body.tokens,
+    )
+    try:
+        stored, new_events = await asyncio.to_thread(
+            state.repository.save_approval_scan, scan.report, scan.events
+        )
+        persistence = ApprovalScanPersistence(
+            report="stored" if stored else "already_stored", new_events=new_events
+        )
+    except Exception:
+        logger.exception("failed to persist approval scan")
+        persistence = ApprovalScanPersistence(report="failed", new_events=0)
+    return ApprovalScanResponse(report=scan.report, persistence=persistence)
+
+
+@router.get("/wallets/{address}/approvals", response_model=ApprovalScanReport)
+async def latest_wallet_approvals(
+    request: Request, address: str
+) -> ApprovalScanReport | JSONResponse:
+    """The most recent stored approval scan. Its block and coverage say how current it is."""
+    state = _state(request)
+    owner = to_checksum_address(address)
+    payload = await asyncio.to_thread(
+        state.repository.latest_payload,
+        state.chain.chain_id,
+        owner,
+        APPROVAL_SCAN_OBSERVATION_TYPE,
+    )
+    if payload is None:
+        return _error(
+            404,
+            "no_approval_scan",
+            "No approval scan is stored for this address. "
+            f"POST /api/v1/wallets/{owner}/approvals/scan to run one.",
+        )
+    return ApprovalScanReport.model_validate(payload)
 
 
 @router.get("/demo/addresses", response_model=DemoAddressList)

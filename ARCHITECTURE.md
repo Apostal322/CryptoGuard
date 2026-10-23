@@ -24,7 +24,11 @@ SQLAlchemy or the CLI, so detectors added later can be run, tested and replayed 
 | `blockchain/rpc.py` | JSON-RPC 2.0 transport: retries, backoff+jitter, limits, error classification |
 | `blockchain/provider.py` | `EthereumProvider` protocol and the read-only RPC implementation |
 | `blockchain/eip7702.py` | Exact EIP-7702 delegation-indicator recognition |
+| `blockchain/abi.py` | Minimal strict ABI encode/decode for ERC-20 calls; sanitized `symbol()` |
+| `blockchain/erc20.py` | `Approval` log decoding with ERC-20 vs ERC-721 disambiguation |
+| `core/known_contracts.py` | Cited display labels for a few published spender contracts |
 | `services/inspection.py` | Point-in-time address inspection (observed facts, no risk judgement) |
+| `services/approvals.py` | Bounded approval discovery, pinned-block allowance verification, exposure |
 | `services/demo.py` | Demo provider over fictional, deterministic fixtures |
 | `services/providers.py` | Mode → provider selection; no silent fallback |
 | `database/` | ORM models, idempotent observation repository |
@@ -46,11 +50,23 @@ live in `apps/web` when Phase 5 starts; shared schemas will be generated from th
 7. Persist the observation; the unique key `(chain_id, address, block_hash, type, source)`
    makes this idempotent.
 
+## Data flow: `POST /api/v1/wallets/{address}/approvals/scan`
+
+1. Validate owner and window (`max_scan_blocks`), verify chain, read head block `N`.
+2. Scan `Approval` logs for `[topic0, owner]` newest-first in chunks (optionally scoped to
+   token contracts); split chunks the provider refuses; stop at the request budget.
+3. Decode logs, drop removed/duplicate/non-ERC-20 shapes, group by (token, spender).
+4. At block `N`: token code, `balanceOf`, `decimals`, `symbol`, spender code, `allowance`.
+5. Re-check block `N`'s hash (reorg → error), build the report, persist report + events.
+
 ## Storage
 
 `address_observations` stores each observation with block number, block hash, block
 timestamp (chain time) and `observed_at` (CryptoGuard time) as separate columns, plus the
-schema version and data source. All times are UTC. Schema creation currently uses
+schema version and data source. Inspections and approval-scan reports both live here,
+distinguished by `observation_type`. `approval_events` stores each decoded `Approval` log,
+unique on `(chain_id, block_hash, log_index)`, with the uint256 value as a decimal string.
+All times are UTC. Schema creation currently uses
 `create_all`; Alembic migrations must be introduced before the first schema change.
 
 ## Extension points
@@ -73,7 +89,11 @@ schema version and data source. All times are UTC. Schema creation currently use
 ## Known gaps / technical debt
 
 - No Alembic migrations yet (`create_all` only).
-- No ingestion pipeline, checkpoints or log scanning yet (Phase 2).
+- Approval scans are on-demand; there is no forward-monitoring loop or ingestion checkpoint
+  yet, and stored `approval_events` are not yet reconciled after reorgs (Phase 3).
+- ERC-20 call results are trusted to follow the standard; tokens with non-standard
+  `transferFrom` semantics (rebasing, fee-on-transfer, blocklists) can make the exposure bound
+  inexact.
 - EIP-7702 authorization-list parsing and authority recovery (secp256k1 `ecrecover`) are not
   implemented; current delegation is read from code only, so delegation *history* is unknown.
 - Chain verification is cached for the process lifetime; an endpoint that switches chains

@@ -24,7 +24,10 @@ import httpx
 from cryptoguard import __version__
 from cryptoguard.core.errors import (
     BlockNotAvailableError,
+    ContractCallFailedError,
     HistoricalStateUnavailableError,
+    LogFilterRestrictedError,
+    LogQueryTooLargeError,
     RpcError,
     RpcInvalidResponseError,
     RpcRateLimitedError,
@@ -47,6 +50,23 @@ _HISTORICAL_STATE_MARKERS = (
     "archive",
 )
 _UNKNOWN_BLOCK_MARKERS = ("header not found", "unknown block", "block not found")
+_LOG_ADDRESS_REQUIRED_MARKERS = (
+    "specify an address",
+    "address is required",
+    "must specify address",
+    "address filter is required",
+)
+_LOG_QUERY_TOO_LARGE_MARKERS = (
+    "query returned more than",
+    "more than 10000 results",
+    "block range",
+    "range is too large",
+    "range too large",
+    "too many results",
+    "response size exceeded",
+    "log response size",
+    "query timeout exceeded",
+)
 _RATE_LIMIT_MARKERS = ("rate limit", "too many requests", "throughput", "compute units")
 
 
@@ -99,6 +119,18 @@ def classify_rpc_error(method: str, error: object) -> RpcError:
     message = str(error.get("message", "")).lower()[:500]
     details = {"method": method, "rpc_code": code if isinstance(code, int) else None}
 
+    if code == 3 or "execution reverted" in message or "invalid opcode" in message:
+        return ContractCallFailedError(f"The contract call ({method}) reverted.", details=details)
+    if method == "eth_getLogs" and any(m in message for m in _LOG_ADDRESS_REQUIRED_MARKERS):
+        return LogFilterRestrictedError(
+            "The RPC provider only serves event logs filtered by contract address, so "
+            "wallet-wide log scans are not possible with it.",
+            details=details,
+        )
+    if method == "eth_getLogs" and any(m in message for m in _LOG_QUERY_TOO_LARGE_MARKERS):
+        return LogQueryTooLargeError(
+            "The RPC provider refused the log query size; it will be split.", details=details
+        )
     if any(marker in message for marker in _HISTORICAL_STATE_MARKERS):
         return HistoricalStateUnavailableError(
             "The RPC provider cannot serve state at the requested block (pruned or not archived).",
@@ -208,8 +240,8 @@ class JsonRpcClient:
             raise RpcUnavailableError(f"The RPC provider returned HTTP {status}.")
         if status in (401, 403):
             raise RpcRequestRejectedError(
-                f"The RPC provider refused access (HTTP {status}); "
-                "check the configured credentials."
+                f"The RPC provider refused access (HTTP {status}): the credentials may be "
+                "missing or invalid, or the provider is blocking or throttling this client."
             )
         if status != 200:
             raise RpcRequestRejectedError(f"The RPC provider returned HTTP {status}.")

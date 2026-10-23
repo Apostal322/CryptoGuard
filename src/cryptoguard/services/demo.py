@@ -11,10 +11,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from cryptoguard.blockchain.abi import (
+    APPROVAL_TOPIC,
+    SEL_ALLOWANCE,
+    SEL_BALANCE_OF,
+    SEL_DECIMALS,
+    SEL_SYMBOL,
+    UINT256_MAX,
+    address_topic,
+    decode_address_word,
+)
 from cryptoguard.blockchain.eip7702 import DELEGATION_PREFIX
 from cryptoguard.blockchain.provider import BlockHeader, BlockRef, DataSource
 from cryptoguard.core.address import address_from_bytes, to_checksum_address
-from cryptoguard.core.errors import NotInDemoFixturesError, RpcUnsupportedMethodError
+from cryptoguard.core.errors import (
+    ContractCallFailedError,
+    NotInDemoFixturesError,
+    RpcUnsupportedMethodError,
+)
 from cryptoguard.core.hashing import keccak256
 
 DEMO_HEAD_BLOCK = 1_000_000
@@ -66,9 +80,105 @@ DEMO_ACCOUNTS: tuple[DemoAccount, ...] = (
         0,
         _DELEGATE_CODE,
     ),
+    DemoAccount(
+        "demo-token",
+        "Fictional ERC-20 token (symbol DEMO, 18 decimals).",
+        _demo_address("demo-token"),
+        0,
+        _DELEGATE_CODE,
+    ),
+    DemoAccount(
+        "demo-router",
+        "Fictional contract spender.",
+        _demo_address("demo-router"),
+        0,
+        _DELEGATE_CODE,
+    ),
+    DemoAccount(
+        "demo-old-router",
+        "Fictional contract spender whose approval was later revoked.",
+        _demo_address("demo-old-router"),
+        0,
+        _DELEGATE_CODE,
+    ),
+    DemoAccount(
+        "demo-unknown-eoa",
+        "Fictional plain account that received a token approval.",
+        _demo_address("demo-unknown-eoa"),
+        0,
+        b"",
+    ),
 )
 
 _BY_ADDRESS = {account.address: account for account in DEMO_ACCOUNTS}
+_BY_LABEL = {account.label: account.address for account in DEMO_ACCOUNTS}
+
+_UNIT = 10**18
+DEMO_TOKEN = _BY_LABEL["demo-token"]
+DEMO_TOKEN_BALANCES = {_BY_LABEL["plain-wallet"]: 1_200 * _UNIT}
+
+
+@dataclass(frozen=True)
+class DemoApproval:
+    """A fixture Approval log; ``current`` is the allowance the token reports now."""
+
+    owner: str
+    spender: str
+    value: int
+    current: int
+    block_number: int
+    log_index: int
+
+
+DEMO_APPROVALS: tuple[DemoApproval, ...] = (
+    DemoApproval(
+        _BY_LABEL["plain-wallet"],
+        _BY_LABEL["demo-router"],
+        UINT256_MAX,
+        UINT256_MAX,
+        DEMO_HEAD_BLOCK - 7_000,
+        3,
+    ),
+    DemoApproval(
+        _BY_LABEL["plain-wallet"],
+        _BY_LABEL["demo-old-router"],
+        50 * _UNIT,
+        0,
+        DEMO_HEAD_BLOCK - 6_000,
+        1,
+    ),
+    DemoApproval(
+        _BY_LABEL["plain-wallet"], _BY_LABEL["demo-old-router"], 0, 0, DEMO_HEAD_BLOCK - 2_000, 5
+    ),
+    DemoApproval(
+        _BY_LABEL["plain-wallet"],
+        _BY_LABEL["demo-unknown-eoa"],
+        500 * _UNIT,
+        350 * _UNIT,
+        DEMO_HEAD_BLOCK - 300,
+        0,
+    ),
+)
+
+
+def _demo_log(approval: DemoApproval) -> dict[str, Any]:
+    tx_hash = (
+        "0x"
+        + keccak256(
+            f"cryptoguard-demo-tx:{approval.block_number}:{approval.log_index}".encode()
+        ).hex()
+    )
+    return {
+        "address": DEMO_TOKEN,
+        "topics": [APPROVAL_TOPIC, address_topic(approval.owner), address_topic(approval.spender)],
+        "data": "0x" + approval.value.to_bytes(32, "big").hex(),
+        "blockNumber": hex(approval.block_number),
+        "blockHash": _demo_block_hash(approval.block_number),
+        "transactionHash": tx_hash,
+        "transactionIndex": "0x0",
+        "logIndex": hex(approval.log_index),
+        "removed": False,
+    }
 
 
 class DemoProvider:
@@ -130,7 +240,28 @@ class DemoProvider:
         return self._account(address).code
 
     async def call(self, to: str, data: bytes, block: BlockRef) -> bytes:
-        raise RpcUnsupportedMethodError("Contract calls are not part of the demo fixtures.")
+        """Answer the fixture token's ERC-20 view functions; every other call reverts."""
+        self._account(to)
+        if to_checksum_address(to) != DEMO_TOKEN:
+            raise ContractCallFailedError("Fixture contract does not implement this call.")
+        sel, args = data[:4], data[4:]
+        words = [args[i : i + 32] for i in range(0, len(args), 32)]
+        if sel == SEL_DECIMALS:
+            return (18).to_bytes(32, "big")
+        if sel == SEL_SYMBOL:
+            text = b"DEMO"
+            return (32).to_bytes(32, "big") + len(text).to_bytes(32, "big") + text.ljust(32, b"\0")
+        if sel == SEL_BALANCE_OF and len(words) == 1:
+            owner = decode_address_word(words[0])
+            return DEMO_TOKEN_BALANCES.get(owner, 0).to_bytes(32, "big")
+        if sel == SEL_ALLOWANCE and len(words) == 2:
+            owner, spender = (decode_address_word(w) for w in words)
+            current = 0
+            for approval in DEMO_APPROVALS:  # last fixture for the pair wins
+                if (approval.owner, approval.spender) == (owner, spender):
+                    current = approval.current
+            return current.to_bytes(32, "big")
+        raise ContractCallFailedError("Fixture token does not implement this call.")
 
     async def get_transaction(self, tx_hash: str) -> dict[str, Any] | None:
         raise RpcUnsupportedMethodError("Transactions are not part of the demo fixtures.")
@@ -143,7 +274,32 @@ class DemoProvider:
         *,
         from_block: int,
         to_block: int,
-        address: str | None = None,
+        address: str | list[str] | None = None,
         topics: list[str | list[str] | None] | None = None,
     ) -> list[dict[str, Any]]:
-        raise RpcUnsupportedMethodError("Event logs are not part of the demo fixtures.")
+        logs = [_demo_log(a) for a in DEMO_APPROVALS if from_block <= a.block_number <= to_block]
+        wanted = None
+        if address is not None:
+            wanted = {
+                to_checksum_address(a) for a in ([address] if isinstance(address, str) else address)
+            }
+        return [
+            log
+            for log in logs
+            if (wanted is None or log["address"] in wanted) and topics_match(log["topics"], topics)
+        ]
+
+
+def topics_match(log_topics: list[str], wanted: list[str | list[str] | None] | None) -> bool:
+    """``eth_getLogs`` topic filter semantics: position-wise, None is a wildcard, lists are OR."""
+    if not wanted:
+        return True
+    if len(wanted) > len(log_topics):
+        return False
+    for actual, expected in zip(log_topics, wanted, strict=False):
+        if expected is None:
+            continue
+        options = expected if isinstance(expected, list) else [expected]
+        if actual.lower() not in {o.lower() for o in options}:
+            return False
+    return True

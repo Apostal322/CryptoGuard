@@ -5,9 +5,9 @@ observably true about an address, the block that observation comes from, and wha
 observation does *not* show. It never asks for private keys, seed phrases or signatures, and
 it has no code path that signs or broadcasts transactions.
 
-> **Status: Phase 1 (backend foundation).** Approval monitoring, the security timeline,
-> address-poisoning detection, the web UI, the threat graph and incident replay are planned
-> and **not implemented yet** (see [Roadmap](#roadmap)).
+> **Status: Phase 2 (ERC-20 approvals).** The security timeline, address-poisoning
+> detection, the web UI, the threat graph and incident replay are planned and **not
+> implemented yet** (see [Roadmap](#roadmap)).
 
 ## What works today
 
@@ -19,9 +19,13 @@ it has no code path that signs or broadcasts transactions.
 | Reorg-safe reads: all state pinned to one block and re-checked against that block's hash | Implemented |
 | Idempotent observation storage (SQLite; PostgreSQL via `DATABASE_URL`) | Implemented |
 | REST API (`/api/v1`) with rate limiting, body-size limit, restricted CORS, safe errors | Implemented |
-| CLI (`inspect`, `status`, `serve`, `purge`, `demo-addresses`) | Implemented |
+| ERC-20 approval discovery from `Approval` logs in a bounded block window (newest-first, adaptive splitting, request budget, optional token scope) | Implemented |
+| Current-state verification: `allowance()`, `balanceOf()`, `decimals()`, `symbol()` and spender code at one pinned block | Implemented |
+| Exposure upper bound `min(balance, allowance)`, unlimited/effectively-unlimited detection, evidence-classed signals | Implemented |
+| ERC-721-shaped `Approval` logs recognized and kept apart from fungible allowances | Implemented (NFT approvals not analyzed) |
+| CLI (`inspect`, `approvals`, `status`, `serve`, `purge`, `demo-addresses`) | Implemented |
 | Explicit demo mode with clearly labelled fictional fixtures | Implemented |
-| ERC-20 approvals, timeline, poisoning detector, UI, graph, replay, ML | Not yet |
+| NFT/Permit2 approvals, timeline, poisoning detector, UI, graph, replay, ML | Not yet |
 
 ## Install (Windows PowerShell)
 
@@ -52,8 +56,12 @@ All settings are environment variables (or `.env`) with the `CRYPTOGUARD_` prefi
   use needs a keyed provider.
 - Many endpoints prune old state. Reading state at old blocks needs an archive node; such
   failures are reported as `historical_state_unavailable`, never as a zero balance.
-- Standard JSON-RPC cannot list every transaction of an address. Phase 1 therefore reports a
-  single snapshot and says so; it does not claim to know the wallet's history.
+- Standard JSON-RPC cannot list every transaction of an address. Inspections are single
+  snapshots, and approval scans cover only the block window they report.
+- Some free endpoints refuse `eth_getLogs` without a contract `address` filter (for example
+  `ethereum-rpc.publicnode.com`, checked 2026-10-23). There, wallet-wide approval discovery
+  fails with `log_filter_restricted`; pass `--token <contract>` (API: `tokens`) to scan named
+  tokens, or use a provider that allows wallet-wide log queries.
 - Your RPC provider sees which addresses you inspect. Run your own node if that matters.
 
 ## Use
@@ -62,6 +70,11 @@ All settings are environment variables (or `.env`) with the `CRYPTOGUARD_` prefi
 uv run cryptoguard status
 uv run cryptoguard inspect 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
 uv run cryptoguard inspect <address> --json
+
+# ERC-20 approvals granted in the last 10,000 blocks (default), verified at the head block
+uv run cryptoguard approvals <address>
+uv run cryptoguard approvals <address> --lookback 50000
+uv run cryptoguard approvals <address> --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 
 # Fictional fixtures, no RPC needed (output is labelled SIMULATED):
 uv run cryptoguard demo-addresses
@@ -74,13 +87,15 @@ uv run cryptoguard serve
 uv run cryptoguard purge --yes
 ```
 
-API (Phase 1):
+API:
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/v1/health` | Liveness and database check |
 | GET | `/api/v1/status` | Mode, redacted provider, chain verification, head block, RPC metrics |
 | POST | `/api/v1/analyze/address` | `{"address": "0x…"}` → inspection (persisted idempotently) |
+| POST | `/api/v1/wallets/{address}/approvals/scan` | `{"lookback_blocks"?, "from_block"?, "tokens"?}` → approval scan report (send `{}` for defaults) |
+| GET | `/api/v1/wallets/{address}/approvals` | Latest stored approval scan (404 if none) |
 | GET | `/api/v1/wallets/{address}/observations` | Stored observations, paginated (`limit`, `offset`) |
 | GET | `/api/v1/demo/addresses` | Fixture addresses (demo mode only) |
 
@@ -100,9 +115,8 @@ $env:CRYPTOGUARD_LIVE_RPC_URL = "https://ethereum-rpc.publicnode.com"; uv run py
 
 ## Roadmap
 
-1. ~~Backend foundation~~ (this milestone)
-2. ERC-20 approval discovery (bounded log scans), `allowance()` verification, exposure upper
-   bound `min(balance, allowance)`
+1. ~~Backend foundation~~
+2. ~~ERC-20 approval discovery and allowance verification~~ (this milestone)
 3. Wallet security timeline: snapshots, deterministic deltas, finding lifecycle
 4. Address-poisoning detector with false-positive fixtures
 5. Web UI (Next.js, TypeScript, Tailwind)
