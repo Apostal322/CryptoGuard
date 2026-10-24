@@ -199,6 +199,8 @@ export interface SnapshotCoverage {
   description: string;
   transfers_scanned: CoverageRange[];
   transfer_gaps: CoverageRange[];
+  wallet_txs_scanned: CoverageRange[];
+  wallet_txs_unlocated: number;
 }
 
 export interface SnapshotOutcome {
@@ -325,6 +327,8 @@ export interface PoisoningReport {
   transfers_analyzed: number;
   sender_lookups: number;
   sender_lookups_skipped: number;
+  wallet_transactions_located: number;
+  wallet_transactions_unlocated: number | null;
   cases: PoisoningCase[];
   limitations: string[];
 }

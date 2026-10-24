@@ -16,12 +16,10 @@ The manifest supplies only the wallet and the window; its ground truth is never 
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 from cryptoguard.blockchain.provider import RpcEthereumProvider
 from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.errors import RpcInvalidResponseError
-from cryptoguard.core.hexutil import parse_hash32, parse_quantity, to_quantity
 from cryptoguard.replay.models import (
     IncidentManifest,
     RecordedTransaction,
@@ -30,6 +28,7 @@ from cryptoguard.replay.models import (
 )
 from cryptoguard.services.approvals import ScanLimits
 from cryptoguard.services.transfers import discover_transfers
+from cryptoguard.services.wallet_txs import locate_wallet_transactions
 
 METHOD = [
     "ERC-20 Transfer logs to and from the wallet, all tokens, the whole window (eth_getLogs).",
@@ -39,56 +38,6 @@ METHOD = [
     "Wallet code at the window start and one block before the harmful block (eth_getCode).",
     "Timestamps of all referenced blocks (eth_getBlockByNumber).",
 ]
-
-
-async def _nonce(provider: RpcEthereumProvider, wallet: str, block: int) -> int:
-    raw = await provider.client.call("eth_getTransactionCount", [wallet, to_quantity(block)])
-    try:
-        return parse_quantity(raw)
-    except ValueError:
-        raise RpcInvalidResponseError("Provider returned an invalid nonce.") from None
-
-
-async def _block_with_txs(provider: RpcEthereumProvider, block: int) -> list[dict[str, Any]]:
-    raw = await provider.client.call("eth_getBlockByNumber", [to_quantity(block), True])
-    if not isinstance(raw, dict) or not isinstance(raw.get("transactions"), list):
-        raise RpcInvalidResponseError(f"Provider returned an invalid block {block}.")
-    return [tx for tx in raw["transactions"] if isinstance(tx, dict)]
-
-
-async def _wallet_transactions(
-    provider: RpcEthereumProvider, wallet: str, from_block: int, to_block: int
-) -> list[RecordedTransaction]:
-    first = await _nonce(provider, wallet, from_block - 1)
-    last = await _nonce(provider, wallet, to_block)
-    found: list[RecordedTransaction] = []
-    for nonce in range(first, last):
-        lo, hi = from_block, to_block  # smallest block whose post-state nonce exceeds ``nonce``
-        while lo < hi:
-            mid = (lo + hi) // 2
-            if await _nonce(provider, wallet, mid) > nonce:
-                hi = mid
-            else:
-                lo = mid + 1
-        for tx in await _block_with_txs(provider, lo):
-            sender = str(tx.get("from", "")).lower()
-            if sender == wallet.lower() and parse_quantity(tx.get("nonce")) == nonce:
-                found.append(
-                    RecordedTransaction(
-                        transaction_hash=parse_hash32(tx.get("hash")),
-                        block_number=lo,
-                        transaction_index=parse_quantity(tx.get("transactionIndex")),
-                        nonce=nonce,
-                        to=to_checksum_address(tx["to"]) if tx.get("to") else None,
-                        value=str(parse_quantity(tx.get("value"))),
-                    )
-                )
-                break
-        else:
-            raise RpcInvalidResponseError(
-                f"Transaction with nonce {nonce} not found in block {lo}."
-            )
-    return found
 
 
 async def record_fixture(
@@ -119,7 +68,24 @@ async def record_fixture(
         token_scope=None,
         max_sender_lookups=max_sender_lookups,
     )
-    transactions = await _wallet_transactions(provider, wallet, start, end)
+    located = await locate_wallet_transactions(
+        provider, wallet, from_block=start, to_block=end, max_transactions=10_000
+    )
+    if not located.complete:
+        raise RpcInvalidResponseError(
+            "Cannot record a complete fixture: " + (located.note or "wallet transactions missing.")
+        )
+    transactions = [
+        RecordedTransaction(
+            transaction_hash=t.transaction_hash,
+            block_number=t.block_number,
+            transaction_index=t.transaction_index,
+            nonce=t.nonce,
+            to=t.to,
+            value=str(t.value),
+        )
+        for t in located.transactions
+    ]
     code = {
         str(block): "0x" + (await provider.get_code(wallet, block)).hex()
         for block in (start, end - 1)

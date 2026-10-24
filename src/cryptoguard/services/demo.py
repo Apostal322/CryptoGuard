@@ -341,6 +341,15 @@ class DemoProvider:
         signer = _DEMO_TX_SIGNERS.get(tx_hash.lower())
         return {"hash": tx_hash.lower(), "from": signer} if signer else None
 
+    async def get_transaction_count(self, address: str, block: BlockRef) -> int:
+        """Fixture wallets sign no transactions beyond the fixture transfers' own, which the
+        demo does not model as native sends; their nonce is constant."""
+        self._account(address)
+        return 0
+
+    async def get_block_transactions(self, block: int) -> list[dict[str, Any]]:
+        return []
+
     async def get_transaction_receipt(self, tx_hash: str) -> dict[str, Any] | None:
         raise RpcUnsupportedMethodError("Receipts are not part of the demo fixtures.")
 

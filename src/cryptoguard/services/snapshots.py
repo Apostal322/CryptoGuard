@@ -50,6 +50,7 @@ from cryptoguard.services.approvals import (
 )
 from cryptoguard.services.inspection import inspect_address
 from cryptoguard.services.transfers import discover_transfers
+from cryptoguard.services.wallet_txs import WalletTxDiscovery, locate_wallet_transactions
 
 REORG_LOOKBACK_SNAPSHOTS = 10
 
@@ -67,6 +68,9 @@ class SnapshotCoverage(BaseModel):
     # Snapshots recorded before transfer monitoring existed have no transfer coverage.
     transfers_scanned: list[CoverageRange] = []
     transfer_gaps: list[CoverageRange] = []
+    # Ranges where every wallet-signed transaction (incl. native-ETH payments) was located.
+    wallet_txs_scanned: list[CoverageRange] = []
+    wallet_txs_unlocated: int = 0
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,7 @@ class DetectionOptions:
     poisoning: PoisoningConfig
     max_sender_lookups: int
     history_limit: int
+    max_wallet_transactions: int = 200
 
     @classmethod
     def from_settings(cls, settings: Settings) -> DetectionOptions:
@@ -86,6 +91,7 @@ class DetectionOptions:
             ),
             max_sender_lookups=settings.transfer_max_sender_lookups,
             history_limit=settings.transfer_history_limit,
+            max_wallet_transactions=settings.wallet_tx_max_per_scan,
         )
 
 
@@ -176,18 +182,37 @@ def _coverage(
     to_block: int,
     token_scope: list[str] | None,
     unverified: int,
+    wallet_txs: WalletTxDiscovery,
 ) -> SnapshotCoverage:
     scanned = _extend(base, "scanned", CoverageRange(from_block=scanned_from, to_block=to_block))
     transfers = _extend(
         base, "transfers_scanned", CoverageRange(from_block=transfers_from, to_block=to_block)
     )
+    previous_tx = (
+        [CoverageRange.model_validate(r) for r in base.coverage.get("wallet_txs_scanned", [])]
+        if base
+        else []
+    )
+    tx_ranges = _merge(
+        [*previous_tx, CoverageRange(from_block=wallet_txs.from_block, to_block=to_block)]
+        if wallet_txs.signed_in_window is not None
+        else previous_tx
+    )
+    unlocated = (int(base.coverage.get("wallet_txs_unlocated", 0)) if base else 0) + (
+        wallet_txs.unlocated
+    )
     gaps, transfer_gaps = _gaps(scanned), _gaps(transfers)
     scope = f"token contracts {', '.join(token_scope)}" if token_scope else "all token contracts"
     text = (
         f"Approval events scanned for {scope} in {_ranges(scanned)}; ERC-20 transfers in "
-        f"{_ranges(transfers)}. Activity outside these ranges is not discovered, and native ETH "
-        "transfers are not visible."
+        f"{_ranges(transfers)}; transactions signed by the wallet (including native-ETH "
+        f"payments) in {_ranges(tx_ranges) or 'no range'}. Activity outside these ranges is not "
+        "discovered, and native ETH received by the wallet is not visible."
     )
+    if unlocated:
+        text += f" {unlocated} wallet-signed transaction(s) could not be located."
+    if wallet_txs.signed_in_window is None and wallet_txs.note:
+        text += f" {wallet_txs.note}"
     if gaps:
         text += f" Approvals NOT scanned: {_ranges(gaps)}."
     if transfer_gaps:
@@ -201,6 +226,8 @@ def _coverage(
         description=text,
         transfers_scanned=transfers,
         transfer_gaps=transfer_gaps,
+        wallet_txs_scanned=tx_ranges,
+        wallet_txs_unlocated=unlocated,
     )
 
 
@@ -307,6 +334,15 @@ async def take_snapshot(
         token_scope=token_scope,
         max_sender_lookups=options.max_sender_lookups,
     )
+    contiguous = base is not None and scan_from == base.block_number + 1
+    wallet_txs = await locate_wallet_transactions(
+        provider,
+        owner,
+        from_block=scan_from,
+        to_block=target,
+        start_nonce=base.state.nonce if contiguous and base is not None else None,
+        max_transactions=options.max_wallet_transactions,
+    )
     if (await provider.get_block(target)).hash != header.hash:
         raise ReorgDetectedError("The chain reorganized during the snapshot; try again.")
 
@@ -323,6 +359,7 @@ async def take_snapshot(
         approvals=dict(sorted(approvals.items())),
         account=account_state(inspection),
         native_balance_wei=inspection.native_balance.wei,
+        nonce=wallet_txs.nonce_at_end,
     )
     simulated = source == "demo_fixture"
     changes = (
@@ -345,6 +382,14 @@ async def take_snapshot(
         *stored,
         *(t for t in transfers.transfers if (t.block_hash, t.log_index) not in known),
     ]
+    stored_txs = await asyncio.to_thread(
+        repo.load_wallet_transactions, chain.chain_id, owner, source, options.history_limit
+    )
+    known_txs = {t.transaction_hash for t in stored_txs}
+    tx_history = [
+        *stored_txs,
+        *(t for t in wallet_txs.transactions if t.transaction_hash not in known_txs),
+    ]
     coverage = _coverage(
         base,
         discovery.coverage.scanned_from_block,
@@ -352,6 +397,7 @@ async def take_snapshot(
         target,
         token_scope,
         len(dropped),
+        wallet_txs,
     )
     evaluation = run_detectors(
         [StateRulesDetector(), PoisoningDetector(options.poisoning)],
@@ -362,6 +408,7 @@ async def take_snapshot(
             state=state,
             transfers=history,
             transfer_coverage=coverage.description,
+            native_sends=[s for t in tx_history if (s := t.as_native_send()) is not None],
         ),
     )
     recorded = await asyncio.to_thread(
@@ -383,6 +430,7 @@ async def take_snapshot(
         discovery.events,
         evaluation,
         transfers.transfers,
+        wallet_txs.transactions,
     )
     notes = _notes(base, simulated, orphaned)
     return SnapshotOutcome(

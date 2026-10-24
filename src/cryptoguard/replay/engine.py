@@ -7,9 +7,9 @@ the first warning block found this way is the earliest block any warning was pos
 
 Two configurations are evaluated, because the answer depends on what the monitor can see:
 
-- ``erc20_only`` — ERC-20 transfers and their signers (CryptoGuard's current pipeline);
+- ``erc20_only`` — ERC-20 transfers and their signers only;
 - ``erc20_plus_wallet_transactions`` — additionally the wallet's own signed transactions,
-  including native-ETH payments, as forward block monitoring of the wallet would provide.
+  including native-ETH payments, as the live snapshot pipeline now locates them.
 """
 
 from __future__ import annotations
@@ -44,11 +44,11 @@ class Visibility(StrEnum):
 
 
 VISIBILITY_DESCRIPTION = {
-    Visibility.ERC20_ONLY: "ERC-20 transfers and their transaction signers (CryptoGuard's "
-    "current pipeline).",
+    Visibility.ERC20_ONLY: "ERC-20 transfers and their transaction signers only (the pipeline "
+    "before wallet-transaction monitoring).",
     Visibility.ERC20_PLUS_WALLET_TRANSACTIONS: "ERC-20 transfers plus every transaction the "
-    "wallet signed, including native-ETH payments (what forward block monitoring of the wallet "
-    "would see; not implemented in the live pipeline yet).",
+    "wallet signed, including native-ETH payments (what the live snapshot pipeline sees since "
+    "wallet-transaction monitoring was added).",
 }
 
 

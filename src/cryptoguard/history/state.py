@@ -18,7 +18,7 @@ from cryptoguard.core.hashing import keccak256
 from cryptoguard.services.approvals import AllowanceLevel, ApprovalEntry
 from cryptoguard.services.inspection import AddressInspection
 
-SNAPSHOT_SCHEMA_VERSION = "wallet-snapshot/1"
+SNAPSHOT_SCHEMA_VERSION = "wallet-snapshot/2"  # /2 adds the wallet nonce
 
 
 class EventRef(BaseModel):
@@ -87,6 +87,9 @@ class WalletState(BaseModel):
     approvals: dict[str, ApprovalState]
     account: DelegationState
     native_balance_wei: str
+    # Transactions signed by the wallet so far (its nonce) at the snapshot block. The next
+    # snapshot locates the wallet's new transactions from here without old-state reads.
+    nonce: int | None = None
 
 
 def pair_key(token: str, spender: str) -> str:

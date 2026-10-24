@@ -31,7 +31,7 @@ from pydantic import BaseModel
 from cryptoguard.blockchain.eip7702 import CodeKind
 from cryptoguard.blockchain.erc20 import TransferEvent
 from cryptoguard.core.known_contracts import lookup_known_contract
-from cryptoguard.detectors.poisoning import PoisoningCase
+from cryptoguard.detectors.poisoning import NATIVE_ASSET, PoisoningCase
 from cryptoguard.history.state import WalletState
 from cryptoguard.services.approvals import AllowanceLevel
 
@@ -403,7 +403,11 @@ def build_wallet_graph(
                         kind="transfer_event",
                         block_number=e.block_number,
                         transaction_hash=e.transaction_hash,
-                        description=f"Transfer of {e.value} base units of {e.token}"
+                        description=(
+                            f"Native ETH payment of {e.value} wei"
+                            if e.token == NATIVE_ASSET
+                            else f"Transfer of {e.value} base units of {e.token}"
+                        )
                         + (f", tx signed by {e.tx_sender}" if e.tx_sender else ""),
                     )
                     for e in flow.samples[-MAX_SAMPLE_TXS:]

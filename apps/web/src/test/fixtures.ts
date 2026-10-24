@@ -98,6 +98,8 @@ export function poisoningReport(overrides: Partial<PoisoningReport> = {}): Poiso
     transfers_analyzed: 2,
     sender_lookups: 1,
     sender_lookups_skipped: 0,
+    wallet_transactions_located: 1,
+    wallet_transactions_unlocated: 0,
     cases: [
       {
         suspect: "0xA1B2C99999999999999999999999999999994E5F6".slice(0, 42),

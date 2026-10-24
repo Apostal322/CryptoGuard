@@ -16,7 +16,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from cryptoguard.risk.rules import RULESET_MAJOR, FindingCandidate, RuleEvaluation
+from cryptoguard.risk.rules import (
+    RULESET_MAJOR,
+    FindingCandidate,
+    RuleEvaluation,
+    same_exclusive_group,
+)
 
 
 class FindingStatus(StrEnum):
@@ -36,6 +41,7 @@ class KnownFinding:
     status: FindingStatus
     ruleset_version: str
     subject: str
+    rule_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -81,7 +87,26 @@ def reconcile(known: dict[str, KnownFinding], evaluation: RuleEvaluation) -> Rec
         existing = known[fp]
         if fp in seen or existing.status not in OPEN_STATUSES:
             continue
-        if existing.ruleset_version.split(".")[0] != RULESET_MAJOR:
+        replacement = next(
+            (
+                c
+                for c in evaluation.candidates
+                if c.subject == existing.subject
+                and same_exclusive_group(c.rule_id, existing.rule_id)
+            ),
+            None,
+        )
+        if replacement is not None:
+            transitions.append(
+                Transition(
+                    fp,
+                    existing.status,
+                    FindingStatus.SUPERSEDED,
+                    f"Replaced by {replacement.rule_id} for the same subject (the condition "
+                    "changed stage; it did not end).",
+                )
+            )
+        elif existing.ruleset_version.split(".")[0] != RULESET_MAJOR:
             transitions.append(
                 Transition(
                     fp,

@@ -22,7 +22,9 @@ from cryptoguard.database.models import (
     FindingTransitionRecord,
     TokenTransferRecord,
     WalletSnapshotRecord,
+    WalletTransactionRecord,
 )
+from cryptoguard.services.wallet_txs import WalletTransaction
 
 if TYPE_CHECKING:
     from cryptoguard.database.history import HistoryRepository
@@ -78,6 +80,47 @@ def insert_approval_events(
             ingested_at=now,
         )
         for e in new
+    )
+    return len(new)
+
+
+def insert_wallet_transactions(
+    session: Session,
+    chain_id: int,
+    wallet: str,
+    data_source: str,
+    transactions: Sequence[WalletTransaction],
+) -> int:
+    """Insert wallet-signed transactions not yet stored. Returns the number inserted."""
+    if not transactions:
+        return 0
+    rows = session.execute(
+        select(WalletTransactionRecord.transaction_hash, WalletTransactionRecord.block_hash).where(
+            (WalletTransactionRecord.chain_id == chain_id)
+            & (WalletTransactionRecord.wallet == wallet)
+            & WalletTransactionRecord.transaction_hash.in_(
+                {t.transaction_hash for t in transactions}
+            )
+        )
+    )
+    existing = {(tx_hash, block_hash) for tx_hash, block_hash in rows}
+    new = [t for t in transactions if (t.transaction_hash, t.block_hash) not in existing]
+    now = datetime.now(UTC)
+    session.add_all(
+        WalletTransactionRecord(
+            chain_id=chain_id,
+            wallet=wallet,
+            transaction_hash=t.transaction_hash,
+            block_number=t.block_number,
+            block_hash=t.block_hash,
+            transaction_index=t.transaction_index,
+            nonce=t.nonce,
+            to=t.to,
+            value=str(t.value),
+            data_source=data_source,
+            ingested_at=now,
+        )
+        for t in new
     )
     return len(new)
 
@@ -248,8 +291,10 @@ class ObservationRepository:
         observations = delete(AddressObservation)
         events = delete(ApprovalEventRecord)
         transfers = delete(TokenTransferRecord)
+        wallet_txs = delete(WalletTransactionRecord)
         if address is not None:
             transfers = transfers.where(TokenTransferRecord.wallet == address)
+            wallet_txs = wallet_txs.where(WalletTransactionRecord.wallet == address)
             finding_ids = finding_ids.where(FindingRecord.address == address)
             transitions = transitions.where(FindingTransitionRecord.finding_id.in_(finding_ids))
             findings = findings.where(FindingRecord.address == address)
@@ -259,7 +304,15 @@ class ObservationRepository:
         removed = 0
         with self._sessions() as session, session.begin():
             # Children first, so foreign keys hold on databases that enforce them.
-            for statement in (transitions, findings, snapshots, observations, events, transfers):
+            for statement in (
+                transitions,
+                findings,
+                snapshots,
+                observations,
+                events,
+                transfers,
+                wallet_txs,
+            ):
                 removed += int(getattr(session.execute(statement), "rowcount", 0) or 0)
         return removed
 

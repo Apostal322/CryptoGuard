@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     poisoning_reaction_window_blocks: int = Field(default=50_400, ge=1, le=10_000_000)
     transfer_max_sender_lookups: int = Field(default=100, ge=0, le=5_000)
     transfer_history_limit: int = Field(default=20_000, ge=100, le=500_000)
+    # Wallet-signed transactions located per snapshot or scan (nonce bisection; each costs
+    # roughly log2(window) nonce reads plus one block read).
+    wallet_tx_max_per_scan: int = Field(default=200, ge=0, le=10_000)
 
     database_url: str = "sqlite:///./data/cryptoguard.db"
 

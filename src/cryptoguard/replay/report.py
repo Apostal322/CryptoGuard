@@ -43,8 +43,8 @@ def render_markdown(results: list[ReplayResult], *, generated_at: datetime | Non
         "- **A warning** means rule CG-POI-001 or CG-POI-003 on the address that later received "
         "the funds. A finding that appears only once the harmful transfer is visible is reported "
         "as post-incident classification, never as early detection.",
-        "- **Visibility levels** are evaluated separately: what the live pipeline sees today "
-        "(ERC-20 only) and what forward monitoring of the wallet's own transactions would add.",
+        "- **Visibility levels** are evaluated separately: ERC-20 data only, and ERC-20 data plus "
+        "the wallet's own signed transactions (what the live snapshot pipeline now sees).",
         "",
         "## Results",
         "",

@@ -104,6 +104,17 @@ RULES: tuple[Rule, ...] = (
 )
 _RULES = {rule.rule_id: rule for rule in RULES}
 
+# Rules that describe successive stages of one condition: at most one fires per subject. When
+# one replaces another (e.g. a poisoning warning escalating to a send-to-lookalike), the old
+# finding is superseded, not resolved — the condition did not go away.
+EXCLUSIVE_RULE_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"CG-POI-001", "CG-POI-002", "CG-POI-003"}),
+)
+
+
+def same_exclusive_group(rule_a: str, rule_b: str) -> bool:
+    return any(rule_a in group and rule_b in group for group in EXCLUSIVE_RULE_GROUPS)
+
 
 class EvidenceRef(BaseModel):
     kind: Literal["approval_state", "approval_event", "account_code", "transfer_event"]

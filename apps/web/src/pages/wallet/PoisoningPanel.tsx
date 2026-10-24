@@ -108,6 +108,16 @@ export function PoisoningPanel({ address }: { address: string }) {
           actions={<SimulatedBadge simulated={report.simulated} />}
         >
           <div className="flex flex-col gap-4">
+            <p className="text-xs text-faint">
+              Includes {report.wallet_transactions_located} transaction(s) the wallet signed itself
+              (native-ETH payments count as references)
+              {report.wallet_transactions_unlocated === null
+                ? "; the wallet's own transactions could not be checked on this provider"
+                : report.wallet_transactions_unlocated > 0
+                  ? `; ${report.wallet_transactions_unlocated} could not be located`
+                  : ""}
+              .
+            </p>
             {!report.complete_for_requested_range && (
               <Callout tone="warn" title="Partial coverage">
                 The request budget ended the scan early; older transfers were not analyzed.

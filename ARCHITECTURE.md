@@ -35,6 +35,7 @@ SQLAlchemy or the CLI, so detectors added later can be run, tested and replayed 
 | `risk/lifecycle.py` | Pure finding-lifecycle reconciliation |
 | `blockchain/logscan.py` | Shared bounded, newest-first `eth_getLogs` scanner (split, budget) |
 | `services/transfers.py` | ERC-20 transfer discovery (both directions) and signer lookups |
+| `services/wallet_txs.py` | Every wallet-signed transaction in a window, by galloping + bisecting the nonce |
 | `detectors/base.py` | `Detector` protocol, `DetectionContext`, merging runner; state-rules adapter |
 | `detectors/poisoning.py` | Pure address-poisoning detector |
 | `services/poisoning.py` | One-off poisoning scan (no storage) |
@@ -148,7 +149,9 @@ unique on `(chain_id, block_hash, log_index)`, with the uint256 value as a decim
 previous snapshot. `findings` (unique per chain, wallet, fingerprint) holds current status,
 severity, confidence and evidence; `finding_transitions` is the append-only audit trail.
 `token_transfers` holds each wallet's ERC-20 transfers (unique per chain, wallet, block hash,
-log index) with the transaction signer when known.
+log index) with the transaction signer when known. `wallet_transactions` holds the wallet's
+own signed transactions (unique per chain, wallet, tx hash, block hash); snapshot state
+(`wallet-snapshot/2`) records the wallet nonce so the next snapshot starts from it.
 All times are UTC. Schema creation currently uses
 `create_all`; Alembic migrations must be introduced before the first schema change.
 

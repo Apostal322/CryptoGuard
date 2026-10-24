@@ -229,3 +229,32 @@ class TokenTransferRecord(Base):
     tx_sender: Mapped[str | None] = mapped_column(String(42), nullable=True)
     data_source: Mapped[str] = mapped_column(String(32))
     ingested_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class WalletTransactionRecord(Base):
+    """A transaction signed by a monitored wallet (located by nonce bisection).
+
+    Native-ETH payments here are what the poisoning detector uses as references when the
+    wallet paid an address in ETH rather than with an ERC-20 token.
+    """
+
+    __tablename__ = "wallet_transactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "chain_id", "wallet", "transaction_hash", "block_hash", name="uq_wallet_transaction"
+        ),
+        Index("ix_wallet_transaction_wallet_block", "chain_id", "wallet", "block_number"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chain_id: Mapped[int] = mapped_column(BigInteger)
+    wallet: Mapped[str] = mapped_column(String(42))
+    transaction_hash: Mapped[str] = mapped_column(String(66))
+    block_number: Mapped[int] = mapped_column(BigInteger)
+    block_hash: Mapped[str] = mapped_column(String(66))
+    transaction_index: Mapped[int] = mapped_column(BigInteger)
+    nonce: Mapped[int] = mapped_column(BigInteger)
+    to: Mapped[str | None] = mapped_column(String(42), nullable=True)
+    value: Mapped[str] = mapped_column(String(78))
+    data_source: Mapped[str] = mapped_column(String(32))
+    ingested_at: Mapped[datetime] = mapped_column(UTCDateTime())

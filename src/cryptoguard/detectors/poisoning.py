@@ -449,6 +449,7 @@ class PoisoningDetector:
             chain_id=context.chain_id,
             wallet_is_plain_eoa=plain,
             config=self.config,
+            native_sends=context.native_sends,
         )
         return RuleEvaluation(
             candidates=[

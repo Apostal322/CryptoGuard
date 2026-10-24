@@ -89,6 +89,8 @@ class FakeNode:
         self.require_log_address = False  # emulate providers that reject address-less queries
         self.tx_senders: dict[str, str] = {}  # tx hash -> signer, served by getTransactionByHash
         self.sent_txs: list[dict[str, Any]] = []  # full transactions, for nonce and block reads
+        # Emulate a non-archive node: nonces older than this many blocks are unavailable.
+        self.state_history: int | None = None
 
     def send_native(self, sender: str, to: str, value: int, *, block: int) -> str:
         """Record a transaction signed by ``sender`` (nonces assigned in order)."""
@@ -103,6 +105,7 @@ class FakeNode:
                 "value": hex(value),
                 "nonce": hex(nonce),
                 "blockNumber": hex(block),
+                "blockHash": block_hash(block, self.fork),
                 "transactionIndex": "0x0",
             }
         )
@@ -205,6 +208,8 @@ class FakeNode:
         except _TooLarge:
             # Infura-style: -32005 is also used for rate limiting, so the message decides.
             return rpc_error(-32005, "query returned more than 10000 results")(payload)
+        except _NoHistory:
+            return rpc_error(-32000, "missing trie node (state is not available)")(payload)
         except _AddressRequired:
             # The wording publicnode.com returned in a live check (2026-10-23).
             return rpc_error(-32701, "Please specify an address in your request")(payload)
@@ -240,6 +245,8 @@ class FakeNode:
             return block
         if method == "eth_getTransactionCount":
             sender, number = params[0].lower(), int(params[1], 16)
+            if self.state_history is not None and number < self.head - self.state_history:
+                raise _NoHistory
             return hex(
                 sum(
                     1
@@ -293,6 +300,10 @@ class _TooLarge(Exception):
 
 
 class _AddressRequired(Exception):
+    pass
+
+
+class _NoHistory(Exception):
     pass
 
 

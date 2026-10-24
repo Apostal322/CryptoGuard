@@ -21,11 +21,13 @@ from cryptoguard.database.models import (
     FindingTransitionRecord,
     TokenTransferRecord,
     WalletSnapshotRecord,
+    WalletTransactionRecord,
 )
 from cryptoguard.database.repository import (
     ObservationRepository,
     insert_approval_events,
     insert_transfers,
+    insert_wallet_transactions,
 )
 from cryptoguard.history.delta import Change
 from cryptoguard.history.state import SNAPSHOT_SCHEMA_VERSION, WalletState, state_hash
@@ -36,6 +38,7 @@ from cryptoguard.risk.lifecycle import (
     reconcile,
 )
 from cryptoguard.risk.rules import RULESET_VERSION, RuleEvaluation
+from cryptoguard.services.wallet_txs import WalletTransaction
 
 
 @dataclass(frozen=True)
@@ -146,6 +149,13 @@ class HistoryRepository(ObservationRepository):
                     & (TokenTransferRecord.block_number > keep_up_to_block)
                 )
             )
+            session.execute(
+                delete(WalletTransactionRecord).where(
+                    (WalletTransactionRecord.chain_id == chain_id)
+                    & (WalletTransactionRecord.wallet == address)
+                    & (WalletTransactionRecord.block_number > keep_up_to_block)
+                )
+            )
         return int(getattr(result, "rowcount", 0) or 0)
 
     def load_transfers(
@@ -181,12 +191,41 @@ class HistoryRepository(ObservationRepository):
             for r in reversed(rows)
         ]
 
+    def load_wallet_transactions(
+        self, chain_id: int, wallet: str, data_source: str, limit: int
+    ) -> list[WalletTransaction]:
+        """The wallet's stored signed transactions (most recent ``limit``), in nonce order."""
+        with self._sessions() as session:
+            rows = session.scalars(
+                select(WalletTransactionRecord)
+                .where(
+                    (WalletTransactionRecord.chain_id == chain_id)
+                    & (WalletTransactionRecord.wallet == wallet)
+                    & (WalletTransactionRecord.data_source == data_source)
+                )
+                .order_by(WalletTransactionRecord.nonce.desc())
+                .limit(limit)
+            ).all()
+        return [
+            WalletTransaction(
+                transaction_hash=r.transaction_hash,
+                block_number=r.block_number,
+                block_hash=r.block_hash,
+                transaction_index=r.transaction_index,
+                nonce=r.nonce,
+                to=r.to,
+                value=int(r.value),
+            )
+            for r in reversed(rows)
+        ]
+
     def record_snapshot(
         self,
         new: NewSnapshot,
         events: Sequence[ApprovalEvent],
         evaluation: RuleEvaluation,
         transfers: Sequence[TransferEvent] = (),
+        wallet_transactions: Sequence[WalletTransaction] = (),
     ) -> RecordedSnapshot:
         now = datetime.now(UTC)
         with self._sessions() as session, session.begin():
@@ -203,6 +242,9 @@ class HistoryRepository(ObservationRepository):
 
             new_events = insert_approval_events(session, new.chain_id, new.data_source, events)
             insert_transfers(session, new.chain_id, new.address, new.data_source, transfers)
+            insert_wallet_transactions(
+                session, new.chain_id, new.address, new.data_source, wallet_transactions
+            )
             row = WalletSnapshotRecord(
                 chain_id=new.chain_id,
                 address=new.address,
@@ -242,7 +284,7 @@ class HistoryRepository(ObservationRepository):
         by_fp = {f.fingerprint: f for f in findings}
         known = {
             f.fingerprint: KnownFinding(
-                f.fingerprint, FindingStatus(f.status), f.ruleset_version, f.subject
+                f.fingerprint, FindingStatus(f.status), f.ruleset_version, f.subject, f.rule_id
             )
             for f in findings
         }

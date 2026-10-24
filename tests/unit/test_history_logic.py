@@ -22,6 +22,7 @@ from cryptoguard.risk.lifecycle import (
 from cryptoguard.risk.rules import (
     RULESET_VERSION,
     Confidence,
+    RuleEvaluation,
     Severity,
     evaluate,
     fingerprint,
@@ -281,6 +282,53 @@ def test_reopen_acknowledged_and_unverifiable() -> None:
     result = reconcile(known(fp, FindingStatus.ACTIVE, subject), unknown_now)
     assert result.transitions == []  # not resolved on missing evidence
     assert result.not_reverified == [fp]
+
+
+def test_escalation_within_a_rule_group_supersedes_instead_of_resolving() -> None:
+    # Regression (found in the live WBTC check): CG-POI-001 escalating to CG-POI-003 for the
+    # same lookalike must not read as "resolved".
+    from cryptoguard.risk.rules import EvidenceRef, make_candidate
+
+    subject = "poisoning:0x" + "ab" * 20
+    escalated = make_candidate(
+        "CG-POI-003",
+        chain_id=1,
+        wallet=WALLET,
+        subject=subject,
+        severity=Severity.CRITICAL_EVIDENCE,
+        confidence=Confidence.MEDIUM,
+        title="t",
+        explanation="e",
+        evidence=[EvidenceRef(kind="transfer_event", description="d", block_number=1)],
+    )
+    evaluation = RuleEvaluation(candidates=[escalated])
+    old = KnownFinding("0x01", FindingStatus.ACTIVE, RULESET_VERSION, subject, "CG-POI-001")
+    [new, superseded] = sorted(
+        reconcile({"0x01": old}, evaluation).transitions,
+        key=lambda t: t.fingerprint != escalated.fingerprint,
+    )
+    assert new.to_status is FindingStatus.NEW
+    assert superseded.to_status is FindingStatus.SUPERSEDED
+    assert "CG-POI-003" in superseded.reason
+
+
+def test_coexisting_rules_on_one_subject_still_resolve() -> None:
+    # CG-APR-001 and CG-APR-002 can both hold for one pair; one ending is a real resolution.
+    present = evaluated(state(approval(UINT256_MAX, spender_kind=CodeKind.NO_CODE)))
+    by_rule = {c.rule_id: c for c in present.candidates}
+    only_unlimited = evaluated(state(approval(UINT256_MAX)))
+    codeless = by_rule["CG-APR-002"]
+    known_002 = {
+        codeless.fingerprint: KnownFinding(
+            codeless.fingerprint,
+            FindingStatus.ACTIVE,
+            RULESET_VERSION,
+            codeless.subject,
+            "CG-APR-002",
+        )
+    }
+    [transition] = reconcile(known_002, only_unlimited).transitions[-1:]
+    assert transition.to_status is FindingStatus.RESOLVED
 
 
 def test_old_ruleset_major_is_superseded() -> None:

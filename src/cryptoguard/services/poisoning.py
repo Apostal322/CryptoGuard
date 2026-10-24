@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from cryptoguard.blockchain.eip7702 import CodeKind, classify_code
 from cryptoguard.blockchain.provider import DataSource, EthereumProvider
@@ -19,6 +19,7 @@ from cryptoguard.detectors.poisoning import DETECTOR_VERSION, PoisoningCase, det
 from cryptoguard.services.approvals import ScanLimits, normalize_token_scope
 from cryptoguard.services.snapshots import DetectionOptions
 from cryptoguard.services.transfers import discover_transfers
+from cryptoguard.services.wallet_txs import locate_wallet_transactions
 
 
 class PoisoningReport(BaseModel):
@@ -37,6 +38,10 @@ class PoisoningReport(BaseModel):
     transfers_analyzed: int
     sender_lookups: int
     sender_lookups_skipped: int
+    wallet_transactions_located: int
+    wallet_transactions_unlocated: int | None = Field(
+        description="Signed in the window but not located; null if the count is unknown."
+    )
     cases: list[PoisoningCase]
     limitations: list[str]
 
@@ -67,11 +72,20 @@ async def scan_poisoning(
         token_scope=scope,
         max_sender_lookups=options.max_sender_lookups,
     )
+    wallet_txs = await locate_wallet_transactions(
+        provider,
+        owner,
+        from_block=from_block,
+        to_block=header.number,
+        max_transactions=options.max_wallet_transactions,
+    )
     if (await provider.get_block(header.number)).hash != header.hash:
         raise ReorgDetectedError("The chain reorganized during the scan; try again.")
+    natives = [s for t in wallet_txs.transactions if (s := t.as_native_send()) is not None]
     cases = detect_poisoning(
         owner,
         discovery.transfers,
+        native_sends=natives,
         chain_id=chain.chain_id,
         wallet_is_plain_eoa=plain,
         config=options.poisoning,
@@ -81,8 +95,8 @@ async def scan_poisoning(
         f"ERC-20 transfers were scanned in blocks {discovery.scanned_from} to {header.number}"
         + ("" if discovery.complete else " (the request budget ended the scan early)")
         + ". Lookalikes of addresses used before this window cannot be recognized.",
-        "Native ETH transfers are not visible over standard JSON-RPC, so ETH-based poisoning "
-        "and ETH sends to lookalikes are missed.",
+        "Native ETH the wallet sent is covered through its own signed transactions; native ETH "
+        "it received (e.g. ETH dust from a lookalike) is not visible over standard JSON-RPC.",
         "Every case is a warning based on address similarity and transfer context, not proof "
         "of fraud.",
     ]
@@ -93,6 +107,8 @@ async def scan_poisoning(
             f"{discovery.sender_lookups_skipped} outgoing transaction signer(s) were not looked "
             "up (budget), so spoofed transfers among them are not distinguished."
         )
+    if wallet_txs.note:
+        limitations.append(wallet_txs.note)
     if not plain:
         limitations.append(
             "The wallet has code (smart account or EIP-7702 delegation): a relayer may sign its "
@@ -115,6 +131,10 @@ async def scan_poisoning(
         transfers_analyzed=len(discovery.transfers),
         sender_lookups=discovery.sender_lookups,
         sender_lookups_skipped=discovery.sender_lookups_skipped,
+        wallet_transactions_located=len(wallet_txs.transactions),
+        wallet_transactions_unlocated=(
+            wallet_txs.unlocated if wallet_txs.signed_in_window is not None else None
+        ),
         cases=cases,
         limitations=limitations,
     )

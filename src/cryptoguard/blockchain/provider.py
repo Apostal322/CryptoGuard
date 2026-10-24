@@ -59,6 +59,8 @@ class EthereumProvider(Protocol):
     async def call(self, to: str, data: bytes, block: BlockRef) -> bytes: ...
     async def get_transaction(self, tx_hash: str) -> dict[str, Any] | None: ...
     async def get_transaction_receipt(self, tx_hash: str) -> dict[str, Any] | None: ...
+    async def get_transaction_count(self, address: str, block: BlockRef) -> int: ...
+    async def get_block_transactions(self, block: int) -> list[dict[str, Any]]: ...
     async def get_logs(
         self,
         *,
@@ -193,6 +195,24 @@ class RpcEthereumProvider:
         if raw is not None and not isinstance(raw, dict):
             raise RpcInvalidResponseError("Provider returned an invalid receipt object.")
         return raw
+
+    async def get_transaction_count(self, address: str, block: BlockRef) -> int:
+        """The account nonce after ``block``: how many transactions it has signed so far.
+        Older blocks need historical state (an archive-capable provider)."""
+        await self.verify_chain()
+        raw = await self._client.call(
+            "eth_getTransactionCount", [to_checksum_address(address), _block_param(block)]
+        )
+        return _expect(parse_quantity, raw, "transaction count")
+
+    async def get_block_transactions(self, block: int) -> list[dict[str, Any]]:
+        await self.verify_chain()
+        raw = await self._client.call("eth_getBlockByNumber", [_block_param(block), True])
+        if raw is None:
+            raise BlockNotAvailableError(f"The RPC provider returned no block for {block}.")
+        if not isinstance(raw, dict) or not isinstance(raw.get("transactions"), list):
+            raise RpcInvalidResponseError(f"Provider returned an invalid block {block}.")
+        return [tx for tx in raw["transactions"] if isinstance(tx, dict)]
 
     async def get_logs(
         self,

@@ -9,9 +9,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from cryptoguard.blockchain.erc20 import TransferEvent
+
+if TYPE_CHECKING:
+    from cryptoguard.detectors.poisoning import NativeSend
 from cryptoguard.history.state import WalletState
 from cryptoguard.risk.rules import RuleEvaluation, evaluate
 
@@ -24,6 +27,7 @@ class DetectionContext:
     state: WalletState
     transfers: Sequence[TransferEvent]
     transfer_coverage: str
+    native_sends: Sequence[NativeSend] = ()
 
 
 class Detector(Protocol):

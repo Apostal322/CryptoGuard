@@ -35,7 +35,8 @@ it has no code path that signs or broadcasts transactions.
 | Web UI (`apps/web`): dashboard, wallet overview, permission inspector, security timeline, findings with evidence and acknowledgement, address-poisoning view, settings; demo/real labelling and loading, empty, partial-coverage and error states | Implemented |
 | Threat graph: typed edges (approved spender, holds token, delegates to, transfers in/out, resembles) built from stored observations, each with its evidence; only similarity edges are inferred; node and approval limits with an explicit summary node; interactive Cytoscape view plus an accessible list | Implemented |
 | Historical incident replay: publicly sourced manifests, recorded mainnet fixtures, offline point-in-time engine with leakage checks, generated [EVALUATION.md](EVALUATION.md), Replay page in the UI | Implemented (1 case) |
-| Scheduled monitoring loop, native-ETH monitoring in the live pipeline, NFT/Permit2 approvals, ML | Not yet |
+| Wallet-signed transactions (incl. native-ETH payments) located by nonce search in snapshots and scans; used by the poisoning detector and the graph; degrades to explicit "unlocated" counts without archive state | Implemented |
+| Scheduled monitoring loop, native ETH *received*, NFT/Permit2 approvals, ML | Not yet |
 
 ## Install (Windows PowerShell)
 

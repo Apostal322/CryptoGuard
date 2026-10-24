@@ -135,7 +135,9 @@ Severity (`informational`, `review_recommended`, `elevated_risk`, `critical_evid
 **Lifecycle**: first observation → `new`; observed again → `active`; user acknowledgement →
 `acknowledged` (persists while the condition holds); condition gone → `resolved`; reappears →
 `new` again (`reopen_count` increments); open findings from an older ruleset major →
-`superseded`. An open finding whose subject could not be verified at the snapshot block is
+`superseded`. Rules that are stages of one condition form an exclusive group (CG-POI-001/002/
+003); when one replaces another for the same subject, the old finding is `superseded` with the
+replacement named, never `resolved`, because the condition escalated rather than ended. An open finding whose subject could not be verified at the snapshot block is
 left unchanged and counted as not re-verified, never resolved. Every transition is stored with
 its snapshot and reason.
 
@@ -192,13 +194,23 @@ the zero and `…dEaD` burn addresses; curated known contracts; shared zero-only
 (similarity is always required); relayer-signed transfers of smart accounts; and ordering:
 of two similar references, the one used first is the original.
 
-**Native sends.** `detect_poisoning` also accepts the wallet's own ETH-carrying transactions
-(`native_sends`) as wallet-signed sends. The live pipeline cannot supply them yet; incident
-replay can, and the 1,155 WBTC case shows why it matters: the victim's payment to the address
-that was later imitated was native ETH, so ERC-20 data alone never reveals the reference (see
-[EVALUATION.md](EVALUATION.md)).
+**Native sends.** The wallet's own ETH-carrying transactions count as wallet-signed sends,
+both as references and as sends to a lookalike. Snapshots and the one-off scan locate every
+transaction the wallet signed in their window by nonce search (`services/wallet_txs.py`):
+gallop down from the newest known block, then bisect `eth_getTransactionCount`, then read the
+transaction from its block. Each snapshot stores the wallet's nonce, so the next one needs no
+old state. On providers without historical state, transactions beyond the readable horizon
+are counted as *unlocated* in the coverage instead of guessed. The 1,155 WBTC case shows why
+this matters: the victim paid the later-imitated address in native ETH, so ERC-20 data alone
+never reveals it (see [EVALUATION.md](EVALUATION.md)). Confirmed through the live snapshot
+pipeline on 2026-10-24 (eth.drpc.org, 477 requests): snapshots at blocks 19,788,641 /
+19,788,642 / 19,789,009 produced no finding, then CG-POI-001 (elevated, high) at the poisoning
+block, then CG-POI-003 (critical evidence, medium) at the theft block with CG-POI-001
+superseded.
 
-**Known gaps.** Native-ETH transfers (a common poisoning vector) are invisible over JSON-RPC.
+**Known gaps.** Native ETH *received* by the wallet (ETH dust from a lookalike) is still
+invisible over JSON-RPC. Contract wallets' payments are executed by relayers, not signed by
+the wallet, so they are not located this way.
 Lookalikes of addresses paid before the scanned history are not recognized. Signer lookups are
 budgeted; skipped ones are reported.
 

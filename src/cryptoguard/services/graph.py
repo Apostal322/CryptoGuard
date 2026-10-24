@@ -32,13 +32,23 @@ def wallet_graph(
         )
     snapshot = latest[0]
     transfers = repo.load_transfers(chain_id, wallet, data_source, options.history_limit)
+    natives = [
+        send
+        for tx in repo.load_wallet_transactions(
+            chain_id, wallet, data_source, options.history_limit
+        )
+        if (send := tx.as_native_send()) is not None
+    ]
     cases = detect_poisoning(
         wallet,
         transfers,
         chain_id=chain_id,
         wallet_is_plain_eoa=snapshot.state.account.code_kind is CodeKind.NO_CODE,
         config=options.poisoning,
+        native_sends=natives,
     )
+    # Native payments appear as transfer edges too (asset shown as native ETH).
+    transfers = [*transfers, *(n.as_transfer(wallet) for n in natives)]
     findings = [
         OpenFinding(
             f.fingerprint, f.rule_id, f.severity, f.confidence, f.status, f.title, f.subject
