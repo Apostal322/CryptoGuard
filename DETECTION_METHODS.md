@@ -192,6 +192,12 @@ the zero and `…dEaD` burn addresses; curated known contracts; shared zero-only
 (similarity is always required); relayer-signed transfers of smart accounts; and ordering:
 of two similar references, the one used first is the original.
 
+**Native sends.** `detect_poisoning` also accepts the wallet's own ETH-carrying transactions
+(`native_sends`) as wallet-signed sends. The live pipeline cannot supply them yet; incident
+replay can, and the 1,155 WBTC case shows why it matters: the victim's payment to the address
+that was later imitated was native ETH, so ERC-20 data alone never reveals the reference (see
+[EVALUATION.md](EVALUATION.md)).
+
 **Known gaps.** Native-ETH transfers (a common poisoning vector) are invisible over JSON-RPC.
 Lookalikes of addresses paid before the scanned history are not recognized. Signer lookups are
 budgeted; skipped ones are reported.

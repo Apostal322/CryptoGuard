@@ -7,6 +7,8 @@ import type {
   FindingDetail,
   FindingList,
   PoisoningReport,
+  ReplayCaseView,
+  ReplayResult,
   RulesetView,
   SnapshotOutcome,
   StatusResponse,
@@ -107,6 +109,8 @@ export const api = {
     request<WalletGraph>(
       `${wallet(address)}/graph?max_nodes=${maxNodes}&include_inactive=${includeInactive ? "true" : "false"}`,
     ),
+  replayCases: () => request<{ items: ReplayCaseView[] }>("/replay/cases"),
+  replayRun: (caseId: string) => post<ReplayResult>("/replay/runs", { case_id: caseId }),
   poisoningScan: (address: string, options: { lookback_blocks?: number; tokens?: string[] }) =>
     post<PoisoningReport>(`${wallet(address)}/poisoning/scan`, options),
 };

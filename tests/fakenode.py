@@ -88,6 +88,26 @@ class FakeNode:
         self.max_log_range: int | None = None  # emulate a provider's eth_getLogs range cap
         self.require_log_address = False  # emulate providers that reject address-less queries
         self.tx_senders: dict[str, str] = {}  # tx hash -> signer, served by getTransactionByHash
+        self.sent_txs: list[dict[str, Any]] = []  # full transactions, for nonce and block reads
+
+    def send_native(self, sender: str, to: str, value: int, *, block: int) -> str:
+        """Record a transaction signed by ``sender`` (nonces assigned in order)."""
+        sender = sender.lower()
+        nonce = sum(1 for t in self.sent_txs if t["from"] == sender)
+        tx_hash = "0x" + keccak256(f"native:{sender}:{nonce}".encode()).hex()
+        self.sent_txs.append(
+            {
+                "hash": tx_hash,
+                "from": sender,
+                "to": to.lower(),
+                "value": hex(value),
+                "nonce": hex(nonce),
+                "blockNumber": hex(block),
+                "transactionIndex": "0x0",
+            }
+        )
+        self.tx_senders[tx_hash] = sender
+        return tx_hash
 
     # -- helpers ---------------------------------------------------------------------------
     def set_account(self, address: str, *, balance: int = 0, code: bytes = b"") -> None:
@@ -210,7 +230,23 @@ class FakeNode:
                     raise LookupError("finalized tag not supported")
                 return self._block(self.finalized)
             number = self.head if tag == "latest" else int(tag, 16)
-            return self._block(number) if number <= self.head else None
+            if number > self.head:
+                return None
+            block = self._block(number)
+            if len(params) > 1 and params[1] is True:
+                block["transactions"] = [
+                    t for t in self.sent_txs if int(t["blockNumber"], 16) == number
+                ]
+            return block
+        if method == "eth_getTransactionCount":
+            sender, number = params[0].lower(), int(params[1], 16)
+            return hex(
+                sum(
+                    1
+                    for t in self.sent_txs
+                    if t["from"] == sender and int(t["blockNumber"], 16) <= number
+                )
+            )
         if method == "eth_getBalance":
             return hex(self.balances.get(params[0].lower(), 0))
         if method == "eth_getCode":

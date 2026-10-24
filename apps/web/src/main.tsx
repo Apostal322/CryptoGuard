@@ -6,6 +6,7 @@ import "./index.css";
 import { Layout } from "./app/Layout";
 import { StatusProvider } from "./app/status";
 import { Dashboard } from "./pages/Dashboard";
+import { Replay } from "./pages/Replay";
 import { Settings } from "./pages/Settings";
 import { WalletPage } from "./pages/wallet/WalletPage";
 
@@ -43,6 +44,7 @@ export const routes = [
     children: [
       { index: true, element: <Dashboard /> },
       { path: "wallet/:address", element: <WalletPage /> },
+      { path: "replay", element: <Replay /> },
       { path: "settings", element: <Settings /> },
       { path: "*", element: <NotFound /> },
     ],

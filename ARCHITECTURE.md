@@ -121,6 +121,21 @@ layout (permissions above the wallet, transfers below, lookalikes next to what t
 and lists every edge as keyboard-accessible text alongside the canvas. Cytoscape is loaded
 lazily; its normally injected container style is shipped in our CSS so the strict CSP holds.
 
+## Historical incident replay (`replay/`)
+
+| File | Role |
+|---|---|
+| `replay/models.py` | `IncidentManifest` (public-source ground truth, scoring only) and `ReplayFixture` (recorded chain data, the only detector input) |
+| `replay/record.py` | Records a fixture: all ERC-20 transfers of the wallet in the window, signers, every wallet-signed transaction via nonce bisection, wallet code, block timestamps |
+| `replay/engine.py` | Offline, deterministic point-in-time replay at every event block; two visibility levels; leakage checks; runtime and memory |
+| `replay/report.py` | Renders `EVALUATION.md` from replay results only |
+| `replay/cases/<id>/` | `manifest.json` + `fixture.json` per incident (fixture hashed in every result) |
+
+The engine's detector entry point (`detector_outputs`) takes no manifest, so ground truth
+cannot leak into detection; each checkpoint asserts that no input is newer than the cutoff.
+A warning counts as early only if it appears at a block before the harmful transaction; a
+finding that needs the harmful transfer itself is reported as post-incident classification.
+
 ## Storage
 
 `address_observations` stores each observation with block number, block hash, block

@@ -27,6 +27,19 @@ export function explorerBlockUrl(chainId: number, block: number): string | null 
   return `${base}/block/${block}`;
 }
 
+/**
+ * For curated, code-reviewed links (replay case sources) only — never for chain data:
+ * any https URL without embedded credentials.
+ */
+export function safeCuratedUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && !parsed.username && !parsed.password ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Returns the URL only if it is https and points at a known explorer host. */
 export function safeExternalUrl(url: string | null | undefined): string | null {
   if (!url) return null;

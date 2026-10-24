@@ -5,8 +5,8 @@ observably true about an address, the block that observation comes from, and wha
 observation does *not* show. It never asks for private keys, seed phrases or signatures, and
 it has no code path that signs or broadcasts transactions.
 
-> **Status: Phase 6 (threat graph).** Incident replay and ML are planned and **not
-> implemented yet** (see [Roadmap](#roadmap)).
+> **Status: Phase 7 (incident replay).** Applied ML is planned and **not implemented yet**
+> (see [Roadmap](#roadmap)). Replay results are in [EVALUATION.md](EVALUATION.md).
 
 ## What works today
 
@@ -34,7 +34,8 @@ it has no code path that signs or broadcasts transactions.
 | Explicit demo mode with clearly labelled fictional fixtures | Implemented |
 | Web UI (`apps/web`): dashboard, wallet overview, permission inspector, security timeline, findings with evidence and acknowledgement, address-poisoning view, settings; demo/real labelling and loading, empty, partial-coverage and error states | Implemented |
 | Threat graph: typed edges (approved spender, holds token, delegates to, transfers in/out, resembles) built from stored observations, each with its evidence; only similarity edges are inferred; node and approval limits with an explicit summary node; interactive Cytoscape view plus an accessible list | Implemented |
-| Scheduled monitoring loop, native-ETH transfers, NFT/Permit2 approvals, replay, ML | Not yet |
+| Historical incident replay: publicly sourced manifests, recorded mainnet fixtures, offline point-in-time engine with leakage checks, generated [EVALUATION.md](EVALUATION.md), Replay page in the UI | Implemented (1 case) |
+| Scheduled monitoring loop, native-ETH monitoring in the live pipeline, NFT/Permit2 approvals, ML | Not yet |
 
 ## Install (Windows PowerShell)
 
@@ -60,6 +61,11 @@ All settings are environment variables (or `.env`) with the `CRYPTOGUARD_` prefi
   `eth_chainId` and refuses to read state from a different chain.
 
 ### RPC provider limitations
+
+- `ethereum-rpc.publicnode.com` (checked 2026-10-24) serves recent data only; historical
+  ("archive") log and state queries need a personal token. `eth.drpc.org`'s free plan serves
+  historical logs and state but limits `eth_getLogs` to about 100 blocks per request;
+  CryptoGuard splits larger queries automatically.
 
 - Free/public endpoints rate-limit aggressively; CryptoGuard retries with backoff, but heavy
   use needs a keyed provider.
@@ -97,6 +103,12 @@ uv run cryptoguard findings <address> [--all]
 uv run cryptoguard ack <finding-id>
 uv run cryptoguard graph <address>             # relationships from the latest snapshot
 
+# Historical incident replay (offline, from packaged fixtures)
+uv run cryptoguard replay list
+uv run cryptoguard replay run --write-report EVALUATION.md
+# Re-record a fixture (needs historical logs + state, e.g. https://eth.drpc.org):
+uv run cryptoguard replay record <case-id> --rpc-url <archive-capable RPC>
+
 # Fictional fixtures, no RPC needed (output is labelled SIMULATED):
 uv run cryptoguard demo-addresses
 uv run cryptoguard inspect <fixture-address> --demo
@@ -124,6 +136,8 @@ API:
 | POST | `/api/v1/findings/{finding_id}/acknowledge` | Mark a new/active finding acknowledged (`{}` body) |
 | GET | `/api/v1/wallets/{address}/graph` | Relationship graph from the latest snapshot (`max_nodes` 10–150, `include_inactive`); every edge has evidence; no RPC calls |
 | POST | `/api/v1/wallets/{address}/poisoning/scan` | `{"lookback_blocks"?, "tokens"?}` → poisoning cases with similarity features, signals and evidence |
+| GET | `/api/v1/replay/cases` | Packaged incident cases (manifest, sources, fixture hash) |
+| POST | `/api/v1/replay/runs` | `{"case_id"}` → offline point-in-time replay result (not stored; no RPC) |
 | GET | `/api/v1/rules` | The ruleset: id, version, severities, rule descriptions |
 | GET | `/api/v1/wallets/{address}/observations` | Stored observations, paginated (`limit`, `offset`) |
 | GET | `/api/v1/demo/addresses` | Fixture addresses (demo mode only) |
@@ -164,8 +178,9 @@ $env:CRYPTOGUARD_LIVE_RPC_URL = "https://ethereum-rpc.publicnode.com"; uv run py
    scheduled monitoring loop is still to come)
 4. ~~Address-poisoning detector with false-positive fixtures~~
 5. ~~Web UI (Vite, React, TypeScript, Tailwind)~~
-6. ~~Threat graph~~ (this milestone)
-7. Historical incident replay with point-in-time guarantees
+6. ~~Threat graph~~
+7. ~~Historical incident replay with point-in-time guarantees~~ (this milestone; more cases
+   needed before any rate can be estimated)
 8. ML only if it beats the deterministic baseline on honest temporal splits
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [DETECTION_METHODS.md](DETECTION_METHODS.md) and

@@ -66,6 +66,8 @@ _LOG_QUERY_TOO_LARGE_MARKERS = (
     "response size exceeded",
     "log response size",
     "query timeout exceeded",
+    "ranges over",  # drpc free plan: "ranges over 10000 blocks are not supported on free plan"
+    "blocks are not supported",
 )
 _RATE_LIMIT_MARKERS = ("rate limit", "too many requests", "throughput", "compute units")
 
@@ -238,6 +240,12 @@ class JsonRpcClient:
             )
         if status >= 500:
             raise RpcUnavailableError(f"The RPC provider returned HTTP {status}.")
+        if status != 200:
+            # Some providers send a JSON-RPC error body with a 4xx status (e.g. publicnode's
+            # "Archive requests require a personal token" with 403). Classify it if present.
+            embedded = self._embedded_error(body, method)
+            if embedded is not None:
+                raise embedded
         if status in (401, 403):
             raise RpcRequestRejectedError(
                 f"The RPC provider refused access (HTTP {status}): the credentials may be "
@@ -246,6 +254,16 @@ class JsonRpcClient:
         if status != 200:
             raise RpcRequestRejectedError(f"The RPC provider returned HTTP {status}.")
         return self._extract_result(body, request_id, method)
+
+    @staticmethod
+    def _embedded_error(raw: bytes, method: str) -> RpcError | None:
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            return None
+        if isinstance(body, dict) and isinstance(body.get("error"), dict):
+            return classify_rpc_error(method, body["error"])
+        return None
 
     async def _read_limited(self, response: httpx.Response, method: str) -> bytes:
         chunks: list[bytes] = []

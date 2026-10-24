@@ -387,6 +387,85 @@ export interface WalletGraph {
   limitations: string[];
 }
 
+export interface ReplayManifest {
+  case_id: string;
+  title: string;
+  category: string;
+  chain_id: number;
+  summary: string;
+  first_public_report: string;
+  public_sources: { publisher: string; title: string; url: string; accessed: string; used_for: string }[];
+  victim: string;
+  intended_recipient: string | null;
+  harm: {
+    transaction_hash: string;
+    block_number: number;
+    recipient: string;
+    token: string;
+    value_base_units: string;
+    description: string;
+  };
+  evaluation: { from_block: number; to_block: number; rationale: string };
+  onchain_verification: string[];
+  ground_truth_limitations: string[];
+}
+
+export interface ReplayCaseView {
+  manifest: ReplayManifest;
+  recorded: boolean;
+  fixture_sha256: string | null;
+  recorded_with: string | null;
+  recorded_at: string | null;
+  transfers_in_fixture: number | null;
+}
+
+export interface ReplayDetection {
+  block_number: number;
+  timestamp: number | null;
+  rule_id: string;
+  severity: Severity;
+  confidence: Confidence;
+  signals: string[];
+  explanation: string;
+}
+
+export interface ReplayVisibilityResult {
+  visibility: "erc20_only" | "erc20_plus_wallet_transactions";
+  description: string;
+  outcome: "early_warning" | "post_incident_only" | "not_detected";
+  first_warning: ReplayDetection | null;
+  lead_time_blocks: number | null;
+  lead_time_seconds: number | null;
+  at_harm_block: ReplayDetection | null;
+  other_addresses_flagged_before_harm: number;
+  checkpoints_evaluated: number;
+  explanation: string;
+}
+
+export interface ReplayResult {
+  case_id: string;
+  title: string;
+  detector_version: string;
+  ruleset_version: string;
+  fixture_sha256: string;
+  recorded_with: string;
+  recorded_at: string;
+  window_from_block: number;
+  window_to_block: number;
+  harm_block: number;
+  harm_transaction: string;
+  harm_timestamp: number | null;
+  transfers_in_fixture: number;
+  wallet_transactions_in_fixture: number;
+  results: ReplayVisibilityResult[];
+  leakage_checks: { check: string; passed: boolean; detail: string }[];
+  runtime_ms: number;
+  peak_memory_kib: number;
+  rpc_requests_during_replay: number;
+  rpc_requests_when_recorded: number;
+  limitations: string[];
+}
+
 export interface RulesetView {
   ruleset_id: string;
   version: string;

@@ -58,6 +58,9 @@ export function Layout() {
             <NavLink to="/" end className={navClass}>
               Dashboard
             </NavLink>
+            <NavLink to="/replay" className={navClass}>
+              Replay
+            </NavLink>
             <NavLink to="/settings" className={navClass}>
               Settings
             </NavLink>

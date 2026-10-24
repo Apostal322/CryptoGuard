@@ -1,0 +1,58 @@
+{
+  "case_id": "wbtc-1155-poisoning-2024-05-03",
+  "title": "1,155 WBTC lost to address poisoning (Ethereum, 3 May 2024)",
+  "category": "address_poisoning",
+  "chain_id": 1,
+  "summary": "A wallet paid its usual counterparty, an attacker planted a vanity lookalike (same first 4 and last 6 hex characters) in the wallet's history minutes later, and the wallet then sent 1,155 WBTC to the lookalike. Publicly reported on 3 May 2024; the funds were later reported returned.",
+  "first_public_report": "2024-05-03",
+  "public_sources": [
+    {
+      "publisher": "ChainCatcher",
+      "title": "Analysis of the 1155 WBTC address-poisoning incident",
+      "url": "https://www.chaincatcher.com/en/article/2123449",
+      "accessed": "2026-10-24",
+      "used_for": "Victim, intended-recipient and lookalike addresses; first-4/last-6 character match; loss on 3 May; zero-value follow-up about 3 minutes after the user's transfer."
+    },
+    {
+      "publisher": "CryptoPotato",
+      "title": "Costly Mistake: Victim Loses $68 Million In Address Poisoning Scam",
+      "url": "https://cryptopotato.com/costly-mistake-victim-loses-68-million-in-address-poisoning-scam/",
+      "accessed": "2026-10-24",
+      "used_for": "Corroborates the 0xd9A1...853a91 prefix/suffix match and the ~$68M loss (via search summary)."
+    },
+    {
+      "publisher": "Unchained",
+      "title": "$68 million stolen in dust attack returned to victim",
+      "url": "https://unchainedcrypto.com/68-million-stolen-in-dust-attack-returned-to-victim/",
+      "accessed": "2026-10-24",
+      "used_for": "Later return of the funds (context only; irrelevant to detection) (via search summary)."
+    }
+  ],
+  "victim": "0x1E227979f0b5BC691a70DEAed2e0F39a6F538FD5",
+  "intended_recipient": "0xd9A1b0B1e1aE382DbDc898Ea68012FfcB2853a91",
+  "harm": {
+    "transaction_hash": "0x3374abc5a9c766ba709651399b6e6162de97ca986abc23f423a9d893c8f5f570",
+    "block_number": 19789009,
+    "recipient": "0xd9A1C3788D81257612E2581A6ea0aDa244853a91",
+    "token": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    "value_base_units": "115528802767",
+    "description": "The victim signed a transfer of 1155.28802767 WBTC (8 decimals) to the lookalike."
+  },
+  "evaluation": {
+    "from_block": 19767409,
+    "to_block": 19789009,
+    "rationale": "The 21,600 blocks (about 3 days) up to and including the harmful block: a round default, not tuned to the result. It was set after the harmful WBTC transfer had been located, but before the other activity in the window (the native-ETH payment and the planted transfer) was examined."
+  },
+  "onchain_verification": [
+    "Verified on 2026-10-24 via eth.drpc.org: a WBTC Transfer log of 115528802767 base units from the victim to 0xd9A1C3788D81257612E2581A6ea0aDa244853a91 in tx 0x3374abc5...f570, block 19789009, signed by the victim.",
+    "Verified: the victim's nonce was 3 at block 19767409 and 5 at block 19789009, so it signed exactly two transactions in the window.",
+    "Verified: block 19788628, tx 0xb18ab131...83ac, the victim sent 0.05 ETH (native) to the intended recipient 0xd9A1b0B1e1aE382DbDc898Ea68012FfcB2853a91.",
+    "Verified: block 19788642, tx 0x9147d74e...957c, a Transfer of 50000 units of token 0x739352337C902c3874B95f14e81ebBCF1B7b262E 'from' the victim to the lookalike, in a transaction signed by 0x517DC8E50b8bf03A1D69c84d27bF96dC5A911Db2 (not the victim).",
+    "Verified: eth_getCode(victim) was empty at block 19789009 (plain EOA)."
+  ],
+  "ground_truth_limitations": [
+    "Attribution of the lookalike as the attacker's address comes from public reporting plus on-chain similarity; there is no court or exchange-confirmed attribution in the sources.",
+    "Public sources describe the planted transfer as 'zero-value'; on-chain it is a Transfer of 50000 units of token 0x739352337C902c3874B95f14e81ebBCF1B7b262E 'from' the victim in a transaction the victim did not sign. The nature of that token contract was not independently verified. The replay uses the on-chain data.",
+    "Only one wallet and one incident: this case cannot estimate detection rates or false-positive rates in general."
+  ]
+}

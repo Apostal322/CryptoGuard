@@ -119,6 +119,28 @@ async def test_oversized_response_is_rejected(node: FakeNode, sleeps: SleepRecor
     await client.aclose()
 
 
+async def test_error_body_on_http_403_is_classified(node: FakeNode, sleeps: SleepRecorder) -> None:
+    # Regression: publicnode answers archive queries with HTTP 403 and a JSON-RPC error body.
+    def respond(payload):  # type: ignore[no-untyped-def]
+        import httpx
+
+        return httpx.Response(
+            403,
+            json={
+                "jsonrpc": "2.0",
+                "id": payload["id"],
+                "error": {"code": -32602, "message": "Archive requests require a personal token."},
+            },
+        )
+
+    node.script("eth_getLogs", respond)
+    client = make_client(node, sleeps)
+    with pytest.raises(HistoricalStateUnavailableError):
+        await client.call("eth_getLogs", [{}])
+    assert sleeps.delays == []
+    await client.aclose()
+
+
 def test_error_classification() -> None:
     assert isinstance(
         classify_rpc_error("m", {"code": -32005, "message": "x"}), RpcRateLimitedError

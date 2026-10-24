@@ -17,7 +17,7 @@ import json
 import sys
 from collections.abc import Sequence
 
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.chains import get_chain
@@ -318,6 +318,75 @@ def _print_findings(settings: Settings, address: str, show_all: bool) -> None:
         )
 
 
+def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
+    from pathlib import Path
+
+    from cryptoguard.blockchain.provider import build_rpc_provider
+    from cryptoguard.core.config import validate_rpc_url
+    from cryptoguard.replay.engine import replay
+    from cryptoguard.replay.models import case_directory, load_cases
+    from cryptoguard.replay.record import record_fixture
+    from cryptoguard.replay.report import render_markdown
+
+    cases = load_cases()
+    if args.replay_command == "list":
+        for case in cases:
+            status = f"fixture {case.fixture_sha256[:12]}…" if case.fixture_sha256 else "no fixture"
+            print(f"{case.manifest.case_id}  [{status}]  {case.manifest.title}")
+        return 0
+
+    if args.replay_command == "record":
+        manifest = next((c.manifest for c in cases if c.manifest.case_id == args.case_id), None)
+        if manifest is None:
+            print(f"error: unknown case {args.case_id}", file=sys.stderr)
+            return 1
+        record_settings = settings.model_copy(
+            update={
+                "rpc_url": SecretStr(validate_rpc_url(args.rpc_url)),
+                "chain_id": manifest.chain_id,
+                "rpc_max_concurrency": 2,
+            }
+        )
+
+        async def run_recording() -> str:
+            provider = build_rpc_provider(record_settings)
+            try:
+                fixture = await record_fixture(provider, manifest, chunk_blocks=args.chunk_blocks)
+            finally:
+                await provider.aclose()
+            path = case_directory(manifest.case_id) / "fixture.json"
+            path.write_bytes(fixture.canonical_bytes() + b"\n")
+            return (
+                f"Recorded {len(fixture.transfers)} transfers and "
+                f"{len(fixture.wallet_transactions)} wallet transactions "
+                f"({fixture.rpc_requests} RPC requests) to {path}"
+            )
+
+        print(asyncio.run(run_recording()))
+        return 0
+
+    selected = [
+        c for c in cases if c.fixture and (not args.case_id or c.manifest.case_id == args.case_id)
+    ]
+    if not selected:
+        print("error: no recorded case matches", file=sys.stderr)
+        return 1
+    results = [replay(c.manifest, c.fixture) for c in selected if c.fixture]
+    if args.write_report:
+        Path(args.write_report).write_text(render_markdown(results), encoding="utf-8")
+        print(f"Wrote {args.write_report}")
+    if args.json:
+        print(json.dumps([r.model_dump(mode="json") for r in results], indent=2))
+    else:
+        for r in results:
+            print(f"{r.case_id}: harm at block {r.harm_block}")
+            for v in r.results:
+                print(f"  {v.visibility.value}: {v.outcome} — {v.explanation}")
+            for check in r.leakage_checks:
+                print(f"  [{'PASS' if check.passed else 'FAIL'}] {check.check}")
+    return 0
+
+
 async def _status(settings: Settings) -> dict[str, object]:
     provider = build_provider(settings)
     result: dict[str, object] = {
@@ -397,6 +466,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_graph.add_argument("--include-inactive", action="store_true")
     p_graph.add_argument("--demo", action="store_true")
     p_graph.add_argument("--json", action="store_true")
+
+    p_replay = sub.add_parser("replay", help="historical incident replay")
+    replay_sub = p_replay.add_subparsers(dest="replay_command", required=True)
+    replay_sub.add_parser("list", help="list packaged incident cases")
+    p_record = replay_sub.add_parser("record", help="record a case fixture from an archive RPC")
+    p_record.add_argument("case_id")
+    p_record.add_argument(
+        "--rpc-url", required=True, help="RPC endpoint with historical logs and state"
+    )
+    p_record.add_argument("--chunk-blocks", type=int, default=100)
+    p_run = replay_sub.add_parser("run", help="replay recorded cases offline")
+    p_run.add_argument("case_id", nargs="?", help="one case (default: all recorded cases)")
+    p_run.add_argument("--json", action="store_true")
+    p_run.add_argument("--write-report", metavar="PATH", help="write the markdown report here")
 
     p_ack = sub.add_parser("ack", help="acknowledge a finding by id")
     p_ack.add_argument("finding_id")
@@ -507,6 +590,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             for item in graph.limitations:
                 print(f"  - {item}")
             return 0
+
+        if args.command == "replay":
+            return _replay_command(args, settings)
 
         if args.command == "ack":
             from cryptoguard.database.repository import open_repository

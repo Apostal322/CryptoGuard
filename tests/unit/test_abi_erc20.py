@@ -111,6 +111,12 @@ def test_malformed_logs_are_rejected(mutate) -> None:  # type: ignore[no-untyped
     assert classify_approval_log(log) == (ApprovalLogShape.MALFORMED, None)
 
 
+def test_free_plan_range_limit_is_a_split_signal_not_unsupported() -> None:
+    # Regression: drpc's wording contains "not supported" but means "range too large".
+    err = {"code": 35, "message": "ranges over 10000 blocks are not supported on free plan"}
+    assert isinstance(classify_rpc_error("eth_getLogs", err), LogQueryTooLargeError)
+
+
 def test_log_query_errors_are_distinguished_from_rate_limits() -> None:
     too_many = {"code": -32005, "message": "query returned more than 10000 results"}
     assert isinstance(classify_rpc_error("eth_getLogs", too_many), LogQueryTooLargeError)

@@ -147,6 +147,38 @@ def _event_signal(code: str, description: str, event: TransferEvent) -> Poisonin
     )
 
 
+NATIVE_ASSET = ZERO_ADDRESS  # token field used for native-ETH sends
+
+
+def _asset(token: str) -> str:
+    return "native ETH" if token == NATIVE_ASSET else f"token {token}"
+
+
+@dataclass(frozen=True)
+class NativeSend:
+    """A transaction signed by the wallet that carried ETH to ``to``."""
+
+    to: str
+    value: int
+    block_number: int
+    transaction_hash: str
+    transaction_index: int
+
+    def as_transfer(self, wallet: str) -> TransferEvent:
+        return TransferEvent(
+            token=NATIVE_ASSET,
+            sender=wallet,
+            recipient=to_checksum_address(self.to),
+            value=self.value,
+            block_number=self.block_number,
+            block_hash="",
+            transaction_hash=self.transaction_hash,
+            transaction_index=self.transaction_index,
+            log_index=-1,  # a transaction's value moves before any of its logs
+            tx_sender=wallet,
+        )
+
+
 def detect_poisoning(
     wallet: str,
     transfers: Sequence[TransferEvent],
@@ -154,11 +186,18 @@ def detect_poisoning(
     chain_id: int,
     wallet_is_plain_eoa: bool | None,
     config: PoisoningConfig | None = None,
+    native_sends: Sequence[NativeSend] = (),
 ) -> list[PoisoningCase]:
+    """Detect lookalikes. ``native_sends`` are the wallet's own signed transactions carrying
+    ETH (when the caller can see them, e.g. forward block monitoring); they count as
+    wallet-signed sends, both as references and as sends to a lookalike."""
     config = config or PoisoningConfig()
     wallet = to_checksum_address(wallet)
     signer = _Signer(wallet_is_plain_eoa)
-    ordered = sorted(transfers, key=lambda e: e.position)
+    ordered = sorted(
+        [*transfers, *(n.as_transfer(wallet) for n in native_sends if n.value > 0)],
+        key=lambda e: e.position,
+    )
 
     # 1. References: first nonzero outgoing send to each recipient, confirmed if wallet-signed.
     references: dict[str, tuple[TransferEvent, bool]] = {}
@@ -240,8 +279,8 @@ def _assess(
             signals.append(
                 _event_signal(
                     "zero_value_transfer",
-                    f"Zero-value {'outgoing' if outgoing else 'incoming'} transfer of token "
-                    f"{e.token} between the wallet and the lookalike"
+                    f"Zero-value {'outgoing' if outgoing else 'incoming'} transfer of "
+                    f"{_asset(e.token)} between the wallet and the lookalike"
                     + (
                         f", in a transaction signed by {e.tx_sender}, not by the wallet"
                         if outgoing and signed is False
@@ -256,7 +295,8 @@ def _assess(
             signals.append(
                 _event_signal(
                     "spoofed_outgoing_transfer",
-                    f"Transfer of {e.value} base units of {e.token} 'from' the wallet to the "
+                    f"Transfer of {e.value} base units of {_asset(e.token)} 'from' the wallet "
+                    "to the "
                     f"lookalike in a transaction signed by {e.tx_sender}, not by the wallet.",
                     e,
                 )
@@ -266,7 +306,8 @@ def _assess(
             signals.append(
                 _event_signal(
                     "unsolicited_incoming_transfer",
-                    f"Incoming {e.value} base units of {e.token} from the lookalike before the "
+                    f"Incoming {e.value} base units of {_asset(e.token)} from the lookalike "
+                    "before the "
                     "wallet ever sent to it.",
                     e,
                 )
@@ -321,7 +362,8 @@ def _assess(
         signals.append(
             _event_signal(
                 "wallet_sent_to_lookalike",
-                f"The wallet signed a transfer of {loss.value} base units of {loss.token} to the "
+                f"The wallet signed a transfer of {loss.value} base units of "
+                f"{_asset(loss.token)} to the "
                 "lookalike.",
                 loss,
             )
