@@ -20,6 +20,11 @@
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 }
 
+/* Cytoscape's container rule, normally injected inline (blocked by our CSP); see index.html. */
+.__________cytoscape_container {
+  position: relative;
+}
+
 @layer base {
   html {
     color-scheme: dark;

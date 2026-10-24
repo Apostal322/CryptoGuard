@@ -329,6 +329,64 @@ export interface PoisoningReport {
   limitations: string[];
 }
 
+export type GraphNodeKind = "wallet" | "token" | "spender" | "delegation_target" | "counterparty" | "summary";
+export type GraphEdgeType =
+  | "APPROVED_SPENDER"
+  | "HOLDS_TOKEN"
+  | "DELEGATES_TO"
+  | "TRANSFERRED_TO"
+  | "RECEIVED_FROM"
+  | "RESEMBLES"
+  | "OTHER_COUNTERPARTIES";
+
+export interface GraphNode {
+  id: string;
+  address: string | null;
+  kinds: GraphNodeKind[];
+  label: string | null;
+  label_source: "known_contract" | "token_symbol_untrusted" | "summary" | null;
+  code_kind: CodeKind | null;
+  findings: {
+    finding_id: string;
+    rule_id: string;
+    severity: Severity;
+    confidence: Confidence;
+    status: FindingStatus;
+    title: string;
+  }[];
+  hidden_count: number | null;
+}
+
+export interface GraphEdge {
+  id: string;
+  type: GraphEdgeType;
+  source: string;
+  target: string;
+  evidence_class: "observed_fact" | "heuristic_signal";
+  explanation: string;
+  attributes: Record<string, unknown>;
+  evidence: {
+    kind: string;
+    description: string;
+    block_number: number | null;
+    transaction_hash: string | null;
+  }[];
+}
+
+export interface WalletGraph {
+  schema_version: string;
+  wallet: string;
+  chain_id: number;
+  simulated: boolean;
+  snapshot_id: number;
+  snapshot_block: number;
+  coverage: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  limits: { max_nodes: number; nodes_before_limit: number; hidden_counterparties: number; hidden_approvals: number };
+  limitations: string[];
+}
+
 export interface RulesetView {
   ruleset_id: string;
   version: string;

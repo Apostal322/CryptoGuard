@@ -11,6 +11,7 @@ import type {
   SnapshotOutcome,
   StatusResponse,
   TimelinePage,
+  WalletGraph,
 } from "./types";
 
 const BASE = "/api/v1";
@@ -102,6 +103,10 @@ export const api = {
     request<FindingList>(`${wallet(address)}/findings?status=${status}`),
   finding: (id: string) => request<FindingDetail>(`/findings/${encodeURIComponent(id)}`),
   acknowledge: (id: string) => post<FindingDetail>(`/findings/${encodeURIComponent(id)}/acknowledge`),
+  graph: (address: string, maxNodes: number, includeInactive: boolean) =>
+    request<WalletGraph>(
+      `${wallet(address)}/graph?max_nodes=${maxNodes}&include_inactive=${includeInactive ? "true" : "false"}`,
+    ),
   poisoningScan: (address: string, options: { lookback_blocks?: number; tokens?: string[] }) =>
     post<PoisoningReport>(`${wallet(address)}/poisoning/scan`, options),
 };

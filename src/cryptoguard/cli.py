@@ -391,6 +391,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_findings.add_argument("--all", action="store_true", help="include resolved/superseded")
     p_findings.add_argument("--demo", action="store_true")
 
+    p_graph = sub.add_parser("graph", help="show the stored relationship graph of a wallet")
+    p_graph.add_argument("address")
+    p_graph.add_argument("--max-nodes", type=int, default=60)
+    p_graph.add_argument("--include-inactive", action="store_true")
+    p_graph.add_argument("--demo", action="store_true")
+    p_graph.add_argument("--json", action="store_true")
+
     p_ack = sub.add_parser("ack", help="acknowledge a finding by id")
     p_ack.add_argument("finding_id")
 
@@ -471,6 +478,34 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == "findings":
             _print_findings(settings, args.address, args.all)
+            return 0
+
+        if args.command == "graph":
+            from cryptoguard.database.repository import open_repository
+            from cryptoguard.services.graph import wallet_graph
+
+            graph = wallet_graph(
+                open_repository(settings.database_url),
+                args.address,
+                chain_id=settings.chain_id,
+                data_source="demo_fixture" if settings.mode == "demo" else "rpc",
+                options=DetectionOptions.from_settings(settings),
+                max_nodes=args.max_nodes,
+                include_inactive=args.include_inactive,
+            )
+            if args.json:
+                print(graph.model_dump_json(indent=2))
+                return 0
+            print(
+                f"Graph of {graph.wallet} at snapshot block {graph.snapshot_block}: "
+                f"{len(graph.nodes)} nodes, {len(graph.edges)} edges"
+                + (" [SIMULATED]" if graph.simulated else "")
+            )
+            for e in graph.edges:
+                tag = "" if e.evidence_class == "observed_fact" else " (inferred)"
+                print(f"  {e.type}{tag}: {e.source} -> {e.target}\n    {e.explanation}")
+            for item in graph.limitations:
+                print(f"  - {item}")
             return 0
 
         if args.command == "ack":

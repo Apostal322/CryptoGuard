@@ -7,6 +7,7 @@ import { explorerAddressUrl } from "../../lib/explorer";
 import { looksLikeAddress } from "../../lib/format";
 import { ApprovalsPanel } from "./ApprovalsPanel";
 import { FindingsPanel } from "./FindingsPanel";
+import { GraphPanel } from "./GraphPanel";
 import { OverviewPanel } from "./OverviewPanel";
 import { PoisoningPanel } from "./PoisoningPanel";
 import { TimelinePanel } from "./TimelinePanel";
@@ -16,6 +17,7 @@ const TABS = [
   { id: "approvals", label: "Permissions" },
   { id: "timeline", label: "Timeline" },
   { id: "findings", label: "Findings" },
+  { id: "graph", label: "Threat graph" },
   { id: "poisoning", label: "Address poisoning" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -85,6 +87,7 @@ export function WalletPage() {
         {active === "approvals" && <ApprovalsPanel address={address} />}
         {active === "timeline" && <TimelinePanel address={address} />}
         {active === "findings" && <FindingsPanel address={address} />}
+        {active === "graph" && <GraphPanel address={address} />}
         {active === "poisoning" && <PoisoningPanel address={address} />}
       </div>
     </div>

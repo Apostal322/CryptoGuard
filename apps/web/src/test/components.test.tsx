@@ -138,6 +138,6 @@ describe("app shell", () => {
     expect(tab).toHaveAttribute("aria-selected", "true");
     tab.focus();
     tab.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Address poisoning" })).toHaveAttribute("aria-selected", "true"));
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Threat graph" })).toHaveAttribute("aria-selected", "true"));
   });
 });

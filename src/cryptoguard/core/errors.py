@@ -30,6 +30,11 @@ class UnsupportedChainError(CryptoGuardError):
     http_status = 422
 
 
+class NoSnapshotError(CryptoGuardError):
+    code = "no_snapshot"
+    http_status = 404
+
+
 class InvalidScanRequestError(CryptoGuardError):
     code = "invalid_scan_request"
     http_status = 422

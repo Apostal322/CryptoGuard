@@ -17,10 +17,12 @@ from cryptoguard.core.errors import InvalidScanRequestError
 from cryptoguard.core.hexutil import parse_hash32
 from cryptoguard.database.history import TimelineRow
 from cryptoguard.database.models import FindingRecord, FindingTransitionRecord
+from cryptoguard.graph.build import WalletGraph
 from cryptoguard.history.delta import Change
 from cryptoguard.risk.lifecycle import OPEN_STATUSES, FindingStatus, InvalidTransitionError
 from cryptoguard.risk.rules import RULES, RULESET_ID, RULESET_VERSION, Severity
 from cryptoguard.services.approvals import ScanLimits
+from cryptoguard.services.graph import wallet_graph
 from cryptoguard.services.poisoning import PoisoningReport, scan_poisoning
 from cryptoguard.services.providers import require_provider
 from cryptoguard.services.snapshots import (
@@ -303,6 +305,28 @@ async def poisoning_scan(
         options=DetectionOptions.from_settings(state.settings),
         lookback_blocks=body.lookback_blocks,
         tokens=body.tokens,
+    )
+
+
+@router.get("/wallets/{address}/graph", response_model=WalletGraph)
+async def wallet_graph_route(
+    request: Request,
+    address: str,
+    max_nodes: int = Query(default=60, ge=10, le=150),
+    include_inactive: bool = False,
+) -> WalletGraph:
+    """Relationship graph from the latest snapshot and stored transfers; every edge carries
+    its evidence. Built from stored data only, so it makes no RPC calls."""
+    state = get_state(request)
+    return await asyncio.to_thread(
+        wallet_graph,
+        state.repository,
+        to_checksum_address(address),
+        chain_id=state.chain.chain_id,
+        data_source="demo_fixture" if state.settings.mode == "demo" else "rpc",
+        options=DetectionOptions.from_settings(state.settings),
+        max_nodes=max_nodes,
+        include_inactive=include_inactive,
     )
 
 

@@ -40,6 +40,8 @@ SQLAlchemy or the CLI, so detectors added later can be run, tested and replayed 
 | `services/poisoning.py` | One-off poisoning scan (no storage) |
 | `services/snapshots.py` | Snapshot orchestration: reorg rebase, incremental discovery, verify, diff, detectors |
 | `database/history.py` | Snapshot/finding/transition persistence; lifecycle applied in one transaction |
+| `graph/build.py` | Pure threat-graph builder: typed nodes/edges with evidence, prioritised limits |
+| `services/graph.py` | Loads the latest snapshot, stored transfers and open findings for the graph |
 | `api/history_routes.py` | Snapshot, timeline, finding and ruleset endpoints |
 | `services/demo.py` | Demo provider over fictional, deterministic fixtures |
 | `services/providers.py` | Mode → provider selection; no silent fallback |
@@ -102,6 +104,22 @@ form appears only to illustrate a lookalike's wallet display).
    address poisoning over stored + new transfers).
 5. One transaction: insert events and transfers, snapshot row, finding creates/updates and
    transitions.
+
+## Threat graph
+
+`GET /wallets/{address}/graph` reads only stored data: the latest canonical snapshot (approvals,
+balances, delegation at its block), the wallet's stored transfers, open findings, and the
+poisoning detector re-run over those transfers. Edges: `APPROVED_SPENDER`, `HOLDS_TOKEN`,
+`DELEGATES_TO`, `TRANSFERRED_TO`, `RECEIVED_FROM` (observed, each with evidence: reads at the
+snapshot block or Transfer/Approval transaction hashes) and `RESEMBLES` (heuristic address
+similarity, labelled as inferred). Findings annotate nodes; no edge asserts wrongdoing.
+
+Limits: at most `max_nodes // 2` approvals (riskiest first: flagged spenders, unlimited,
+unknown). Counterparties are ranked (poisoning participants, flagged, wallet-paid, volume) and
+the rest folded into one explicit summary node. The UI uses a deterministic radial preset
+layout (permissions above the wallet, transfers below, lookalikes next to what they imitate)
+and lists every edge as keyboard-accessible text alongside the canvas. Cytoscape is loaded
+lazily; its normally injected container style is shipped in our CSS so the strict CSP holds.
 
 ## Storage
 

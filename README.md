@@ -5,7 +5,7 @@ observably true about an address, the block that observation comes from, and wha
 observation does *not* show. It never asks for private keys, seed phrases or signatures, and
 it has no code path that signs or broadcasts transactions.
 
-> **Status: Phase 5 (web UI).** The threat graph and incident replay are planned and **not
+> **Status: Phase 6 (threat graph).** Incident replay and ML are planned and **not
 > implemented yet** (see [Roadmap](#roadmap)).
 
 ## What works today
@@ -33,7 +33,8 @@ it has no code path that signs or broadcasts transactions.
 | CLI (`inspect`, `approvals`, `poisoning`, `snapshot`, `timeline`, `findings`, `ack`, `status`, `serve`, `purge`, `demo-addresses`) | Implemented |
 | Explicit demo mode with clearly labelled fictional fixtures | Implemented |
 | Web UI (`apps/web`): dashboard, wallet overview, permission inspector, security timeline, findings with evidence and acknowledgement, address-poisoning view, settings; demo/real labelling and loading, empty, partial-coverage and error states | Implemented |
-| Scheduled monitoring loop, native-ETH transfers, NFT/Permit2 approvals, threat graph, replay, ML | Not yet |
+| Threat graph: typed edges (approved spender, holds token, delegates to, transfers in/out, resembles) built from stored observations, each with its evidence; only similarity edges are inferred; node and approval limits with an explicit summary node; interactive Cytoscape view plus an accessible list | Implemented |
+| Scheduled monitoring loop, native-ETH transfers, NFT/Permit2 approvals, replay, ML | Not yet |
 
 ## Install (Windows PowerShell)
 
@@ -94,6 +95,7 @@ uv run cryptoguard snapshot <address>            # later runs list what changed 
 uv run cryptoguard timeline <address>
 uv run cryptoguard findings <address> [--all]
 uv run cryptoguard ack <finding-id>
+uv run cryptoguard graph <address>             # relationships from the latest snapshot
 
 # Fictional fixtures, no RPC needed (output is labelled SIMULATED):
 uv run cryptoguard demo-addresses
@@ -120,6 +122,7 @@ API:
 | GET | `/api/v1/wallets/{address}/findings` | Findings (`status=open` default, `all`, or a single status) |
 | GET | `/api/v1/findings/{finding_id}` | Finding with evidence and full transition history |
 | POST | `/api/v1/findings/{finding_id}/acknowledge` | Mark a new/active finding acknowledged (`{}` body) |
+| GET | `/api/v1/wallets/{address}/graph` | Relationship graph from the latest snapshot (`max_nodes` 10–150, `include_inactive`); every edge has evidence; no RPC calls |
 | POST | `/api/v1/wallets/{address}/poisoning/scan` | `{"lookback_blocks"?, "tokens"?}` → poisoning cases with similarity features, signals and evidence |
 | GET | `/api/v1/rules` | The ruleset: id, version, severities, rule descriptions |
 | GET | `/api/v1/wallets/{address}/observations` | Stored observations, paginated (`limit`, `offset`) |
@@ -160,8 +163,8 @@ $env:CRYPTOGUARD_LIVE_RPC_URL = "https://ethereum-rpc.publicnode.com"; uv run py
 3. ~~Wallet security timeline: snapshots, deterministic deltas, finding lifecycle~~ (a
    scheduled monitoring loop is still to come)
 4. ~~Address-poisoning detector with false-positive fixtures~~
-5. ~~Web UI (Vite, React, TypeScript, Tailwind)~~ (this milestone)
-6. Threat graph
+5. ~~Web UI (Vite, React, TypeScript, Tailwind)~~
+6. ~~Threat graph~~ (this milestone)
 7. Historical incident replay with point-in-time guarantees
 8. ML only if it beats the deterministic baseline on honest temporal splits
 
