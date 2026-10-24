@@ -46,9 +46,27 @@ SQLAlchemy or the CLI, so detectors added later can be run, tested and replayed 
 | `database/` | ORM models, idempotent observation repository |
 | `api/` | FastAPI app factory, middleware (limits, headers, CORS), routes, schemas |
 
-The suggested `apps/api` / `packages/shared-schemas` split was not adopted yet: with one
-backend and no frontend, it would add packaging overhead without benefit. The web app will
-live in `apps/web` when Phase 5 starts; shared schemas will be generated from the OpenAPI spec.
+The suggested `apps/api` / `packages/shared-schemas` split was not adopted: the backend stays
+one Python package, and the web app lives in `apps/web`.
+
+## Web UI (`apps/web`)
+
+Vite + React + TypeScript + Tailwind v4, chosen over Next.js because the UI is a pure client of
+the API (no server rendering needed) and the dev server must stay light on an 8 GB machine.
+
+| Path | Responsibility |
+|---|---|
+| `src/api/` | Typed client: same-origin `/api/v1`, timeouts, `ApiError` with the backend's error codes; response types mirror the pydantic models (hand-maintained) |
+| `src/app/` | Layout, global mode banner (demo / no RPC / provider error / unreachable API), `/status` context |
+| `src/pages/` | Dashboard, Settings, and the wallet page with Overview, Permissions, Timeline, Findings and Address-poisoning tabs |
+| `src/components/` | Shared UI: severity + confidence badges, full-address display, safe external links, limitation lists |
+| `src/lib/` | Explorer-link allow-list, UTC formatting, async state hook |
+
+The UI holds no configuration or secrets: mode, chain and provider come from `/status`. All
+large integers stay strings. Untrusted text (token symbols, labels, explanations) is only
+rendered as React text; external links are restricted to known block-explorer hosts over
+https and omitted entirely for simulated data. Addresses are identified in full (the shortened
+form appears only to illustrate a lookalike's wallet display).
 
 ## Data flow: `POST /api/v1/analyze/address`
 

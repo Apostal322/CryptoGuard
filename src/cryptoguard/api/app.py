@@ -90,7 +90,8 @@ async def status(request: Request) -> StatusResponse:
     if provider is not None:
         try:
             await provider.verify_chain()
-            chain_verified = True
+            # Demo fixtures are not a chain: there is nothing to verify.
+            chain_verified = True if provider.source == "rpc" else None
             head = await provider.block_number()
         except CryptoGuardError as exc:
             chain_verified = False if exc.code == "chain_mismatch" else None

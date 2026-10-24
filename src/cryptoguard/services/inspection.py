@@ -215,7 +215,8 @@ async def inspect_address(
         address=checksummed,
         chain_id=chain.chain_id,
         chain_name=chain.name,
-        chain_verified=True,
+        # Only an RPC provider verifies the chain (eth_chainId); demo fixtures cannot.
+        chain_verified=provider.source == "rpc",
         block=BlockContext(
             number=header.number,
             hash=header.hash,

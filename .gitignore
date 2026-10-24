@@ -33,3 +33,6 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local tool configuration (machine-specific paths)
+.claude/launch.json

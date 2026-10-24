@@ -32,12 +32,36 @@ jobs:
       - name: Build
         run: uv build
 
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Types
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - name: Dependency vulnerability scan
+      - name: Python dependency vulnerability scan
         run: |
           uv export --locked --no-hashes --format requirements-txt > requirements.txt
           uvx pip-audit -r requirements.txt
+      - name: npm dependency vulnerability scan
+        working-directory: apps/web
+        run: npm audit --audit-level=high

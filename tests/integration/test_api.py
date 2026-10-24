@@ -223,9 +223,12 @@ def test_demo_mode_is_explicit_and_labelled() -> None:
         listing = c.get("/api/v1/demo/addresses").json()
         assert listing["simulated"] is True
         assert len(listing["addresses"]) == len(DEMO_ACCOUNTS)
+        # Regression: fixtures are not a chain, so nothing claims eth_chainId verification.
+        assert c.get("/api/v1/status").json()["chain_verified"] is None
         body = c.post(
             "/api/v1/analyze/address", json={"address": listing["addresses"][1]["address"]}
         ).json()
+        assert body["inspection"]["chain_verified"] is False
         assert body["inspection"]["simulated"] is True
         assert body["inspection"]["data_source"] == "demo_fixture"
         assert body["inspection"]["explorer"] is None

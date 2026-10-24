@@ -22,6 +22,13 @@
   RPC concurrency, a response-size cap, bounded `eth_getLogs` block ranges, a request-body
   limit (POST requires `Content-Length`), and per-client rate limiting with bounded memory.
 - **CORS** is restricted to configured origins; wildcards are rejected; no credentials.
+- **Web UI.** No `dangerouslySetInnerHTML`; untrusted chain metadata renders as text. External
+  links only go to allow-listed block explorers over https, with `rel="noopener noreferrer"`,
+  and are never generated for simulated data. Production builds carry a strict
+  Content-Security-Policy (`default-src 'self'`, no inline scripts, no third-party origins).
+  The browser never receives or sends RPC URLs or credentials. Addresses are identified in
+  full, because shortened addresses are what poisoning exploits; a shortened form appears only
+  in poisoning titles, to illustrate how a wallet would display the lookalike.
 - **Local, single-user API.** There is no authentication: anyone who can reach the API can
   take snapshots or acknowledge findings. Bind to `127.0.0.1` (the default) and do not expose
   it to a network without an authenticating reverse proxy.
