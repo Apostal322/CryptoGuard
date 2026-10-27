@@ -214,6 +214,96 @@ the wallet, so they are not located this way.
 Lookalikes of addresses paid before the scanned history are not recognized. Signer lookups are
 budgeted; skipped ones are reported.
 
+## Experimental analyses (`analytics/`, version 0.1.0): off by default, shadow mode only
+
+Three families of analyses were implemented and evaluated against the existing detector
+and simpler baselines. **None improved detection on the evaluation data, so none is enabled
+by default and none can create a finding or change a severity.** With
+`CRYPTOGUARD_ANALYSIS_GRAPH`, `_SPECTRAL` or `_TEMPORAL` set to `shadow`, the analyses run on
+stored data, are returned by `GET /api/v1/wallets/{address}/analysis`, are logged after each
+snapshot (bounded to 30 s, failures logged, never failing the snapshot), and appear in the
+UI as a clearly labelled "Additional context (experimental)" block under the threat graph.
+They need the optional `analytics` extra (NumPy, SciPy); without it they report
+`unavailable`.
+
+**Input.** `analytics/observations.py` cuts the stored ERC-20 transfers and wallet-signed
+native sends at an explicit block, drops repeated observations of the same event (transfer
+= transaction hash + log index; native send = transaction hash), and carries the ranges in
+which each kind was completely scanned. Bins or windows outside those ranges are *missing*,
+never zero. Coverage notes (including what is not visible at all: native ETH received,
+internal transfers, counterparties' other activity, signers of incoming transfers) come
+with every result, and "nothing unusual observed" is never phrased as "safe".
+
+**Graph (`analytics/graph.py`).** A directed, typed graph of the wallet's *observed
+neighbourhood*: `transfer` (sender → recipient), `native_transfer` (wallet → recipient),
+`caused` (signer → recipient, when someone other than the wallet signed a transaction that
+moved tokens "from" it), `token_use` (counterparty → token contract). Edges aggregate the
+events behind them (count, zero-value count, first/last block, sample transactions) and keep
+their direction. Node order is sorted (deterministic); node and edge budgets truncate the
+least recently active parts and report how much was dropped. Every counterparty is adjacent
+to the wallet by construction, so analyses of links *between* counterparties exclude the
+wallet node; otherwise every pair would be at most two hops apart.
+
+**Propagation (`analytics/diffusion.py`).** Seeds are open CG-POI-001/003 warnings first
+seen at or before the cutoff (detector outputs used as secondary signals; no external
+threat labels are ingested, and no later knowledge is used). On the symmetric projection
+`W + Wᵀ` (weights: transfer, native transfer and caused 1.0, token use 0.25):
+`u(τ) = exp(−τ L_sym) u(0)` with `L_sym = I′ − D^(−1/2) W D^(−1/2)`, computed with SciPy's
+`expm_multiply` (never a dense exponential), τ ∈ {0.5, 1, 2} (dimensionless, not chain time).
+Isolated nodes follow Chung's convention (`I′` has 0 there), so they neither leak nor receive
+signal. The projection loses who-paid-whom; the direction-aware baseline is personalized
+PageRank (damping 0.85) walked against edge direction, alongside hop distance and
+degree-normalized neighbour aggregation. Each related address is explained by its shortest
+path to a seed, with the relation and an example transaction per step. Scores are not
+probabilities. Verified by tests: τ = 0 identity; two-node closed form; sparse = dense
+`expm` on small graphs (combinatorial and normalized, including isolated nodes and two
+components); mass and constant-vector conservation for `L` and `D^(1/2)1` invariance for
+`L_sym`; non-negativity on random graphs; disconnected components receive nothing;
+determinism; PPR sums to 1 and respects direction.
+
+**Structure (`analytics/spectral.py`).** Plain features (nodes, edges, counterparties,
+events, maximum degree) and normalized-Laplacian eigenvalues (components, algebraic
+connectivity of the largest component, λ_max), computed densely up to 1,500 nodes and
+otherwise reported as skipped. Graphs whose node sets differ are compared only through their
+empirical spectral distributions (1-Wasserstein distance, bounded by 2 for any size), never
+through eigenvectors from different bases. Verified: K4 and P3 spectra, relabelling
+invariance, degenerate graphs, size normalization of the distance, `uᵀLu = ½ Σ W_ij (u_i − u_j)²`.
+
+**Activity (`analytics/temporal.py`).** Per 300-block bin (about an hour; block time, not
+ingestion time): transfers, zero-value transfers, incoming transfers from addresses the
+wallet never paid (decided with the data available at the time), and new counterparties.
+A bin's score is `(count − median) / max(1.4826·MAD, √(median + 1))` against strictly earlier
+observed bins; at least 12 observed bins are required, otherwise the result is
+`insufficient_data`. An EWMA baseline is evaluated alongside. A univariate Hawkes process
+with exponential kernel (`hawkes.py`, MLE with the branching ratio constrained below 0.99)
+was fitted for evaluation only. Verified: constant rate gives no anomaly, an injected burst is
+found with its transactions, short histories are not scored, uncovered bins are missing,
+ingestion order does not matter, a later burst cannot change earlier scores, Hawkes reduces to
+Poisson at α = 0 and recovers a simulated branching ratio.
+
+**Evaluation and decision** (details and every number in [EVALUATION.md](EVALUATION.md)): 4
+publicly reported poisoning thefts and 9 randomly sampled background wallets (27 wallet-days,
+unlabelled), all methods point in time per bin.
+
+- The existing detector named the eventual recipient before the harm in 4/4 incidents, 42 to
+  13,057 blocks ahead. No other method and no combination warned earlier in any incident.
+- Count rule, robust-z bursts and EWMA bursts were on target in the same 2/4 incidents (the
+  ones with a visible burst of planting transfers), always at or after A's warning; spectral
+  distance was on target in 0/4. Adding them to A only raised the background alert rate (from
+  0.11 to 0.15 alerts per wallet-day; the structural-count baseline to 0.56).
+- On this data, propagation surfaces a flagged lookalike's direct neighbours (the signer of
+  the planting transaction and the token contract used, which the CG-POI evidence already
+  names) and, two hops away, other counterparties that merely used the same token contract.
+  No second lookalike was ever linked through a shared signer, and heat-kernel rankings
+  largely coincide with hop distance (top-5 overlap 2–5 of 5). The neighbourhood graph is too shallow for
+  diffusion to add information; expanding it would require reading counterparties' activity.
+- Every background alert of the existing detector was a lookalike sharing 7–10 characters
+  with a payee plus spoofed or zero-value transfers, i.e. very likely a genuine poisoning
+  attempt, not a false alarm. The sample is too small for rates beyond descriptive use.
+- Hawkes fitted better than Poisson on held-out data where there were enough events (2 of 13
+  subjects), confirming burstiness, but it was not turned into a detector: the simpler
+  temporal statistics already add nothing here.
+
 ## Finality
 
 `finalized` if the observed block number ≤ the provider's `finalized` block, otherwise

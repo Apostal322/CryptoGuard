@@ -476,3 +476,53 @@ export interface RulesetView {
   severities: Severity[];
   rules: { rule_id: string; category: string; description: string }[];
 }
+
+// Experimental analyses (shadow mode; off by default on the server).
+export type AnalysisSectionStatus = "disabled" | "unavailable" | "insufficient_data" | "ok" | "skipped";
+
+export interface AnalysisPathStep {
+  source: string;
+  target: string;
+  relation: "transfer" | "native_transfer" | "caused" | "token_use";
+  events: number;
+  example_transaction: string | null;
+  example_block: number | null;
+}
+
+export interface WalletAnalysis {
+  analytics_version: string;
+  wallet: string;
+  chain_id: number;
+  simulated: boolean;
+  cutoff_block: number;
+  experimental: boolean;
+  coverage: string[];
+  network: {
+    status: AnalysisSectionStatus;
+    statement: string | null;
+    flagged_addresses: string[];
+    related: { address: string; roles: string[]; hops: number; linked_to: string; path: AnalysisPathStep[]; score: number }[];
+    parameters: Record<string, unknown>;
+    notes: string[];
+  };
+  activity: {
+    status: AnalysisSectionStatus;
+    statement: string | null;
+    anomalies: {
+      statement: string;
+      series: string;
+      from_block: number;
+      to_block: number;
+      observed: number;
+      expected: number;
+      score: number;
+      history_bins: number;
+      transactions: string[];
+    }[];
+    bins: Record<string, number>;
+    parameters: Record<string, unknown>;
+    notes: string[];
+  };
+  structure: { status: AnalysisSectionStatus; features: Record<string, number | string | null>; notes: string[] };
+  notes: string[];
+}

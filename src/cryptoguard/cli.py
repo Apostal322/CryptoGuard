@@ -365,6 +365,9 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
         print(asyncio.run(run_recording()))
         return 0
 
+    if args.replay_command in ("sample-background", "record-background"):
+        return _background_command(args, settings)
+
     selected = [
         c for c in cases if c.fixture and (not args.case_id or c.manifest.case_id == args.case_id)
     ]
@@ -372,8 +375,49 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
         print("error: no recorded case matches", file=sys.stderr)
         return 1
     results = [replay(c.manifest, c.fixture) for c in selected if c.fixture]
+    analytics_md = ""
+    if args.analytics:
+        from cryptoguard.replay.analytics_eval import Subject, render_analytics, run_evaluation
+        from cryptoguard.replay.background import load_background
+
+        subjects = [
+            Subject(
+                c.manifest.case_id,
+                "positive",
+                c.fixture,
+                c.manifest.harm.block_number,
+                c.manifest.harm.recipient,
+            )
+            for c in selected
+            if c.fixture
+        ] + [
+            Subject(b.manifest.case_id, "background", b.fixture)
+            for b in load_background()
+            if b.fixture and not args.case_id
+        ]
+        unrecorded = [b.manifest.case_id for b in load_background() if b.fixture is None]
+        evaluation = run_evaluation(
+            subjects,
+            scaling=not args.no_scaling,
+            notes=[
+                f"Background wallet(s) {', '.join(unrecorded)} were sampled but could not be "
+                "recorded (the provider rejected a block read); they are excluded, not replaced."
+            ]
+            if unrecorded and not args.case_id
+            else [],
+        )
+        analytics_md = render_analytics(evaluation)
+        if args.analytics_json:
+            Path(args.analytics_json).write_text(
+                evaluation.model_dump_json(indent=1), encoding="utf-8"
+            )
+        if not args.write_report:
+            print(analytics_md)
     if args.write_report:
-        Path(args.write_report).write_text(render_markdown(results), encoding="utf-8")
+        report = render_markdown(results)
+        if analytics_md:
+            report = report.rstrip("\n") + "\n\n" + analytics_md
+        Path(args.write_report).write_text(report, encoding="utf-8")
         print(f"Wrote {args.write_report}")
     if args.json:
         print(json.dumps([r.model_dump(mode="json") for r in results], indent=2))
@@ -384,6 +428,79 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
                 print(f"  {v.visibility.value}: {v.outcome} — {v.explanation}")
             for check in r.leakage_checks:
                 print(f"  [{'PASS' if check.passed else 'FAIL'}] {check.check}")
+    return 0
+
+
+def _background_command(args: argparse.Namespace, settings: Settings) -> int:
+    from datetime import UTC, datetime
+
+    from cryptoguard.blockchain.provider import build_rpc_provider
+    from cryptoguard.core.config import validate_rpc_url
+    from cryptoguard.replay.background import (
+        background_root,
+        load_background,
+        sample_background,
+        write_manifest,
+    )
+    from cryptoguard.replay.record import record_window
+
+    rpc_settings = settings.model_copy(
+        update={"rpc_url": SecretStr(validate_rpc_url(args.rpc_url)), "rpc_max_concurrency": 2}
+    )
+
+    async def sample() -> str:
+        provider = build_rpc_provider(rpc_settings)
+        try:
+            chosen, log = await sample_background(
+                provider,
+                seed=args.seed,
+                count=args.count,
+                block_range=(args.from_block, args.to_block),
+                window_blocks=args.window_blocks,
+                max_nonce_delta=args.max_nonce_delta,
+                created_at=datetime.now(UTC),
+            )
+        finally:
+            await provider.aclose()
+        for manifest in chosen:
+            write_manifest(manifest)
+        (background_root() / f"SELECTION-{args.seed}.json").write_text(
+            log.model_dump_json(indent=1) + "\n"
+        )
+        return f"Selected {len(chosen)} wallets, excluded {len(log.excluded)} draws."
+
+    async def record() -> str:
+        lines = []
+        pending = [c for c in load_background() if c.fixture is None][: args.limit]
+        for case in pending:
+            m = case.manifest
+            provider = build_rpc_provider(rpc_settings.model_copy(update={"chain_id": m.chain_id}))
+            try:
+                fixture = await record_window(
+                    provider,
+                    case_id=m.case_id,
+                    chain_id=m.chain_id,
+                    wallet=m.wallet,
+                    start=m.from_block,
+                    end=m.to_block,
+                    chunk_blocks=args.chunk_blocks,
+                    all_timestamps=False,
+                    max_wallet_transactions=200,
+                )
+            except Exception as exc:  # report and continue with the next wallet
+                lines.append(f"{m.case_id}: FAILED ({type(exc).__name__}: {exc})")
+                continue
+            finally:
+                await provider.aclose()
+            path = background_root() / m.case_id / "fixture.json"
+            path.write_bytes(fixture.canonical_bytes() + b"\n")
+            lines.append(
+                f"{m.case_id}: {len(fixture.transfers)} transfers, "
+                f"{len(fixture.wallet_transactions)} wallet txs, {fixture.rpc_requests} requests"
+            )
+        return "\n".join(lines) or "Nothing to record."
+
+    print(asyncio.run(sample() if args.replay_command == "sample-background" else record()))
     return 0
 
 
@@ -476,10 +593,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--rpc-url", required=True, help="RPC endpoint with historical logs and state"
     )
     p_record.add_argument("--chunk-blocks", type=int, default=100)
+    p_sample = replay_sub.add_parser(
+        "sample-background", help="draw unlabelled background wallets (seeded) from an RPC"
+    )
+    p_sample.add_argument("--rpc-url", required=True)
+    p_sample.add_argument("--seed", type=int, required=True)
+    p_sample.add_argument("--count", type=int, default=10)
+    p_sample.add_argument("--from-block", type=int, required=True)
+    p_sample.add_argument("--to-block", type=int, required=True)
+    p_sample.add_argument("--window-blocks", type=int, default=21_601)
+    p_sample.add_argument("--max-nonce-delta", type=int, default=100)
+    p_bg = replay_sub.add_parser(
+        "record-background", help="record fixtures for background wallets that have none"
+    )
+    p_bg.add_argument("--rpc-url", required=True)
+    p_bg.add_argument("--chunk-blocks", type=int, default=1_000)
+    p_bg.add_argument("--limit", type=int, default=None, help="record at most this many")
     p_run = replay_sub.add_parser("run", help="replay recorded cases offline")
     p_run.add_argument("case_id", nargs="?", help="one case (default: all recorded cases)")
     p_run.add_argument("--json", action="store_true")
     p_run.add_argument("--write-report", metavar="PATH", help="write the markdown report here")
+    p_run.add_argument(
+        "--analytics",
+        action="store_true",
+        help="also evaluate the experimental analyses (needs the analytics extra)",
+    )
+    p_run.add_argument("--no-scaling", action="store_true", help="skip the synthetic benchmark")
+    p_run.add_argument("--analytics-json", metavar="PATH", help="write raw evaluation JSON here")
 
     p_ack = sub.add_parser("ack", help="acknowledge a finding by id")
     p_ack.add_argument("finding_id")

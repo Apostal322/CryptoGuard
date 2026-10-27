@@ -5,6 +5,7 @@ import type { GraphEdge, GraphEdgeType, GraphNode, WalletGraph } from "../../api
 import { Address, Badge, Button, Callout, Card, Empty, ErrorView, Limitations, Loading, SeverityBadges, SimulatedBadge, TxLink } from "../../components/ui";
 import { humanize } from "../../lib/format";
 import { useAsync } from "../../lib/useAsync";
+import { ExperimentalContext } from "./ExperimentalContext";
 import { GraphCanvas } from "./GraphCanvas";
 import { EDGE_COLOR, EDGE_LABEL, NODE_COLOR, edgeTypesPresent } from "./graphStyle";
 
@@ -237,6 +238,7 @@ export function GraphPanel({ address }: { address: string }) {
             <GraphView graph={data} />
           )}
           <Limitations items={data.limitations} />
+          <ExperimentalContext key={data.snapshot_id} address={address} />
           <Button className="self-start" onClick={graph.run}>
             Rebuild from latest snapshot
           </Button>

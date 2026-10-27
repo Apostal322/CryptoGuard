@@ -48,8 +48,36 @@ async def record_fixture(
     max_log_requests: int = 2_000,
     max_sender_lookups: int = 500,
 ) -> ReplayFixture:
-    wallet = to_checksum_address(manifest.victim)
-    start, end = manifest.evaluation.from_block, manifest.evaluation.to_block
+    return await record_window(
+        provider,
+        case_id=manifest.case_id,
+        chain_id=manifest.chain_id,
+        wallet=manifest.victim,
+        start=manifest.evaluation.from_block,
+        end=manifest.evaluation.to_block,
+        chunk_blocks=chunk_blocks,
+        max_log_requests=max_log_requests,
+        max_sender_lookups=max_sender_lookups,
+    )
+
+
+async def record_window(
+    provider: RpcEthereumProvider,
+    *,
+    case_id: str,
+    chain_id: int,
+    wallet: str,
+    start: int,
+    end: int,
+    chunk_blocks: int = 100,
+    max_log_requests: int = 2_000,
+    max_sender_lookups: int = 500,
+    all_timestamps: bool = True,
+    max_wallet_transactions: int = 10_000,
+) -> ReplayFixture:
+    """Record one wallet's observations in ``[start, end]``. With ``all_timestamps=False``
+    only the window's first and last block timestamps are read (analyses use block time)."""
+    wallet = to_checksum_address(wallet)
     await provider.verify_chain()
 
     limits = ScanLimits(
@@ -69,7 +97,7 @@ async def record_fixture(
         max_sender_lookups=max_sender_lookups,
     )
     located = await locate_wallet_transactions(
-        provider, wallet, from_block=start, to_block=end, max_transactions=10_000
+        provider, wallet, from_block=start, to_block=end, max_transactions=max_wallet_transactions
     )
     if not located.complete:
         raise RpcInvalidResponseError(
@@ -91,15 +119,18 @@ async def record_fixture(
         for block in (start, end - 1)
     }
     blocks = sorted(
-        {t.block_number for t in transfers.transfers}
-        | {t.block_number for t in transactions}
+        (
+            {t.block_number for t in transfers.transfers} | {t.block_number for t in transactions}
+            if all_timestamps
+            else set()
+        )
         | {start, end}
     )
     timestamps = {str(b): (await provider.get_block(b)).timestamp for b in blocks}
 
     return ReplayFixture(
-        case_id=manifest.case_id,
-        chain_id=manifest.chain_id,
+        case_id=case_id,
+        chain_id=chain_id,
         wallet=wallet,
         from_block=start,
         to_block=end,

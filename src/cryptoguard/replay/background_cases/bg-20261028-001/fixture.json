@@ -1,0 +1,63 @@
+{
+ "block_timestamps": {
+  "24162946": 1767549563,
+  "24184546": 1767809879
+ },
+ "case_id": "bg-20261028-001",
+ "chain_id": 1,
+ "from_block": 24162946,
+ "method": [
+  "ERC-20 Transfer logs to and from the wallet, all tokens, the whole window (eth_getLogs).",
+  "Signer (tx.from) of every outgoing transfer's transaction (eth_getTransactionByHash).",
+  "Every wallet-signed transaction in the window, located by nonce bisection (eth_getTransactionCount) and read from its block (eth_getBlockByNumber).",
+  "Wallet code at the window start and one block before the harmful block (eth_getCode).",
+  "Timestamps of all referenced blocks (eth_getBlockByNumber)."
+ ],
+ "recorded_at": "2026-10-27T21:12:34.141850Z",
+ "recorded_with": "https://eth.drpc.org",
+ "rpc_requests": 457,
+ "sender_lookups_skipped": 0,
+ "to_block": 24184546,
+ "transfer_scan_complete": true,
+ "transfers": [
+  {
+   "block_hash": "0x60bfd821037dc00b8af872f96326647b02868d00b8311e323de328cb52462e67",
+   "block_number": 24184543,
+   "log_index": 954,
+   "recipient": "0xC6fa7abcBED7eD22A6C9a77a4cC4c9a98BAB2900",
+   "sender": "0x455bF23eA7575A537b6374953FA71B5F3653272c",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x7964e679267baaa8b69912dd2d332f64ef6b211cc720b9da5429a6aefe9bd842",
+   "transaction_index": 433,
+   "tx_sender": null,
+   "value": "18000"
+  },
+  {
+   "block_hash": "0xc6d79b402fc228c1a75527551831a7aaf85609f4e2b5d7cd6b2960dee8bac3a6",
+   "block_number": 24184546,
+   "log_index": 750,
+   "recipient": "0xC6fa7abcBED7eD22A6C9a77a4cC4c9a98BAB2900",
+   "sender": "0x17c02069d6AbEdC646e1280112a1E3c3a7aB954b",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0xd468c627b9c69a03ed25e4efcbbf81e64aef6d87cc30051f4dec269f60e5e0cd",
+   "transaction_index": 593,
+   "tx_sender": null,
+   "value": "0"
+  }
+ ],
+ "wallet": "0xC6fa7abcBED7eD22A6C9a77a4cC4c9a98BAB2900",
+ "wallet_code_hex": {
+  "24162946": "0x",
+  "24184545": "0x"
+ },
+ "wallet_transactions": [
+  {
+   "block_number": 24184546,
+   "nonce": 0,
+   "to": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x5fbad464556941cc2fbac9ba62ef6d0d2fbad9c95dfc3adbfdea8557f02106ad",
+   "transaction_index": 571,
+   "value": "0"
+  }
+ ]
+}

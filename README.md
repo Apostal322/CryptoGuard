@@ -34,7 +34,8 @@ it has no code path that signs or broadcasts transactions.
 | Explicit demo mode with clearly labelled fictional fixtures | Implemented |
 | Web UI (`apps/web`): dashboard, wallet overview, permission inspector, security timeline, findings with evidence and acknowledgement, address-poisoning view, settings; demo/real labelling and loading, empty, partial-coverage and error states | Implemented |
 | Threat graph: typed edges (approved spender, holds token, delegates to, transfers in/out, resembles) built from stored observations, each with its evidence; only similarity edges are inferred; node and approval limits with an explicit summary node; interactive Cytoscape view plus an accessible list | Implemented |
-| Historical incident replay: publicly sourced manifests, recorded mainnet fixtures, offline point-in-time engine with leakage checks, generated [EVALUATION.md](EVALUATION.md), Replay page in the UI | Implemented (1 case) |
+| Historical incident replay: publicly sourced manifests, recorded mainnet fixtures, offline point-in-time engine with leakage checks, generated [EVALUATION.md](EVALUATION.md), Replay page in the UI | Implemented (4 cases, plus 9 sampled background wallets) |
+| Network, structural and activity-rate analyses (graph propagation, spectral features, robust burst statistics) over stored observations, coverage-aware and point in time | Experimental, **off by default**: evaluated with no measurable gain over the existing detector; available in shadow mode only (see [DETECTION_METHODS.md](DETECTION_METHODS.md)) |
 | Wallet-signed transactions (incl. native-ETH payments) located by nonce search in snapshots and scans; used by the poisoning detector and the graph; degrades to explicit "unlocated" counts without archive state | Implemented |
 | Scheduled monitoring loop, native ETH *received*, NFT/Permit2 approvals, ML | Not yet |
 
@@ -60,6 +61,10 @@ All settings are environment variables (or `.env`) with the `CRYPTOGUARD_` prefi
   to `scheme://host/…` everywhere it is displayed and scrubbed from logs.
 - `CRYPTOGUARD_CHAIN_ID` — `1` (mainnet) or `11155111` (Sepolia). Every session first checks
   `eth_chainId` and refuses to read state from a different chain.
+- `CRYPTOGUARD_ANALYSIS_GRAPH`, `CRYPTOGUARD_ANALYSIS_SPECTRAL`, `CRYPTOGUARD_ANALYSIS_TEMPORAL`
+  — `off` (default) or `shadow`. Shadow mode computes the experimental analyses from stored
+  data for review only; they never create findings. They need the optional extra:
+  `uv sync --extra analytics`.
 
 ### RPC provider limitations
 
@@ -109,6 +114,11 @@ uv run cryptoguard replay list
 uv run cryptoguard replay run --write-report EVALUATION.md
 # Re-record a fixture (needs historical logs + state, e.g. https://eth.drpc.org):
 uv run cryptoguard replay record <case-id> --rpc-url <archive-capable RPC>
+# Evaluate the experimental analyses too (incidents + background wallets; analytics extra):
+uv run --extra analytics cryptoguard replay run --analytics --write-report EVALUATION.md
+# Background wallets: seeded random sample, then record their fixtures
+uv run cryptoguard replay sample-background --rpc-url <RPC> --seed <n> --from-block <a> --to-block <b>
+uv run cryptoguard replay record-background --rpc-url <RPC>
 
 # Fictional fixtures, no RPC needed (output is labelled SIMULATED):
 uv run cryptoguard demo-addresses

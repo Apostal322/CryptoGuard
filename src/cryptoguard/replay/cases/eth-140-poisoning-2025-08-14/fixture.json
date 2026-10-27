@@ -1,0 +1,100 @@
+{
+ "block_timestamps": {
+  "23119930": 1754940923,
+  "23119995": 1754941703,
+  "23120007": 1754941847,
+  "23121480": 1754959679,
+  "23141488": 1755201167,
+  "23141491": 1755201203,
+  "23141530": 1755201671
+ },
+ "case_id": "eth-140-poisoning-2025-08-14",
+ "chain_id": 1,
+ "from_block": 23119930,
+ "method": [
+  "ERC-20 Transfer logs to and from the wallet, all tokens, the whole window (eth_getLogs).",
+  "Signer (tx.from) of every outgoing transfer's transaction (eth_getTransactionByHash).",
+  "Every wallet-signed transaction in the window, located by nonce bisection (eth_getTransactionCount) and read from its block (eth_getBlockByNumber).",
+  "Wallet code at the window start and one block before the harmful block (eth_getCode).",
+  "Timestamps of all referenced blocks (eth_getBlockByNumber)."
+ ],
+ "recorded_at": "2026-10-27T21:05:26.928241Z",
+ "recorded_with": "https://eth.drpc.org",
+ "rpc_requests": 1361,
+ "sender_lookups_skipped": 0,
+ "to_block": 23141530,
+ "transfer_scan_complete": true,
+ "transfers": [
+  {
+   "block_hash": "0x1daddf60c352ad7109dfcc75d3cacc3a4ee656951dd75e5aa4bc3c434b3aa7a3",
+   "block_number": 23119995,
+   "log_index": 395,
+   "recipient": "0xc61C11b53CFCaF1645aa41895206f5Cc82543b86",
+   "sender": "0x39dB676829CC014F8Dc0bEe07b67f888b685DB59",
+   "token": "0xFE1A83D45B5310057C3C69BA17b2cD7242C3d087",
+   "transaction_hash": "0x11d85cadd0a81a8aa28516f51779965fb6200c754ecbac1405d3f0c1e3477ec8",
+   "transaction_index": 149,
+   "tx_sender": "0x00932B23fb660C607Ed7F8a29cbC6F6e94788000",
+   "value": "64980000000000000000"
+  },
+  {
+   "block_hash": "0xac5d6d78e4411ec086f1f8e7ffce37a0464f527c2ef1578be73525f709e0aaa0",
+   "block_number": 23120007,
+   "log_index": 630,
+   "recipient": "0xC61756E0Ea2933Ad8ec8be11cb444c4215c23B86",
+   "sender": "0x39dB676829CC014F8Dc0bEe07b67f888b685DB59",
+   "token": "0xEF544f5B5d5EFd80a1601559F1f81D412Db0c1e4",
+   "transaction_hash": "0x61d9404683dd88c32546d393f4bcaa9405d65a61538e59eabe4f473c7de65921",
+   "transaction_index": 188,
+   "tx_sender": "0x6cBB0D52982bA425Aa188048DcF4949bA7Af73E4",
+   "value": "64980000000000000000"
+  },
+  {
+   "block_hash": "0x650fb3dde53f6bb6d8de86626730a63636dcf3dd753c8886a34ecaad537a5ef7",
+   "block_number": 23121480,
+   "log_index": 1284,
+   "recipient": "0xC61cBA5C983d7Bc4a4DD64024ce68CF7E6ee3B86",
+   "sender": "0x39dB676829CC014F8Dc0bEe07b67f888b685DB59",
+   "token": "0xB3284A8C05FCb84Ae99D953fC6b6f5D6c1394a5E",
+   "transaction_hash": "0xa8f97f82991daac02c0514863d838a658765b86f922d78fe8809773011a927ef",
+   "transaction_index": 136,
+   "tx_sender": "0x16F09B37b20bfBB07130bBA8226299926E39b488",
+   "value": "10000000000000000"
+  },
+  {
+   "block_hash": "0x25869c5677058cc358173e6c6cb87648d3d824b96f7d1606aa627c0ffeaa553e",
+   "block_number": 23141491,
+   "log_index": 449,
+   "recipient": "0xC61756E0Ea2933Ad8ec8be11cb444c4215c23B86",
+   "sender": "0x39dB676829CC014F8Dc0bEe07b67f888b685DB59",
+   "token": "0xA29A654b30cDea0e37584694182a4B7F8553C6e2",
+   "transaction_hash": "0x7b39235f1ef4485c363d660f0350395bb0fa403a9d45e3acc682c97a7cf09e33",
+   "transaction_index": 216,
+   "tx_sender": "0x6cBB0D52982bA425Aa188048DcF4949bA7Af73E4",
+   "value": "1000000000000000000"
+  }
+ ],
+ "wallet": "0x39dB676829CC014F8Dc0bEe07b67f888b685DB59",
+ "wallet_code_hex": {
+  "23119930": "0x",
+  "23141529": "0x"
+ },
+ "wallet_transactions": [
+  {
+   "block_number": 23141488,
+   "nonce": 3,
+   "to": "0xc61C3583C174Cf16e6acA3dBB33fB47FA4C23b86",
+   "transaction_hash": "0x713fecd0516d064d9df988b4c79ae8b8cd6e194de2b0dff3488a5bbca92a8c5f",
+   "transaction_index": 90,
+   "value": "1000000000000000000"
+  },
+  {
+   "block_number": 23141530,
+   "nonce": 4,
+   "to": "0xC61756E0Ea2933Ad8ec8be11cb444c4215c23B86",
+   "transaction_hash": "0x4d27c67a1343a431c49cc2907abf9605f6c8ef4fd49b4316c7f9f4f311a6e1d6",
+   "transaction_index": 102,
+   "value": "140000000000000000000"
+  }
+ ]
+}

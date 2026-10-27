@@ -43,7 +43,14 @@ SQLAlchemy or the CLI, so detectors added later can be run, tested and replayed 
 | `database/history.py` | Snapshot/finding/transition persistence; lifecycle applied in one transaction |
 | `graph/build.py` | Pure threat-graph builder: typed nodes/edges with evidence, prioritised limits |
 | `services/graph.py` | Loads the latest snapshot, stored transfers and open findings for the graph |
-| `api/history_routes.py` | Snapshot, timeline, finding and ruleset endpoints |
+| `api/history_routes.py` | Snapshot, timeline, finding, ruleset and (experimental) analysis endpoints |
+| `analytics/observations.py` | Coverage-aware, deduplicated, point-in-time view of a wallet's stored observations |
+| `analytics/graph.py` | Directed typed neighbourhood graph, sparse adjacency, scope limits (SciPy, lazy) |
+| `analytics/diffusion.py` | Heat-kernel propagation, personalized PageRank, hop/neighbour baselines, explanations |
+| `analytics/spectral.py` | Plain and normalized-Laplacian structural features; spectral-distribution distance |
+| `analytics/temporal.py` | Coverage-aware activity bins, robust-z and EWMA burst statistics |
+| `analytics/hawkes.py` | Exponential-kernel Hawkes MLE (evaluation only) |
+| `services/analysis.py` | Shadow-mode wallet analysis from stored data; never produces findings |
 | `services/demo.py` | Demo provider over fictional, deterministic fixtures |
 | `services/providers.py` | Mode → provider selection; no silent fallback |
 | `database/` | ORM models, idempotent observation repository |
@@ -131,6 +138,13 @@ lazily; its normally injected container style is shipped in our CSS so the stric
 | `replay/engine.py` | Offline, deterministic point-in-time replay at every event block; two visibility levels; leakage checks; runtime and memory |
 | `replay/report.py` | Renders `EVALUATION.md` from replay results only |
 | `replay/cases/<id>/` | `manifest.json` + `fixture.json` per incident (fixture hashed in every result) |
+| `replay/background.py`, `replay/background_cases/` | Seeded random sample of unlabelled background wallets (selection log with every exclusion) and their fixtures |
+| `replay/analytics_eval.py` | Point-in-time, per-bin evaluation of the experimental analyses against the existing detector and simple baselines; combinations; Hawkes vs Poisson; synthetic cost benchmark |
+
+The experimental analyses sit beside the detectors, not inside them: they read the same
+stored observations, but their output goes only to the analysis endpoint, a log line and the
+UI's experimental block. `run_detectors` never sees them, so they cannot change findings
+(tested by taking the same snapshot with the flags off and in shadow mode).
 
 The engine's detector entry point (`detector_outputs`) takes no manifest, so ground truth
 cannot leak into detection; each checkpoint asserts that no input is newer than the cutoff.

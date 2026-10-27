@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     # roughly log2(window) nonce reads plus one block read).
     wallet_tx_max_per_scan: int = Field(default=200, ge=0, le=10_000)
 
+    # Experimental analyses (need the ``analytics`` extra). "off": not computed. "shadow":
+    # computed on request from stored data and logged after each snapshot, but never turned
+    # into findings and never able to change severities. See DETECTION_METHODS.md.
+    analysis_graph: Literal["off", "shadow"] = "off"
+    analysis_spectral: Literal["off", "shadow"] = "off"
+    analysis_temporal: Literal["off", "shadow"] = "off"
+    analysis_max_nodes: int = Field(default=2_000, ge=10, le=20_000)
+
     database_url: str = "sqlite:///./data/cryptoguard.db"
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]

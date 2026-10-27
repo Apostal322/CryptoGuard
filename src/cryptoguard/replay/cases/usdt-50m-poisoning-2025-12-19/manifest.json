@@ -1,0 +1,54 @@
+{
+  "case_id": "usdt-50m-poisoning-2025-12-19",
+  "title": "49,999,950 USDT lost to address poisoning (Ethereum, 19 Dec 2025)",
+  "category": "address_poisoning",
+  "chain_id": 1,
+  "summary": "After a 50 USDT test payment to its intended counterparty, the victim received a dust transfer from a lookalike and minutes later sent 49,999,950 USDT to the lookalike (as reported by several outlets).",
+  "first_public_report": "2025-12-19",
+  "public_sources": [
+    {
+      "publisher": "The Block",
+      "title": "Crypto trader loses $50 million in address poisoning attack, offers $1 million bounty for return",
+      "url": "https://www.theblock.co/post/383423/crypto-trader-loses-50-million-in-address-poisoning-attack-offers-1-million-bounty-for-return",
+      "accessed": "2026-10-27",
+      "used_for": "Harmful transaction, test payment, victim. Retrieved by a research subagent on 2026-10-27; values cross-checked on-chain, page not re-read by hand."
+    },
+    {
+      "publisher": "Protos",
+      "title": "Crypto trader loses $50M USDT to address poisoning scam",
+      "url": "https://protos.com/crypto-trader-loses-50m-usdt-to-address-poisoning-scam/",
+      "accessed": "2026-10-27",
+      "used_for": "Lookalike address; intended recipient described only as 0xbaf...F8b5. Retrieved by a research subagent on 2026-10-27; values cross-checked on-chain, page not re-read by hand."
+    },
+    {
+      "publisher": "CoinDesk",
+      "title": "Crypto user loses $50 million in 'address poisoning' scam",
+      "url": "https://www.coindesk.com/web3/2025/12/20/crypto-user-loses-usd50-million-in-address-poisoning-scam",
+      "accessed": "2026-10-27",
+      "used_for": "Corroboration of mechanism and amount. Retrieved by a research subagent on 2026-10-27; values cross-checked on-chain, page not re-read by hand."
+    }
+  ],
+  "victim": "0xcB80784ef74C98A89b6Ab8D96ebE890859600819",
+  "intended_recipient": null,
+  "harm": {
+    "transaction_hash": "0xc0514a795f065fce8a3e1238a1ba480e8a792d45f6431ee4ba8d800bedd86a0f",
+    "block_number": 24047560,
+    "recipient": "0xBaFF2F13638C04B10F8119760B2D2aE86b08f8b5",
+    "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "value_base_units": "49999950000000",
+    "description": "The victim signed a USDT transfer of 49,999,950 USDT (6 decimals) to the lookalike."
+  },
+  "evaluation": {
+    "from_block": 24025960,
+    "to_block": 24047560,
+    "rationale": "The 21,600 blocks (about 3 days) before and including the harmful block: the same round default as the WBTC case, fixed before any activity in the window was examined."
+  },
+  "onchain_verification": [
+    "Verified on 2026-10-28 via eth.drpc.org: tx 0xc0514a79...6a0f in block 24047560, signed by the victim, calls USDT; its receipt has one Transfer of 49999950000000 base units from the victim to 0xBaFF2F13638C04B10F8119760B2D2aE86b08f8b5; status success.",
+    "Verified: eth_getCode(victim) empty at block 24047560 (plain EOA); nonce 110 at block 24025960 and 113 after block 24047560."
+  ],
+  "ground_truth_limitations": [
+    "The intended recipient's full address is not published in the sources (only 0xbaf...F8b5), so it is left unset; the detector finds its own reference from the data.",
+    "Attribution as poisoning rests on public reporting plus address similarity."
+  ]
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Literal
 
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from cryptoguard.api.state import error_response, get_state
 from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.chains import ChainInfo, explorer_block_url
+from cryptoguard.core.config import Settings
 from cryptoguard.core.errors import InvalidScanRequestError
 from cryptoguard.core.hexutil import parse_hash32
 from cryptoguard.database.history import TimelineRow
@@ -21,6 +23,7 @@ from cryptoguard.graph.build import WalletGraph
 from cryptoguard.history.delta import Change
 from cryptoguard.risk.lifecycle import OPEN_STATUSES, FindingStatus, InvalidTransitionError
 from cryptoguard.risk.rules import RULES, RULESET_ID, RULESET_VERSION, Severity
+from cryptoguard.services.analysis import WalletAnalysis, shadow_log, wallet_analysis
 from cryptoguard.services.approvals import ScanLimits
 from cryptoguard.services.graph import wallet_graph
 from cryptoguard.services.poisoning import PoisoningReport, scan_poisoning
@@ -35,6 +38,7 @@ from cryptoguard.services.snapshots import (
 )
 
 router = APIRouter(prefix="/api/v1")
+logger = logging.getLogger(__name__)
 
 
 class SnapshotRequest(BaseModel):
@@ -198,7 +202,7 @@ def _finding_id(value: str) -> str:
 async def create_snapshot(request: Request, address: str, body: SnapshotRequest) -> SnapshotOutcome:
     """Take a security snapshot and add it to the wallet's timeline."""
     state = get_state(request)
-    return await take_snapshot(
+    outcome = await take_snapshot(
         require_provider(state.provider),
         state.repository,
         to_checksum_address(address),
@@ -210,6 +214,44 @@ async def create_snapshot(request: Request, address: str, body: SnapshotRequest)
         lookback_blocks=body.lookback_blocks,
         options=DetectionOptions.from_settings(state.settings),
     )
+    if _analysis_enabled(state.settings):
+        # Shadow mode: runs after the snapshot is stored and cannot change its outcome.
+        try:
+            shadow_log(
+                await asyncio.wait_for(
+                    asyncio.to_thread(_analysis, request, outcome.owner), timeout=30
+                )
+            )
+        except Exception:  # never let an experimental analysis fail a snapshot
+            logger.warning("shadow analysis failed or timed out", exc_info=True)
+    return outcome
+
+
+def _analysis_enabled(settings: Settings) -> bool:
+    return "shadow" in (
+        settings.analysis_graph,
+        settings.analysis_spectral,
+        settings.analysis_temporal,
+    )
+
+
+def _analysis(request: Request, address: str) -> WalletAnalysis:
+    state = get_state(request)
+    return wallet_analysis(
+        state.repository,
+        address,
+        chain_id=state.chain.chain_id,
+        data_source="demo_fixture" if state.settings.mode == "demo" else "rpc",
+        settings=state.settings,
+        history_limit=state.settings.transfer_history_limit,
+    )
+
+
+@router.get("/wallets/{address}/analysis", response_model=WalletAnalysis)
+async def wallet_analysis_route(request: Request, address: str) -> WalletAnalysis:
+    """EXPERIMENTAL network and activity context from stored data (no RPC calls). Sections
+    whose setting is ``off`` (the default) report ``disabled``. Never produces findings."""
+    return await asyncio.to_thread(_analysis, request, to_checksum_address(address))
 
 
 @router.get("/wallets/{address}/timeline", response_model=TimelinePage)

@@ -1,0 +1,54 @@
+{
+  "case_id": "eth-4556-poisoning-2026-01-30",
+  "title": "4,556 ETH lost to address poisoning (Ethereum, 30 Jan 2026)",
+  "category": "address_poisoning",
+  "chain_id": 1,
+  "summary": "Two days after paying its OTC counterparty, the victim sent 4,556 ETH to a lookalike that had earlier sent it zero-value ETH transactions and USDC dust (as reported by Specter and Scam Sniffer).",
+  "first_public_report": "2026-01-30",
+  "public_sources": [
+    {
+      "publisher": "Specter (X)",
+      "title": "Address poisoning: 4,556 ETH",
+      "url": "https://x.com/SpecterAnalyst/status/2017300546978300203",
+      "accessed": "2026-10-27",
+      "used_for": "Victim, lookalike, onward attacker wallet, block. Retrieved by a research subagent on 2026-10-27; values cross-checked on-chain, page not re-read by hand."
+    },
+    {
+      "publisher": "Scam Sniffer (X)",
+      "title": "4,556 ETH address poisoning",
+      "url": "https://x.com/realScamSniffer/status/2017422623085629583",
+      "accessed": "2026-10-27",
+      "used_for": "Planting steps (zero-value ETH, USDC dust). Retrieved by a research subagent on 2026-10-27; values cross-checked on-chain, page not re-read by hand."
+    },
+    {
+      "publisher": "Blockonomi",
+      "title": "Address Poisoning Attack Drains $12.25 Million in ETH From Single Crypto Victim",
+      "url": "https://blockonomi.com/address-poisoning-attack-drains-12-25-million-in-eth-from-single-crypto-victim/",
+      "accessed": "2026-10-27",
+      "used_for": "Intended recipient address. Retrieved by a research subagent on 2026-10-27; values cross-checked on-chain, page not re-read by hand."
+    }
+  ],
+  "victim": "0xd6741220a947941bF290799811FcDCeA8AE4A7Da",
+  "intended_recipient": "0x6D90CC8Ce83B6D0ACf634ED45d4bCc37eDdD2E48",
+  "harm": {
+    "transaction_hash": "0x7facade9d4731a639c4f31e84f5dfef0ddce8d2dc4d8a4399b72cd66817a8ac7",
+    "block_number": 24348794,
+    "recipient": "0x6d9052b2DF589De00324127fe2707eb34e592e48",
+    "token": "0x0000000000000000000000000000000000000000",
+    "value_base_units": "4556000000000000000000",
+    "description": "The victim signed a native transfer of 4,556 ETH to the lookalike (token field 0x0 = native ETH)."
+  },
+  "evaluation": {
+    "from_block": 24327194,
+    "to_block": 24348794,
+    "rationale": "The 21,600 blocks (about 3 days) before and including the harmful block: the same round default as the WBTC case, fixed before any activity in the window was examined."
+  },
+  "onchain_verification": [
+    "Verified on 2026-10-28 via eth.drpc.org: sources print the hash truncated (0x7facade9d47...); the only transaction in block 24348794 from the victim to the lookalike is 0x7facade9d4731a639c4f31e84f5dfef0ddce8d2dc4d8a4399b72cd66817a8ac7, value 4556 ETH, status success.",
+    "Verified: eth_getCode(victim) empty at block 24348794 (plain EOA); nonce 202 at block 24327194 and 220 after block 24348794."
+  ],
+  "ground_truth_limitations": [
+    "Reported planting steps are zero-value ETH transactions from the lookalike to the victim (incoming native ETH, which CryptoGuard cannot see) and USDC dust about 99 days earlier (outside the window).",
+    "Attribution as poisoning rests on public analyst reports plus address similarity."
+  ]
+}

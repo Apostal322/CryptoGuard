@@ -1,0 +1,47 @@
+{
+  "case_id": "eth-140-poisoning-2025-08-14",
+  "title": "140 ETH lost to address poisoning (Ethereum, 14 Aug 2025)",
+  "category": "address_poisoning",
+  "chain_id": 1,
+  "summary": "The victim sent 140 ETH to a lookalike of an address it had paid before, after copying it from a contaminated transfer history (as reported by Scam Sniffer).",
+  "first_public_report": "2025-08-15",
+  "public_sources": [
+    {
+      "publisher": "Scam Sniffer (X)",
+      "title": "Address poisoning: victim / wrong address / correct address",
+      "url": "https://x.com/realScamSniffer/status/1956157858468520374",
+      "accessed": "2026-10-27",
+      "used_for": "Victim, lookalike and correct addresses; harmful transaction link. Retrieved by a research subagent on 2026-10-27; values cross-checked on-chain, page not re-read by hand."
+    },
+    {
+      "publisher": "Cointelegraph",
+      "title": "Crypto address poisoning scammers netted $1.6M this week",
+      "url": "https://cointelegraph.com/news/1-6m-lost-wave-crypto-address-poisonings-this-week",
+      "accessed": "2026-10-27",
+      "used_for": "Amount and mechanism (no addresses). Retrieved by a research subagent on 2026-10-27; values cross-checked on-chain, page not re-read by hand."
+    }
+  ],
+  "victim": "0x39dB676829CC014F8Dc0bEe07b67f888b685DB59",
+  "intended_recipient": "0xc61C3583C174Cf16e6acA3dBB33fB47FA4C23b86",
+  "harm": {
+    "transaction_hash": "0x4d27c67a1343a431c49cc2907abf9605f6c8ef4fd49b4316c7f9f4f311a6e1d6",
+    "block_number": 23141530,
+    "recipient": "0xC61756E0Ea2933Ad8ec8be11cb444c4215c23B86",
+    "token": "0x0000000000000000000000000000000000000000",
+    "value_base_units": "140000000000000000000",
+    "description": "The victim signed a native transfer of 140 ETH to the lookalike (token field 0x0 = native ETH)."
+  },
+  "evaluation": {
+    "from_block": 23119930,
+    "to_block": 23141530,
+    "rationale": "The 21,600 blocks (about 3 days) before and including the harmful block: the same round default as the WBTC case, fixed before any activity in the window was examined."
+  },
+  "onchain_verification": [
+    "Verified on 2026-10-28 via eth.drpc.org: tx 0x4d27c67a...e1d6 in block 23141530, from the victim to 0xC61756E0Ea2933Ad8ec8be11cb444c4215c23B86, value 140 ETH, status success, no Transfer logs.",
+    "Verified: eth_getCode(victim) empty at block 23141530 (plain EOA); nonce 3 at block 23119930 and 5 after block 23141530."
+  ],
+  "ground_truth_limitations": [
+    "Attribution as poisoning rests on one security firm's public post plus the prefix/suffix match; no confirmed attribution.",
+    "The planting step was not independently located before recording; the replay uses only what the fixture contains."
+  ]
+}

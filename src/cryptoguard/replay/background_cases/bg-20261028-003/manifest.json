@@ -1,0 +1,15 @@
+{
+ "case_id": "bg-20261028-003",
+ "chain_id": 1,
+ "label": "unlabelled_background",
+ "wallet": "0xF59CF5d89CdCd127F12a413dFEbcAB7cafc44096",
+ "from_block": 23829082,
+ "to_block": 23850682,
+ "selection": {
+  "seed": 20261028,
+  "draw": 3,
+  "sampled_block": 23850682,
+  "sampled_transaction": "0xdc1238e1b10299ca95db63fcbdad8e4eeaf0a72aaccab06a6d53601d76a2214f",
+  "rule": "uniform block in 19000000..24300000, uniform transaction in it, its signer if a plain EOA with <= 100 signed transactions in the 21601-block window ending there"
+ }
+}

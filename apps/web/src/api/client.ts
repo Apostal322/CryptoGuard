@@ -13,6 +13,7 @@ import type {
   SnapshotOutcome,
   StatusResponse,
   TimelinePage,
+  WalletAnalysis,
   WalletGraph,
 } from "./types";
 
@@ -109,6 +110,7 @@ export const api = {
     request<WalletGraph>(
       `${wallet(address)}/graph?max_nodes=${maxNodes}&include_inactive=${includeInactive ? "true" : "false"}`,
     ),
+  analysis: (address: string) => request<WalletAnalysis>(`${wallet(address)}/analysis`),
   replayCases: () => request<{ items: ReplayCaseView[] }>("/replay/cases"),
   replayRun: (caseId: string) => post<ReplayResult>("/replay/runs", { case_id: caseId }),
   poisoningScan: (address: string, options: { lookback_blocks?: number; tokens?: string[] }) =>

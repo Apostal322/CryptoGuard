@@ -1,0 +1,48 @@
+{
+ "seed": 20261028,
+ "block_range": [
+  19000000,
+  24300000
+ ],
+ "window_blocks": 21601,
+ "max_nonce_delta": 100,
+ "created_at": "2026-10-27T21:10:42.478339Z",
+ "selected": [
+  "bg-20261028-001",
+  "bg-20261028-002",
+  "bg-20261028-003",
+  "bg-20261028-004",
+  "bg-20261028-005",
+  "bg-20261028-009",
+  "bg-20261028-010",
+  "bg-20261028-011",
+  "bg-20261028-013",
+  "bg-20261028-014"
+ ],
+ "excluded": [
+  {
+   "draw": 6,
+   "block": 21204980,
+   "reason": "too active (14416 signed txs)",
+   "wallet": "0xae2Fc483527B8EF99EB5D9B44875F005ba1FaE13"
+  },
+  {
+   "draw": 7,
+   "block": 22853503,
+   "reason": "too active (1681 signed txs)",
+   "wallet": "0x5baBE600b9fCD5fB7b66c0611bF4896D967b23A1"
+  },
+  {
+   "draw": 8,
+   "block": 24003355,
+   "reason": "too active (30067 signed txs)",
+   "wallet": "0x974CaA59e49682CdA0AD2bbe82983419A2ECC400"
+  },
+  {
+   "draw": 12,
+   "block": 22852078,
+   "reason": "not a plain EOA (has code)",
+   "wallet": "0x7aF232BB122201a33D0B333aE0528B81306CF07e"
+  }
+ ]
+}

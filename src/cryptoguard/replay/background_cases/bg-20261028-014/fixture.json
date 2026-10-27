@@ -1,0 +1,51 @@
+{
+ "block_timestamps": {
+  "20690505": 1725613067,
+  "20712105": 1725873455
+ },
+ "case_id": "bg-20261028-014",
+ "chain_id": 1,
+ "from_block": 20690505,
+ "method": [
+  "ERC-20 Transfer logs to and from the wallet, all tokens, the whole window (eth_getLogs).",
+  "Signer (tx.from) of every outgoing transfer's transaction (eth_getTransactionByHash).",
+  "Every wallet-signed transaction in the window, located by nonce bisection (eth_getTransactionCount) and read from its block (eth_getBlockByNumber).",
+  "Wallet code at the window start and one block before the harmful block (eth_getCode).",
+  "Timestamps of all referenced blocks (eth_getBlockByNumber)."
+ ],
+ "recorded_at": "2026-10-27T21:29:55.797415Z",
+ "recorded_with": "https://eth.drpc.org",
+ "rpc_requests": 444,
+ "sender_lookups_skipped": 0,
+ "to_block": 20712105,
+ "transfer_scan_complete": true,
+ "transfers": [
+  {
+   "block_hash": "0x712038724b69059476f5dedd7c3c325509cf6c3c15e2d18c08522262cfea994e",
+   "block_number": 20712105,
+   "log_index": 121,
+   "recipient": "0xE786B4A913855105c9793207631b94C91FEcE6df",
+   "sender": "0x98f2A81D54E2A0D366A0feE65cEa0d47Ee1e9945",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x440082fa80710c4c45f245a475b92a9b889fea240d0c9c0be9504c5e1c2042b7",
+   "transaction_index": 54,
+   "tx_sender": "0x98f2A81D54E2A0D366A0feE65cEa0d47Ee1e9945",
+   "value": "1501590433"
+  }
+ ],
+ "wallet": "0x98f2A81D54E2A0D366A0feE65cEa0d47Ee1e9945",
+ "wallet_code_hex": {
+  "20690505": "0x",
+  "20712104": "0x"
+ },
+ "wallet_transactions": [
+  {
+   "block_number": 20712105,
+   "nonce": 8,
+   "to": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x440082fa80710c4c45f245a475b92a9b889fea240d0c9c0be9504c5e1c2042b7",
+   "transaction_index": 54,
+   "value": "0"
+  }
+ ]
+}
