@@ -6,11 +6,21 @@ registry.
 
 ## Repository metadata
 
-- **Description:** Read-only, explainable Ethereum wallet security monitoring: approvals,
-  EIP-7702 delegation, address-poisoning detection, security timeline and point-in-time
-  incident replay.
-- **Topics:** `ethereum`, `blockchain`, `security`, `wallet-security`, `address-poisoning`,
-  `eip-7702`, `erc20`, `python`, `fastapi`, `react`, `graph-analysis`
+Set on GitHub:
+
+- **Description:** Read-only Ethereum wallet security monitoring: explainable findings for
+  approvals, EIP-7702 delegation and address poisoning, with a security timeline and
+  reproducible point-in-time incident replay.
+- **Topics:** `ethereum`, `blockchain`, `security`, `cybersecurity`, `wallet-security`,
+  `address-poisoning`, `fraud-detection`, `eip-7702`, `graph-analysis`, `python`, `fastapi`,
+  `react`
+
+Repository security settings (2026-10-28): Dependabot alerts enabled; Dependabot version
+updates via `.github/dependabot.yml`; Actions default token read-only and unable to approve
+pull requests. Not available on this plan for a private repository, and not purchased:
+branch protection and rulesets ("Upgrade to GitHub Pro or make this repository public"),
+secret scanning and push protection, private vulnerability reporting. Revisit them if the
+repository is made public, where they are free.
 
 ## How CI relates to a release
 

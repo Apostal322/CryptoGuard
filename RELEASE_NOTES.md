@@ -44,6 +44,22 @@ gave no earlier theft warning ([CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md))
 - Untrusted chain metadata is rendered as text; external links go only to the chain's
   block explorer.
 
+## Hardening found and fixed during release validation
+
+Each has a regression test ([RELEASE_AUDIT.md](RELEASE_AUDIT.md)):
+
+- Cross-site requests could make the local API start work or acknowledge findings (CSRF),
+  and any `Host` header was served (DNS rebinding).
+- Concurrent snapshots of one wallet failed with server errors; job coordination was
+  per-process only. Now fenced database leases.
+- A reverted ETH payment could count as money sent to a lookalike. Receipt status is now
+  read; reverted payments are references only, unknown status stays unknown.
+- No schema migrations existed; SQLite DDL in a failed migration was not rolled back.
+- A superseded finding was labelled "resolved"; the mobile header and timeline overflowed
+  narrow screens (the header overflow was found by the first Linux CI run).
+- A locally built source distribution could include an untracked local tool file; release
+  artifacts are built in CI and checked against the tracked file list.
+
 ## Known limitations
 
 - Native ETH *received* by a wallet, internal (contract-mediated) transfers and funding
@@ -52,7 +68,18 @@ gave no earlier theft warning ([CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md))
 - No scheduled monitoring loop: snapshots run on request.
 - Leases are not renewed during a run (default 15 minutes); an overrunning run's results
   are refused rather than raced.
-- Verified on Windows 11 only. Linux is covered by the CI definition, which has not run yet.
+- Tested on SQLite only; PostgreSQL is supported through SQLAlchemy but untested.
+- Detection was evaluated on four incidents: a case study, not an accuracy estimate. A quiet
+  result never means a wallet is safe.
+
+## Verification
+
+GitHub Actions on the release commit: backend (402 tests, lint, types) on Windows and Ubuntu
+with Python 3.12 and on Ubuntu with 3.13; frontend (52 tests, typecheck, build) on both;
+browser end-to-end tests (27, headless Chromium, real API against a fictional test chain) on
+Ubuntu; wheel and sdist built, inspected and clean-installed (core and `analytics` extra) on
+both; pip-audit and npm audit with no known vulnerabilities. macOS is untested. Details and
+run links: [RELEASE_CANDIDATE_REPORT.md](RELEASE_CANDIDATE_REPORT.md).
 
 ## Install
 

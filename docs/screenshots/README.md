@@ -7,6 +7,11 @@ real API. The API's RPC endpoint is the deterministic **fictional** test chain o
 while every address, transaction and block is made up. Each image carries a banner saying
 so. None of these screens is live Ethereum analysis.
 
+Captured on Windows at `744150a`. Later fixes changed only how the header and long finding
+titles wrap on narrow or wide-font screens (CHANGELOG, "GitHub CI and cross-platform
+validation"); at the captured sizes the screens look the same apart from slightly tighter
+navigation-link spacing on the 375 px dashboard.
+
 | File | Shows |
 |---|---|
 | `wallet-overview.png` | Point-in-time inspection of a wallet |

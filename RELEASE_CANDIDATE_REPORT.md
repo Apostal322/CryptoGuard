@@ -1,65 +1,99 @@
 # Release candidate report — CryptoGuard 0.1.0
 
-Validation of `89f1de5` plus the phase 10.1 changes, on 2026-10-28. Environment: Windows 11
-Pro, Intel i5 (4 cores), 8 GB RAM; Python 3.12.15 (uv), Node.js 24.15.0, npm 11.12.1,
-Playwright 1.64.1 with Chromium. The repository has no remote: **nothing ran on GitHub**.
+Validation on 2026-10-28 in the private repository
+[`Apostal322/CryptoGuard`](https://github.com/Apostal322/CryptoGuard) with GitHub-hosted
+runners (`ubuntu-latest`, `windows-latest`), plus local checks on Windows 11 (Intel i5, 4
+cores, 8 GB RAM, shared with other workloads). Not an independent audit.
 
-## Decision: CONDITIONALLY READY
+## Decision
 
-Every local check passes and no known P0/P1 defect remains open. Two material validations
-have not been possible here: a **GitHub-hosted CI run** and **any execution on Linux**. Both
-need the repository to be pushed (not authorized yet). Until the first CI run is green on
-Ubuntu and Windows, publish nothing beyond a private repository.
+Every required CI job passes on Windows and Ubuntu, the browser suite passes on Ubuntu, the
+packages install cleanly outside the checkout, the evaluations reproduce, and no known P0 or
+P1 defect is open. The release tag points at a `main` commit whose complete CI run passed
+(the run is linked from the GitHub release, since this file cannot name the run of the commit
+that contains it). The repository stays **private**.
+
+## GitHub Actions
+
+| Run | Commit | Result | What it showed |
+|---|---|---|---|
+| [40665362374](https://github.com/Apostal322/CryptoGuard/actions/runs/40665362374) | `9b48c3e` | failure | First CI run ever: everything passed except one browser test. On Linux the mobile header was wider than the screen (403 px at 375 px). |
+| [40666872831](https://github.com/Apostal322/CryptoGuard/actions/runs/40666872831) | `8053537` | failure | Header fixed; next Linux-only overflow: finding titles with unbreakable addresses (411 px). |
+| [40671088534](https://github.com/Apostal322/CryptoGuard/actions/runs/40671088534) | `95c5856` | **success** | All 10 jobs. The browser job was re-run once (attempt 2): passed again. |
+
+Jobs of run 40671088534 (counts from the job logs, not from the status alone):
+
+| Job | OS | Result | Evidence |
+|---|---|---|---|
+| backend, Python 3.12 | Windows | pass | ruff, format, mypy clean; 402 passed, 4 deselected (`live`) |
+| backend, Python 3.12 | Ubuntu | pass | same; 402 passed |
+| backend, Python 3.13 | Ubuntu | pass | same; 402 passed |
+| frontend | Windows | pass | typecheck, 52 Vitest tests, production build |
+| frontend | Ubuntu | pass | same |
+| browser e2e (Chromium) | Ubuntu | pass (twice) | 27 passed, 1 skipped (opt-in screenshot refresh), 45 s |
+| package | Windows | pass | wheel 117 files, sdist 234; inspection OK; clean install of core and `[analytics]`, smoke test outside the checkout |
+| package | Ubuntu | pass | same; distributions kept as the `dist` artifact |
+| dependency audit | Ubuntu | pass | pip-audit 2.10.1: no known vulnerabilities; npm audit: 0; shellcheck clean |
 
 ## Matrix
 
-| Area | Status | Method | Evidence | Remaining issue |
-|---|---|---|---|---|
-| Backend tests | VERIFIED | `pytest` (full suite) | 402 passed, 4 deselected (`live`), 0 failed; ruff, ruff format, mypy clean | Earlier in the session one run had a flaky lease test (fixed, item 21 in RELEASE_AUDIT.md) |
-| Frontend tests | VERIFIED | `vitest`, `tsc`, `vite build` | 52 passed (8 files); typecheck and production build clean | — |
-| Browser E2E | VERIFIED (Windows) | Playwright, headless Chromium, real backend + production build, fictional test chain | 25 passed, 1 skipped (opt-in screenshot refresh), 160 s | Under heavy CPU contention from another workload, 1–4 tests timed out (15 s waits); all pass when the machine is not saturated. Not run on Linux. |
-| API security | VERIFIED | pytest boundary suite + browser tests | Host allow-list, Origin check, JSON-only POST (415), CSRF from a hostile page has no effect, no secrets in bundle/page/console, malformed input 4xx without traces | No authentication by design (single local user) |
-| Ethereum correctness | PARTIALLY VERIFIED | Fixtures, fake-node tests, on-chain receipt checks (phase 10) | Reverted payments never loss evidence; unknown receipt stays unknown; nonce search edge cases | Native ETH received, internal transfers, funding sources: not visible over JSON-RPC (documented) |
-| Historical replay | VERIFIED | `replay run`, regression tests | Leads 367 / 42 / 113 / 13,057 blocks; leakage checks pass; regenerated EVALUATION.md identical apart from timings and timestamps | 4 cases: no rate estimate possible |
-| Campaign analysis | VERIFIED (as experimental) | `campaigns evaluate`, unit/integration/E2E tests | Regenerated CAMPAIGN_EVALUATION.md identical apart from timings; UI never claims common ownership | No ground truth for attribution |
-| Shadow-mode isolation | VERIFIED | API tests + E2E journey 5 | Identical findings with campaign/analytics off vs shadow; experimental sections absent by default | — |
-| Database migration | VERIFIED (SQLite) | Upgrade from the captured `7fe824a` schema, idempotence, downgrade, mismatch refusal, interrupted migration | 6 tests pass; interrupted migration now rolls back (defect found and fixed) | PostgreSQL not tested (no server available) |
-| Lease concurrency | VERIFIED (SQLite) | Real OS processes (6 contenders), crash recovery, fencing, overrun, per-wallet independence | 5 process-level tests + API tests pass | PostgreSQL semantics reasoned, not tested. Fixed 15 min lease kept: measured snapshots take < 1 s (fixture) to about 30 s (real chain, phase 7), far below it |
-| Dependency review | VERIFIED (phase 10) | pip-audit (39 packages), npm audit | 0 known vulnerabilities; `npm install` of Playwright reported 0 | Re-run in CI on every push |
-| Packaging | VERIFIED | `uv build` + `scripts/inspect_dist.py` | Wheel 117 files, sdist 229 files; required data present; no env files, databases, caches, tests or secrets in the wheel | — |
-| Clean installation | VERIFIED (Windows) | Throwaway venv outside the repo | Core install (no NumPy) runs CLI, replay (same leads), `serve --demo` (ready in 12 s, health 5 ms, demo snapshot 445 ms, 415 for text/plain); `[analytics]` extra reproduces both evaluation reports | Not run on Linux |
-| Windows | VERIFIED | Everything above | `scripts/check.ps1`: all steps except the E2E step, whose failures were under CPU contention; the E2E suite then passed in full | — |
-| Linux | BLOCKED | — | `scripts/check.sh` and the CI matrix exist | No Linux environment; installing WSL or containers was not authorized |
-| GitHub-hosted CI | BLOCKED | Schema validation + zizmor | Workflow and Dependabot config are schema-valid; zizmor: 12 `unpinned-uses` (tag-pinned actions), nothing else | Needs a remote and a push; pin actions to SHAs first (docs/RELEASING.md) |
-| Documentation | VERIFIED | Newcomer review against the code; link check | README quick start, troubleshooting, E2E instructions; SECURITY, ARCHITECTURE, CHANGELOG, RELEASE_NOTES, RELEASING, screenshots labelled as fixture data | Linux commands marked unverified |
-| Release artifacts | PARTIALLY VERIFIED | Inspection | Version 0.1.0, MIT license in both artifacts, release notes, checklist | Not tagged or published (not authorized) |
+| Area | Status | Evidence | Remaining |
+|---|---|---|---|
+| Backend tests | VERIFIED (Windows, Ubuntu) | 402 passed on 3 OS/Python combinations | — |
+| Frontend tests | VERIFIED (Windows, Ubuntu) | 52 passed, typecheck, build | — |
+| Browser E2E | VERIFIED (Ubuntu CI; Windows locally) | 27 passed + 1 opt-in skip on CI, two consecutive runs. Journeys: startup, search, approvals, poisoning escalation, campaign context, shadow vs default vs degraded, API errors (409, 422, 429, 500, 503, RPC outage), CSRF from a hostile page, Host/Origin, links, secrets in bundle/page/console, hostile metadata, layout at 1280/375/320 px and with a wide font, keyboard and labels | Locally, on a saturated machine, test servers once missed the 180 s start limit (see Stability) |
+| Cross-platform | VERIFIED (Windows, Ubuntu) | Two Linux-only UI defects found by CI and fixed, each with a regression test that also fails on Windows | macOS untested |
+| API security | VERIFIED | Boundary tests + browser tests on both OSes | No authentication by design (one local user) |
+| Ethereum correctness | VERIFIED (fixtures, fake node) | Reverted payments never loss evidence; unknown receipts stay unknown; nonce search edges; coverage gaps reported | Native ETH received, internal transfers: not visible over JSON-RPC |
+| Historical replay | VERIFIED | Leads 367 / 42 / 113 / 13,057 blocks in the regression tests on both OSes and in both clean installs | 4 cases: no rate estimate |
+| Reproducibility | VERIFIED | Regenerated EVALUATION.md and CAMPAIGN_EVALUATION.md differ from the committed ones only in the timestamp and runtime columns; fixture hashes, outcomes, leads, clusters and memory identical | — |
+| Campaign analysis | VERIFIED (experimental) | 54 attempts, 4 → 9 multi-wallet clusters, 23 prior-signer attempts; never earlier than the existing detector; shadow mode only | No ground truth for attribution |
+| Database migrations | VERIFIED (SQLite, Windows + Ubuntu) | Upgrade from the captured `7fe824a` schema with data, idempotence, downgrade, interrupted-migration rollback, mismatch refusal | PostgreSQL untested |
+| Leases | VERIFIED (SQLite, Windows + Ubuntu) | Real OS processes contend (one winner), crash recovery after expiry, fencing of a stale worker, overrun refused, per-wallet independence | No renewal: measured snapshots take < 1 s (fixtures) to ~30 s (real chain), the lease 15 min; overruns are refused, not raced |
+| Packaging | VERIFIED (Windows, Ubuntu) | Built in CI without dependency cache; the sdist is checked against `git ls-files` | — |
+| Clean install | VERIFIED (Windows, Ubuntu) | `scripts/smoke_install.py`: import from the venv, CLI, replay leads, demo API (healthy in 1–2 s on CI, Host 400, text/plain 415, snapshot 200), analytics `unavailable` without the extra, computed with it, both offline evaluations with it | — |
+| Workflow security | VERIFIED | All actions pinned to verified commit SHAs; zizmor 1.31.1 (auditor persona): no findings; actionlint and schema validation clean; read-only token; no secrets used | — |
+| Secrets | VERIFIED | Pattern scans of all 13 revisions (tokens, keys, mnemonics, RPC keys, personal paths) and detect-secrets 1.5.0: only test placeholders and public test vectors. No `.env`, databases or local configuration in history | Commits carry the author's configured e-mail address |
+| Repository settings | PARTIAL | Private; Actions token read-only, cannot approve PRs; Dependabot alerts enabled; Dependabot updates configured | Branch protection, rulesets, secret scanning and private vulnerability reporting are not available for private repositories on this plan (not purchased) |
 
-## Performance (Windows, bounded workloads, one at a time)
+## Defects found in this phase
+
+See RELEASE_AUDIT.md items 23–28: an untracked local file in a locally built sdist (P1), tag
+pinning and CI hardening, a non-executable `check.sh`, a thin clean-install test, the two
+Linux-only overflow defects, and a cold first analysis request.
+
+## Stability
+
+- CI browser runs: 3 runs; the 2 failures were the real overflow defects above (reproduced,
+  fixed, regression-tested). After the fixes: 2 of 2 passes, with no retries configured.
+- Locally (Windows) the suite passed in full earlier the same day (26 passed, 1 skipped). Later
+  runs on the shared development machine did not reach the tests: a test server missed
+  Playwright's start limit (180 s backend, 60 s frontend). Investigated rather than retried:
+  the slow phase was Python reading its own compiled `.pyc` files (518 reads, 25.6 s, about
+  50 ms each) and Vite loading its config (13.7 s cold, 0.3 s warm). The machine's only disk
+  is a hard disk drive holding C: and D:; during these runs its average read latency was
+  0.15–0.66 s with 15–34 queued requests from other workloads; the same server started in 9–13 s at other times, and the SciPy warm-up
+  took 4.7 s idle against 60–76 s under load. Nothing in CryptoGuard's start-up depends on the
+  machine beyond that. The start limits were not raised; the CI runners show the suite's
+  behaviour on an unloaded machine (45 s for all tests).
+
+## Performance (measured; Windows figures from a shared, often loaded machine)
 
 | Workload | Time | Peak memory |
 |---|---|---|
-| `replay run` (4 incidents) | 5.1 s | 65 MiB |
-| `replay run --analytics --no-scaling` (13 subjects) | 23.7 s | 176 MiB |
-| `campaigns evaluate` | 8.2 s | 140 MiB |
-| API health (installed wheel, demo) | 5 ms average | — |
-| Demo snapshot via API | 445 ms | — |
-| Backend start (`serve --demo`, cold) | 12.4 s to first health response | — |
-| Frontend production build | about 2–6 s | — |
-| Backend test suite | 76–320 s (varies with machine load) | — |
-| Browser E2E suite | 160 s (6 servers + Chromium) | — |
+| `replay run` (4 incidents) | 7.5 s | 65 MiB |
+| `replay run --analytics` (13 subjects + synthetic scaling) | 66 s (under load; 24 s earlier) | 196 MiB |
+| `campaigns evaluate` | 9.7 s | 141 MiB |
+| API ready, installed wheel, demo mode (CI) | 1.1–1.8 s | — |
+| Demo snapshot via API (CI) | 0.1–0.3 s | — |
+| Analytics warm-up at start (only when enabled) | 4.7 s idle | — |
+| CI jobs | 19–117 s each; whole run about 2 min | — |
 
-Measured with `scripts/peak_memory.py` (Windows PeakWorkingSetSize). Timings vary by up to
-4× with other workloads on this machine; no performance claims are made beyond these numbers.
-RPC request counts for real-chain operations are in EVALUATION.md and CAMPAIGN_EVALUATION.md.
-
-## Defects found and fixed in this validation
-
-See RELEASE_AUDIT.md items 15–21: non-transactional SQLite DDL in migrations, a superseded
-finding labelled "resolved", a misleading "no change" line above new findings, a
-contradictory campaign warning, mobile overflow, stale and garbled UI text, a flaky test.
+No mandatory heavy dependency was added; the analytics extra stays optional.
 
 ## Next action
 
-Authorize creating a **private** GitHub repository and pushing `main`; pin the actions to
-commit SHAs; let CI run on Ubuntu and Windows; fix anything Linux-specific; then update
-this report and tag `v0.1.0` as a pre-release (docs/RELEASING.md).
+Before any public visibility: review the history's author e-mail, enable the protections
+that become free for public repositories (branch protection with required checks, secret
+scanning and push protection, private vulnerability reporting), and decide on PyPI
+publication separately.

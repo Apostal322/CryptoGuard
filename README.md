@@ -1,5 +1,7 @@
 # CryptoGuard — Explainable Wallet Threat Intelligence
 
+[![CI](https://github.com/Apostal322/CryptoGuard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Apostal322/CryptoGuard/actions/workflows/ci.yml)
+
 CryptoGuard is a **read-only** security analysis tool for Ethereum wallets. It shows what is
 observably true about an address, the block that observation comes from, and what the
 observation does *not* show. It never asks for private keys, seed phrases or signatures, and
@@ -87,8 +89,9 @@ evidence of common ownership ([CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md)).
 
 **Requirements:** [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 if missing) and,
 for the web UI, Node.js 22 or newer (tested with 24). Light on memory: the heaviest bundled
-workload (the full analytics evaluation) peaked at 176 MiB. **Platforms:** verified on Windows 11. Linux is targeted by CI (Ubuntu) but has
-not been run yet; the Bash commands below are unverified there.
+workload (the full analytics evaluation) peaked at about 200 MiB. **Platforms:** CI runs the backend,
+frontend and package checks on Windows and Ubuntu (Python 3.12; 3.13 too on Ubuntu) and the
+browser tests on Ubuntu; development happened on Windows 11. macOS is untested.
 
 ```powershell
 # Windows PowerShell (verified)
@@ -100,7 +103,7 @@ cd apps/web; npm ci; npm run dev # UI on http://127.0.0.1:3000
 ```
 
 ```bash
-# Linux / macOS (unverified)
+# Linux / macOS (CI runs the same install steps on Ubuntu; macOS untested)
 git clone https://github.com/Apostal322/CryptoGuard.git cryptoguard && cd cryptoguard
 uv sync
 uv run cryptoguard serve --demo &
@@ -287,7 +290,8 @@ cd apps/web; npm run e2e
 $env:CRYPTOGUARD_LIVE_RPC_URL = "https://ethereum-rpc.publicnode.com"; uv run pytest -m live
 ```
 
-On Linux/macOS, `scripts/check.sh` is the equivalent (not yet run on Linux).
+On Linux/macOS, `scripts/check.sh` is the equivalent. CI runs the same steps as separate jobs on
+Ubuntu and Windows (`.github/workflows/ci.yml`) and lints `check.sh` with shellcheck.
 
 ## Security model
 

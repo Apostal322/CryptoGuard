@@ -67,9 +67,8 @@ victims' private data, which CryptoGuard does not have). There are no accounts o
 
 ## Supported environments
 
-Local, single-user use on Windows, macOS and Linux with Python 3.12. Only Windows 11 was run
-locally; Linux is covered by the CI matrix definition, which has not run yet because the
-repository has no remote. CryptoGuard has not had an independent security review and must not
+Local, single-user use with Python 3.12 or newer. CI tests Windows and Ubuntu on GitHub-hosted
+runners (Python 3.12; 3.13 on Ubuntu); macOS is untested. CryptoGuard has not had an independent security review and must not
 be relied on as a sole safeguard for funds.
 
 ## Release review (0.1.0, 2026-10-28)

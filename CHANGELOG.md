@@ -35,6 +35,17 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   and `CAMPAIGN_EVALUATION.md`: real shared-signer links found, no earlier theft warning
   (`3fde4a8`).
 
+### GitHub CI and cross-platform validation
+- First GitHub-hosted CI runs (private repository): backend, frontend and packaging on
+  Windows and Ubuntu, backend also on Python 3.13, browser tests on Ubuntu (`4705389`).
+- Fixed, found by Linux CI: the mobile header and finding titles overflowed narrow screens
+  with wider fonts; layout tests now cover 320 px and a wide font (`8053537`, `95c5856`).
+- Experimental analysis libraries load at API start when enabled, not on the first request
+  (`95c5856`).
+- Actions pinned to verified commit SHAs, Dependabot cooldown, uv and pip-audit pinned;
+  packaging job on both OSes with a full clean-install smoke test; sdist checked against the
+  tracked files after a local untracked file leaked into a locally built sdist (`4705389`).
+
 ### Release candidate validation (phase 10.1)
 - Browser end-to-end suite (Playwright, Chromium): the real backend against a fictional test
   chain behind the production UI build; user journeys, error handling, browser security,
@@ -72,4 +83,4 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   over standard JSON-RPC.
 - No scheduled monitoring loop; snapshots run on request.
 - No authentication: one trusted local user (see SECURITY.md).
-- CI (Windows + Linux) is defined but has not run: the repository has no remote yet.
+- CI covers Windows and Ubuntu; macOS is untested. PostgreSQL is untested.
