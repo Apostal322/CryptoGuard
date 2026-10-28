@@ -39,7 +39,7 @@ function ModeBanner() {
 }
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
-  `rounded-md px-3 py-1.5 text-sm ${isActive ? "bg-surface-2 text-ink" : "text-muted hover:text-ink"}`;
+  `rounded-md px-2 py-1.5 text-sm sm:px-3 ${isActive ? "bg-surface-2 text-ink" : "text-muted hover:text-ink"}`;
 
 export function Layout() {
   return (
@@ -49,12 +49,13 @@ export function Layout() {
       </a>
       <ModeBanner />
       <header className="border-b border-line">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        {/* Wraps rather than overflowing on narrow screens, large text or wide fonts. */}
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
           <NavLink to="/" className="flex items-baseline gap-2">
             <span className="text-base font-semibold tracking-tight">CryptoGuard</span>
             <span className="hidden text-xs text-muted sm:inline">Explainable wallet threat intelligence</span>
           </NavLink>
-          <nav aria-label="Main" className="flex gap-1">
+          <nav aria-label="Main" className="flex flex-wrap gap-1">
             <NavLink to="/" end className={navClass}>
               Dashboard
             </NavLink>

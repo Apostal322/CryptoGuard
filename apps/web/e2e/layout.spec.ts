@@ -19,12 +19,20 @@ async function stamp(page: import("@playwright/test").Page) {
   });
 }
 
-async function noHorizontalOverflow(page: import("@playwright/test").Page) {
-  const { scroll, width } = await page.evaluate(() => ({
-    scroll: document.documentElement.scrollWidth,
-    width: window.innerWidth,
-  }));
-  expect(scroll, "page must not scroll sideways").toBeLessThanOrEqual(width + 1);
+async function noHorizontalOverflow(page: import("@playwright/test").Page, view: string) {
+  const { scroll, width, culprits } = await page.evaluate(() => {
+    const width = window.innerWidth;
+    // Innermost elements that stick out on the right, to say *what* overflows.
+    const culprits = [...document.querySelectorAll("body *")]
+      .filter((el) => el.getBoundingClientRect().right > width + 1)
+      .filter((el) => ![...el.children].some((c) => c.getBoundingClientRect().right > width + 1))
+      .slice(0, 5)
+      .map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80));
+    return { scroll: document.documentElement.scrollWidth, width, culprits };
+  });
+  expect(scroll, `${view} must not scroll sideways; overflowing: ${culprits.join(" | ")}`).toBeLessThanOrEqual(
+    width + 1,
+  );
 }
 
 const views = (s: Scenarios) =>
@@ -40,14 +48,17 @@ const views = (s: Scenarios) =>
 for (const viewport of [
   { name: "desktop", width: 1280, height: 900 },
   { name: "mobile", width: 375, height: 812 },
+  // The narrowest common phone. Also catches overflow that only wider fonts cause at 375 px
+  // (Linux's DejaVu Sans overflowed the header where Windows' Segoe UI still fitted).
+  { name: "small mobile", width: 320, height: 640 },
 ]) {
   test(`no sideways scrolling on any main view (${viewport.name})`, async ({ page, scenarios }) => {
     const s = await scenarios("shadow");
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    for (const [, path] of views(s)) {
+    for (const [view, path] of views(s)) {
       await page.goto(uiUrl("shadow", path));
       await page.waitForLoadState("networkidle");
-      await noHorizontalOverflow(page);
+      await noHorizontalOverflow(page, view);
     }
   });
 }
