@@ -53,7 +53,8 @@ function FindingEventItem({ event }: { event: FindingEvent }) {
   return (
     <li className="flex flex-wrap items-center gap-2 text-sm">
       <SeverityBadges severity={event.severity} confidence={event.confidence} />
-      <span>{event.title}</span>
+      {/* Titles carry full 42-character addresses: let them wrap instead of widening the page. */}
+      <span className="min-w-0 break-all">{event.title}</span>
       <span className="text-xs text-faint">
         {event.from_status ?? "—"} → {event.to_status}
       </span>
@@ -86,7 +87,14 @@ function Entry({ entry, chainId }: { entry: TimelineEntry; chainId: number }) {
           ))}
         </ul>
       ) : (
-        !entry.is_baseline && <p className="mt-2 text-sm text-muted">No security-relevant change observed.</p>
+        !entry.is_baseline && (
+          // Only the permission/account diff is empty here; findings can still have changed
+          // (e.g. a poisoning warning escalating), so never phrase this as "nothing happened".
+          <p className="mt-2 text-sm text-muted">
+            No change in allowances, delegation or account code between these blocks.
+            {entry.finding_events.length > 0 ? " Findings changed:" : " No finding changed."}
+          </p>
+        )
       )}
       {entry.finding_events.length > 0 && (
         <ul className="mt-3 flex flex-col gap-1.5">

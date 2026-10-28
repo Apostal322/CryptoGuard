@@ -49,3 +49,16 @@ P2 = later work. Every "fixed" item has a regression test (named).
 | 12 | P2 | CI (Windows + Linux) is defined but has never run: the repository has no remote. Only Windows 11 was run locally. |
 | 13 | P2 | `expansion.json` records the fixture hashes current when it was recorded; the receipt-status update changed those hashes (not the attempts). The campaign report prints current hashes. |
 | 14 | P2 | `starlette.testclient` warns that `httpx` support is deprecated. |
+
+## Phase 10.1 additions (browser E2E and release candidate validation)
+
+| # | Pri | Finding (how found) | Fix | Regression test |
+|---|---|---|---|---|
+| 15 | P1 | **Interrupted migrations left partial changes.** The sqlite3 driver autocommits DDL even inside a transaction, so a migration failing after its `ALTER TABLE` kept the new column (found by a new interrupted-migration test). | SQLite engines let SQLAlchemy start transactions (documented recipe); DDL now rolls back. | `test_migrations.py::test_interrupted_migration_leaves_the_database_unchanged` |
+| 16 | P1 | **A superseded finding read "resolved at block N"** in the findings list, contradicting the superseded-not-resolved semantics (browser E2E). | Label by status. | `findings.test.tsx`, E2E journey 4 |
+| 17 | P1 | **The timeline said "No security-relevant change observed"** directly above a new critical finding (browser exploration). | Says what was compared and whether findings changed. | E2E journey 4 |
+| 18 | P2 | A shared-signer campaign group ("strongly supported") also showed the chained-group "held together through single points" warning (screenshot review). | Shown only for chained groups. | `related.test.tsx` |
+| 19 | P2 | Mobile (375 px) timeline scrolled sideways: unbreakable full addresses in finding titles (E2E layout check). | Titles wrap. | `layout.spec.ts` |
+| 20 | P2 | Stale UI text: dashboard said native ETH is not analyzed (sent ETH is); poisoning check described ERC-20 only. Snapshot button stretched across the card. Campaign explanation garbled. | Text and layout fixed. | E2E journeys, screenshots |
+| 21 | P2 | Flaky lease test: a 1 s lease could expire during process teardown on a loaded machine (one failure in a 320 s run). | Asserts against the lease's real expiry. | `test_leases.py` |
+| 22 | P2 | All 12 GitHub Actions references are tag-pinned (`zizmor` `unpinned-uses`). | Open: pin to SHAs before accepting outside contributions (docs/RELEASING.md). | — |

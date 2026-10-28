@@ -5,6 +5,7 @@ from __future__ import annotations
 import multiprocessing as mp
 import os
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -36,8 +37,11 @@ def _contend(url: str, start: float, results: mp.Queue) -> None:  # runs in a ch
     results.put(os.getpid() if lease is not None else None)
 
 
+CRASH_TTL = 8.0  # generous: process teardown on a loaded machine can take seconds
+
+
 def _crash_holding_lease(url: str) -> None:  # child: take the lease, then die without release
-    LeaseStore(_repo(url)).acquire(KEY, 1)
+    LeaseStore(_repo(url)).acquire(KEY, CRASH_TTL)
     os._exit(1)
 
 
@@ -69,8 +73,13 @@ def test_lease_of_a_crashed_process_is_recovered_after_expiry(db_url: str) -> No
     p.join(timeout=60)
     assert p.exitcode == 1
     store = LeaseStore(_repo(db_url))
-    assert store.acquire(KEY, 30) is None  # still held by the dead owner
-    time.sleep(1.2)
+    held = store.holder(KEY)
+    assert held is not None  # the dead owner never released it
+    # Judge "still held" against the lease's own expiry, not against how fast the OS tore the
+    # child down (a 1 s lease made this flaky under load: it expired before the check).
+    if datetime.now(UTC) < held.expires_at - timedelta(seconds=1):
+        assert store.acquire(KEY, 30) is None
+    time.sleep(max(0.0, (held.expires_at - datetime.now(UTC)).total_seconds()) + 0.3)
     recovered = store.acquire(KEY, 30)
     assert recovered is not None
     assert recovered.generation == 2

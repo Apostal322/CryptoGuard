@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Engine, create_engine, delete, func, select, text
+from sqlalchemy import Connection, Engine, create_engine, delete, event, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -40,9 +40,30 @@ def create_db_engine(database_url: str) -> Engine:
         return create_engine(url, pool_pre_ping=True)
     if url.database in (None, "", ":memory:"):
         # One shared connection so the in-memory database survives across threads.
-        return create_engine(url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Path(url.database).parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(url, connect_args={"check_same_thread": False})
+        engine = create_engine(url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    else:
+        Path(url.database).parent.mkdir(parents=True, exist_ok=True)
+        engine = create_engine(url, connect_args={"check_same_thread": False})
+    _transactional_sqlite(engine)
+    return engine
+
+
+def _transactional_sqlite(engine: Engine) -> None:
+    """Let SQLAlchemy, not the sqlite3 driver, start transactions.
+
+    The driver opens a transaction only before INSERT/UPDATE/DELETE, so DDL (``ALTER TABLE``
+    in a migration) autocommits even inside ``engine.begin()``: an interrupted migration
+    left half its changes behind. SQLAlchemy's documented recipe: disable the driver's
+    transaction handling and emit ``BEGIN`` when SQLAlchemy begins one.
+    """
+
+    @event.listens_for(engine, "connect")
+    def _no_driver_transactions(dbapi_connection: Any, _record: Any) -> None:
+        dbapi_connection.isolation_level = None
+
+    @event.listens_for(engine, "begin")
+    def _begin(conn: Connection) -> None:
+        conn.exec_driver_sql("BEGIN")
 
 
 def init_schema(engine: Engine) -> None:

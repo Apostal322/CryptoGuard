@@ -36,7 +36,9 @@ function Drilldown({ id, chainId }: { id: string; chainId: number }) {
           </li>
         ))}
       </ul>
-      {d.articulation_entities.length + d.articulation_attempts.length > 0 && (
+      {/* Only a chained group depends on single joining points; in a shared-entity group every
+          member shares the entity directly, so the warning would contradict its confidence. */}
+      {d.structure === "chained" && d.articulation_entities.length + d.articulation_attempts.length > 0 && (
         <Callout tone="warn" title="Held together through single points">
           Removing any one of these would split the group, so attempts on either side may share nothing directly:{" "}
           {[...d.articulation_entities, ...d.articulation_attempts.map((a) => `attempt ${a.slice(0, 12)}…`)].join(", ")}.

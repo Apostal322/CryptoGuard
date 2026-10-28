@@ -99,7 +99,7 @@ function Detail({ id, chainId, onChanged }: { id: string; chainId: number; onCha
   );
 }
 
-function FindingItem({ finding, chainId, onChanged }: { finding: FindingView; chainId: number; onChanged: () => void }) {
+export function FindingItem({ finding, chainId, onChanged }: { finding: FindingView; chainId: number; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <li className="py-4">
@@ -118,7 +118,10 @@ function FindingItem({ finding, chainId, onChanged }: { finding: FindingView; ch
         <span className="text-xs text-muted">
           {humanize(finding.category)} · first seen block {finding.first_seen_block.toLocaleString("en-US")} · last
           seen block {finding.last_seen_block.toLocaleString("en-US")}
-          {finding.resolved_block !== null && ` · resolved at block ${finding.resolved_block.toLocaleString("en-US")}`}
+          {/* resolved_block is where the finding closed: "superseded" (the condition changed
+              stage, e.g. a poisoning warning escalated) must never read as "resolved". */}
+          {finding.resolved_block !== null &&
+            ` · ${finding.status === "superseded" ? "superseded" : "resolved"} at block ${finding.resolved_block.toLocaleString("en-US")}`}
         </span>
       </button>
       {open && <Detail id={finding.finding_id} chainId={chainId} onChanged={onChanged} />}

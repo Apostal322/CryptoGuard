@@ -202,6 +202,17 @@ expiry) and schema_versions the applied migrations.
 All times are UTC. `init_schema` creates missing tables, applies pending migrations from
 `database/migrations.py` (version 2 added `wallet_transactions.succeeded`) and verifies every
 mapped column; databases created by `7fe824a` upgrade in place (tested from its captured DDL).
+SQLite connections let SQLAlchemy issue `BEGIN` (the sqlite3 driver would otherwise
+autocommit DDL), so a failed migration rolls back completely.
+
+## Browser end-to-end tests
+
+`apps/web/e2e` (Playwright, Chromium) drives the production UI build (`vite preview`)
+against `tests/e2e/server.py`: the real API over real HTTP, real RPC client and snapshot
+pipeline, with a deterministic fictional chain (`tests/fakenode.py`) instead of a network.
+Three profiles (defaults, shadow mode, degraded provider without NumPy/SciPy) each run with
+a temporary database; harness-only `/__e2e__` routes inject failures. Nothing in the harness
+ships in the package.
 
 ## Extension points
 

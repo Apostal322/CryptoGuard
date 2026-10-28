@@ -35,6 +35,21 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   and `CAMPAIGN_EVALUATION.md`: real shared-signer links found, no earlier theft warning
   (`3fde4a8`).
 
+### Release candidate validation (phase 10.1)
+- Browser end-to-end suite (Playwright, Chromium): the real backend against a fictional test
+  chain behind the production UI build; user journeys, error handling, browser security,
+  layout and accessibility checks.
+- Fixed: a superseded finding was labelled "resolved at block"; the timeline said "No
+  security-relevant change observed" above new findings; a shared-signer campaign showed a
+  contradictory "single points" warning; mobile timeline overflow; stretched snapshot button;
+  stale "native ETH not analyzed" dashboard text; garbled campaign explanation.
+- Fixed: SQLite DDL autocommitted, so an interrupted migration left partial changes; SQLite
+  connections now let SQLAlchemy start transactions.
+- Fixed a timing-dependent lease test.
+- CI: concurrency, timeouts, `persist-credentials: false`, Windows + Ubuntu for backend and
+  frontend, browser E2E job, packaging job with artifact inspection and clean install.
+  Local equivalents: `scripts/check.ps1`, `scripts/check.sh`.
+
 ### Release validation (phase 10)
 - Local API hardened against DNS rebinding (host allow-list) and CSRF (JSON-only POSTs,
   Origin check).

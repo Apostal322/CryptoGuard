@@ -275,8 +275,8 @@ def _describe(
     signers = sorted({a.signer for a in attempts if a.signer})
     kinds = sorted({e.entity.kind for e in inside})
     explanation = (
-        f"{len(attempts)} poisoning attempts on {len(victims)} wallet(s) "
-        + "; ".join(f"{_count(inside, k)} shared {k}(s)" for k in kinds)
+        f"{len(attempts)} poisoning attempts on {len(victims)} wallet(s), linked by "
+        + ", ".join(f"{_count(inside, k)} shared {k}(s)" for k in kinds)
         + "."
     )
     if structure == "chained":

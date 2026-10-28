@@ -96,7 +96,7 @@ export function PoisoningPanel({ address }: { address: string }) {
     <div className="flex flex-col gap-4">
       <Card title="Address-poisoning check">
         <p className="mb-3 text-sm text-muted">
-          Looks for addresses in this wallet's recent ERC-20 transfers that imitate addresses it paid,
+          Looks for addresses in this wallet's recent ERC-20 transfers that imitate addresses it paid (in tokens or ETH),
           for example planted with zero-value transfers. Nothing is stored; snapshots run the same
           check continuously.
         </p>

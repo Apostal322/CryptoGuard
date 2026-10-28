@@ -48,7 +48,13 @@ export function ScanForm({
   };
 
   return (
-    <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[12rem_1fr_auto] sm:items-end" noValidate>
+    <form
+      onSubmit={submit}
+      // Without the lookback field the token field must take the wide column, or the submit
+      // button stretches across the card.
+      className={`grid gap-3 sm:items-end ${showLookback ? "sm:grid-cols-[12rem_1fr_auto]" : "sm:grid-cols-[1fr_auto]"}`}
+      noValidate
+    >
       {showLookback && (
         <Field label="Lookback (blocks)" hint="Server default if empty.">
           <input
@@ -72,7 +78,7 @@ export function ScanForm({
       <Button type="submit" variant="primary" disabled={busy}>
         {busy ? "Scanning…" : submitLabel}
       </Button>
-      {error && <p className="text-sm text-critical sm:col-span-3">{error}</p>}
+      {error && <p className="col-span-full text-sm text-critical">{error}</p>}
     </form>
   );
 }

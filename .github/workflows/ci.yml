@@ -5,21 +5,36 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only token everywhere; no job needs secrets, and none runs on pull_request_target.
 permissions:
   contents: read
 
+# One run per branch or PR; a newer push cancels the older run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Actions are pinned to major-version tags and kept current by Dependabot
+# (.github/dependabot.yml). Pinning to commit SHAs is recommended before accepting
+# outside contributions; see RELEASE_CANDIDATE_REPORT.md.
+
 jobs:
   backend:
+    name: backend (${{ matrix.os }})
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - name: Install
+      - name: Install (locked; Python from .python-version)
         run: uv sync --locked
       - name: Lint
         run: uv run ruff check .
@@ -27,24 +42,30 @@ jobs:
         run: uv run ruff format --check .
       - name: Types
         run: uv run mypy src
-      - name: Tests
+      - name: Tests (incl. replay regression, migrations, leases, API security)
         run: uv run pytest
-      - name: Build
-        run: uv build
 
   frontend:
-    runs-on: ubuntu-latest
+    name: frontend (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
-      - name: Install
+      - name: Install (locked)
         run: npm ci
       - name: Types
         run: npm run typecheck
@@ -53,10 +74,71 @@ jobs:
       - name: Build
         run: npm run build
 
-  audit:
+  e2e:
+    name: browser e2e (ubuntu, chromium)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install backend (locked)
+        run: uv sync --locked
+      - name: Install frontend (locked)
+        working-directory: apps/web
+        run: npm ci
+      - name: Install Chromium
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end tests (real backend + production build, fictional test chain)
+        working-directory: apps/web
+        run: npm run e2e
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/e2e-report
+            apps/web/e2e-results
+          retention-days: 7
+
+  package:
+    name: package (build, inspect, clean install)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+      - name: Build wheel and sdist
+        run: uv build
+      - name: Inspect artifacts
+        run: uv run --no-project python scripts/inspect_dist.py dist
+      - name: Install the wheel into a clean venv and smoke-test it
+        run: |
+          uv venv /tmp/cg-venv
+          uv pip install --python /tmp/cg-venv/bin/python dist/*.whl
+          cd /tmp
+          /tmp/cg-venv/bin/cryptoguard --help
+          /tmp/cg-venv/bin/cryptoguard replay run
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
       - name: Python dependency vulnerability scan
         run: |

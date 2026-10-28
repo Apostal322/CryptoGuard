@@ -143,7 +143,11 @@ export function Dashboard() {
         <ul className="list-disc space-y-1 pl-5 text-sm text-muted">
           <li>Snapshots are taken on request; changes are located between two snapshot blocks.</li>
           <li>Only the scanned block ranges are covered; each result states its coverage.</li>
-          <li>ERC-20 approvals and transfers are analyzed; native ETH transfers and NFT approvals are not yet.</li>
+          <li>
+            ERC-20 approvals and transfers are analyzed, and so is native ETH the wallet itself sends. Native ETH it
+            receives, internal transfers and NFT approvals are not visible.
+          </li>
+          <li>No warning is not the same as safe: only the observed data is checked.</li>
         </ul>
       </Card>
     </div>

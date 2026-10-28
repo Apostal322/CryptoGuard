@@ -26,6 +26,8 @@ data/
 
 # Frontend
 node_modules/
+apps/web/e2e-results/
+apps/web/e2e-report/
 .next/
 
 # OS / editors

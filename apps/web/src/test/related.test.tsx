@@ -79,3 +79,27 @@ describe("RelatedActivityView", () => {
     expect(screen.getByText("Tentative grouping")).toBeInTheDocument();
   });
 });
+
+describe("single-point warning", () => {
+  // Regression: a shared-signer group (every member shares the signer) showed "held together
+  // through single points", contradicting its "strongly supported" label.
+  it("is not shown when every member shares the entity", async () => {
+    vi.spyOn(api, "campaign").mockResolvedValue({ ...detail, articulation_entities: [`signer:${SIGNER}`] });
+    render(<RelatedActivityView data={related()} />);
+    fireEvent.click(screen.getByText("Show evidence"));
+    expect(await screen.findByText("These attempts share a verified planting signer.")).toBeInTheDocument();
+    expect(screen.queryByText("Held together through single points")).toBeNull();
+  });
+
+  it("is shown for a chained group", async () => {
+    vi.spyOn(api, "campaign").mockResolvedValue({
+      ...detail,
+      structure: "chained",
+      confidence: "tentative",
+      articulation_entities: [`signer:${SIGNER}`],
+    });
+    render(<RelatedActivityView data={related({ campaigns: [{ ...summary, structure: "chained", confidence: "tentative" }] })} />);
+    fireEvent.click(screen.getByText("Show evidence"));
+    expect(await screen.findByText("Held together through single points")).toBeInTheDocument();
+  });
+});

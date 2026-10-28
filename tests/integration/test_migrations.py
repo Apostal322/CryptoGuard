@@ -104,3 +104,32 @@ def test_mismatched_schema_refuses_to_start(tmp_path: Path) -> None:
     con.close()
     with pytest.raises(SchemaMismatchError, match=r"token_transfers\.tx_sender"):
         init_schema(create_db_engine(f"sqlite:///{path.as_posix()}"))
+
+
+def test_interrupted_migration_leaves_the_database_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy import text
+
+    from cryptoguard.database import migrations
+
+    def half_done(conn) -> None:  # type: ignore[no-untyped-def]
+        conn.execute(text("ALTER TABLE wallet_transactions ADD COLUMN succeeded BOOLEAN"))
+        raise RuntimeError("power cut")  # fails after its first change
+
+    broken = migrations.Migration(2, "interrupted", half_done, migrations._drop_wallet_tx_status)
+    monkeypatch.setattr(migrations, "MIGRATIONS", (broken,))
+    engine = create_db_engine(v1_database(tmp_path / "v1.db"))
+    with pytest.raises(RuntimeError, match="power cut"):
+        migrations.migrate(engine)
+    with engine.connect() as conn:
+        assert current_version(conn) == 1  # nothing recorded
+    assert "succeeded" not in {
+        c["name"] for c in inspect(engine).get_columns("wallet_transactions")
+    }
+    with engine.connect() as conn:  # the old row survived (raw SQL: the model expects v2)
+        assert conn.execute(text("SELECT count(*) FROM wallet_transactions")).scalar() == 1
+    monkeypatch.undo()
+    init_schema(engine)  # a later normal start completes the upgrade
+    with engine.connect() as conn:
+        assert current_version(conn) == CURRENT_VERSION

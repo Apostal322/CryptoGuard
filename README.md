@@ -5,8 +5,11 @@ observably true about an address, the block that observation comes from, and wha
 observation does *not* show. It never asks for private keys, seed phrases or signatures, and
 it has no code path that signs or broadcasts transactions.
 
-> **Status: Phase 7 (incident replay).** Applied ML is planned and **not implemented yet**
-> (see [Roadmap](#roadmap)). Replay results are in [EVALUATION.md](EVALUATION.md).
+> **Status: 0.1.0 release candidate (pre-release).** Not independently audited; do not use it
+> as the only safeguard for funds. Experimental analyses are off by default. ML is deliberately
+> not implemented (see [Roadmap](#roadmap)). Evaluation: [EVALUATION.md](EVALUATION.md),
+> [CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md). Release status:
+> [RELEASE_CANDIDATE_REPORT.md](RELEASE_CANDIDATE_REPORT.md).
 
 ## What works today
 
@@ -40,15 +43,47 @@ it has no code path that signs or broadcasts transactions.
 | Wallet-signed transactions (incl. native-ETH payments) located by nonce search in snapshots and scans; used by the poisoning detector and the graph; degrades to explicit "unlocated" counts without archive state | Implemented |
 | Scheduled monitoring loop, native ETH *received*, NFT/Permit2 approvals, ML | Not yet |
 
-## Install (Windows PowerShell)
+## Quick start
 
-Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is installed by uv if missing.
+**Requirements:** [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 if missing) and,
+for the web UI, Node.js 22 or newer (tested with 24). Light on memory: the heaviest bundled
+workload (the full analytics evaluation) peaked at 176 MiB. **Platforms:** verified on Windows 11. Linux is targeted by CI (Ubuntu) but has
+not been run yet; the Bash commands below are unverified there.
 
 ```powershell
+# Windows PowerShell (verified)
 git clone <repo> cryptoguard; cd cryptoguard
-uv sync
-Copy-Item .env.example .env   # then set CRYPTOGUARD_RPC_URL
+uv sync                          # backend; add --extra analytics for the experimental analyses
+uv run cryptoguard serve --demo  # API on http://127.0.0.1:8000 with fictional demo data
+# second terminal:
+cd apps/web; npm ci; npm run dev # UI on http://127.0.0.1:3000
 ```
+
+```bash
+# Linux / macOS (unverified)
+git clone <repo> cryptoguard && cd cryptoguard
+uv sync
+uv run cryptoguard serve --demo &
+cd apps/web && npm ci && npm run dev
+```
+
+**Real Ethereum data:** copy `.env.example` to `.env`, set `CRYPTOGUARD_RPC_URL` (your own
+provider; public endpoints are rate-limited and many lack historical state), and start
+`uv run cryptoguard serve` without `--demo`. Data is stored in `data/cryptoguard.db`; the
+schema is created and migrated automatically on start.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| UI shows "The CryptoGuard API is unreachable" | Start the backend (`uv run cryptoguard serve`) on port 8000, or set `CRYPTOGUARD_API_URL` for `npm run dev`. |
+| `rpc_not_configured` | Real mode needs `CRYPTOGUARD_RPC_URL`; use `--demo` to try the app without one. |
+| `historical_state_unavailable`, "unlocated" transactions | The provider prunes old state. Results say what was not covered; use an archive-capable provider for full history. |
+| `log_filter_restricted` | The provider refuses wallet-wide log queries; name token contracts (`--token`) or switch provider. |
+| `invalid_host` (400) | The API only answers to `127.0.0.1`, `localhost`, `::1`; add a hostname to `CRYPTOGUARD_ALLOWED_HOSTS` only if you deliberately serve it. |
+| `origin_not_allowed` (403) / `unsupported_media_type` (415) | Cross-site or non-JSON POSTs are refused by design (CSRF protection). |
+| `snapshot_in_progress` / `campaign_run_in_progress` (409) | One run per wallet (or per campaign analysis) at a time, across processes; retry when it finishes. |
+| `schema_mismatch` on start | The database was changed by another version; back it up, then run a matching version or purge. |
 
 ## Configure
 
@@ -189,19 +224,30 @@ cd apps/web; npm ci; npm run dev    # terminal 2, then open http://127.0.0.1:300
 ```
 
 `npm run build` writes `apps/web/dist/` with a strict Content-Security-Policy. Serve it from
-the same origin as the API (any static server or reverse proxy that forwards `/api`).
+the same origin as the API (any static server or reverse proxy that forwards `/api` and keeps
+the `Host` header, which the API checks). `npx vite preview` does this for local use.
+Screenshots (fixture data): [docs/screenshots](docs/screenshots/README.md).
 
 ## Test
 
 ```powershell
+.\scripts\check.ps1           # everything CI runs, locally (Windows); -SkipE2E to skip browsers
+# or step by step:
 uv run pytest                 # offline suite (fake JSON-RPC node, no network)
 uv run ruff check .
 uv run mypy src
 cd apps/web; npm run typecheck; npm test; npm run build
 
+# Browser end-to-end tests (Playwright, headless Chromium; one-time: npx playwright install chromium).
+# They start the real backend against a fictional test chain plus the production UI build,
+# each profile with its own temporary database. Headed: npx playwright test --headed
+cd apps/web; npm run e2e
+
 # Opt-in live test against a real mainnet endpoint:
 $env:CRYPTOGUARD_LIVE_RPC_URL = "https://ethereum-rpc.publicnode.com"; uv run pytest -m live
 ```
+
+On Linux/macOS, `scripts/check.sh` is the equivalent (not yet run on Linux).
 
 ## Roadmap
 

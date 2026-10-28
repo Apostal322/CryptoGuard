@@ -175,6 +175,7 @@ class FindingRecord(Base):
     first_seen_block: Mapped[int] = mapped_column(BigInteger)
     last_seen_snapshot_id: Mapped[int] = mapped_column(ForeignKey("wallet_snapshots.id"))
     last_seen_block: Mapped[int] = mapped_column(BigInteger)
+    # Block at which the finding closed: resolved OR superseded (see `status`).
     resolved_block: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     reopen_count: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
