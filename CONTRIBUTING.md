@@ -3,10 +3,22 @@
 ## Setup
 
 ```powershell
-uv sync
+uv sync                     # includes the dev group (NumPy/SciPy for the analytics tests)
 uv run pytest
 uv run ruff check . ; uv run ruff format --check . ; uv run mypy src
+cd apps/web; npm ci; npm run typecheck; npm test; npm run build
 ```
+
+Regenerate the evaluation reports after changing a detector, the replay fixtures or the
+campaign code (both are generated; never edit them by hand):
+
+```powershell
+uv run cryptoguard replay run --analytics --write-report EVALUATION.md
+uv run cryptoguard campaigns evaluate --write-report CAMPAIGN_EVALUATION.md
+```
+
+Apart from timestamps and timings, regenerated reports must match the committed ones;
+`tests/unit/test_evaluation_regression.py` pins the headline results.
 
 Optional: `uvx pre-commit install` to run the same checks before each commit.
 

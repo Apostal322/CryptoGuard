@@ -37,26 +37,46 @@
 
 | Threat | Current mitigation | Residual risk |
 |---|---|---|
-| Malicious contract/token metadata | Not rendered yet; all output is JSON; values validated | UI (Phase 5) must escape everything |
-| RPC provider lies or fails | Chain-id check, strict parsing, reorg re-check, explicit errors | A malicious provider can still report false state; cross-provider checks are future work |
-| Supply-chain compromise | Small dependency set, `uv.lock`, Dependabot | Upstream compromise of a pinned package |
-| Data poisoning (future ML/intel feeds) | No external intel ingested yet | Must be addressed with provenance in later phases |
-| Alert spoofing | No alerting yet | Alerts must carry evidence references |
+| Malicious contract/token metadata | Validated and length-bounded; rendered as text only (no HTML injection); `symbol()` labelled untrusted | Misleading but well-formed names (e.g. a fake "USDT") still display; labels are never safety verdicts |
+| Forged Transfer logs (fake tokens, `transferFrom(victim, x, 0)`) | Transfer logs are never treated as asset movement; the transaction signer is read separately; the poisoning detector requires similarity plus context | A forged log can still create an informational finding |
+| Campaign pollution (attacker links an innocent wallet) | Campaign links only through planting-side entities, never through the targeted wallet; popular contracts and hub signers never merge; chained groups labelled tentative | A link says "shared infrastructure", which a shared service could also produce |
+| RPC provider lies or fails | Chain-id check, strict parsing, reorg re-check, explicit errors; missing history is reported, never read as "nothing happened" | A malicious provider can still report false state; cross-provider checks are future work |
+| Historical leakage in evaluations | Manifests never feed detectors; point-in-time re-extraction; tests for every leakage path found | Evaluations cover few cases and cannot estimate rates |
+| Supply-chain compromise | Small dependency set, `uv.lock` / `package-lock.json`, Dependabot, pip-audit and npm audit in CI | Upstream compromise of a pinned package |
+| Data poisoning (intel feeds, ML) | No external threat feed or ML model is ingested | Must be addressed with provenance if added |
 | Sensitive log leakage | Redacting formatter, httpx logging silenced | Third-party libraries logging at DEBUG |
-| Misleading risk scores | No scores; outputs are observed facts with limitations | Future rule engine must keep severity ≠ confidence |
-| Denial of service | Rate limit, body limit, RPC budgets and timeouts | Single-process limiter only |
-| False positives / negatives | No detectors yet; every result lists what was not checked | Later detectors need evaluation (EVALUATION.md) |
+| Misleading risk scores | No global score; severity and confidence are separate; experimental analyses never change findings | Users may still over-read "elevated risk" |
+| Denial of service | Rate limit, body limit, RPC budgets and timeouts, bounded graphs and campaign runs (one at a time) | Single-process limiter only |
+| False positives / negatives | Every result lists what was not checked; evaluation in EVALUATION.md | 4 incident cases; no rate estimate is possible |
 
 ## Privacy
 
 Watched-address history can link a person to wallets. Data is stored locally (`data/`,
-git-ignored); `cryptoguard purge --yes` deletes it, including stored transfer history. Inspected addresses are sent to the
-configured RPC provider and nowhere else. There are no accounts or analytics.
+git-ignored); `cryptoguard purge --yes` deletes it, including stored transfer history and any
+campaign run that mentions the wallet. Inspected addresses are sent to the configured RPC
+provider and nowhere else. `cryptoguard campaigns expand` additionally sends the planting
+signers, lookalikes and token contracts it investigates to that provider (never the
+victims' private data, which CryptoGuard does not have). There are no accounts or analytics.
 
 ## Supported environments
 
-Local, single-user use on Windows, macOS and Linux with Python 3.12. CryptoGuard has not had
-an independent security review and must not be relied on as a sole safeguard for funds.
+Local, single-user use on Windows, macOS and Linux with Python 3.12. Only Windows 11 was run
+locally; Linux is covered by the CI matrix definition, which has not run yet because the
+repository has no remote. CryptoGuard has not had an independent security review and must not
+be relied on as a sole safeguard for funds.
+
+## Release review (0.1.0, 2026-10-28)
+
+Performed by the development process itself, not independently:
+
+- Code scan for dangerous constructs (dynamic evaluation, shell execution, unsafe
+  deserialization, raw SQL, signing or broadcasting methods, unescaped HTML): none found.
+- Tracked files scanned for credentials: only test placeholders; recorded fixtures name only
+  the keyless public endpoint used.
+- Dependencies: `pip-audit` on all 39 locked Python packages and `npm audit` on the frontend
+  lockfile reported no known vulnerabilities on 2026-10-28.
+- New endpoints: inputs validated (checksummed addresses, id pattern, bounded pagination and
+  graph sizes); campaign runs are single-flight; experimental features are off by default.
 
 ## Reporting a vulnerability
 

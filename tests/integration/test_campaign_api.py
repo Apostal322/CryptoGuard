@@ -113,3 +113,18 @@ def test_purging_a_wallet_removes_runs_that_mention_it() -> None:
         app_state = client.app.state.cryptoguard  # type: ignore[attr-defined]
         app_state.repository.purge(W1)
         assert client.get("/api/v1/campaigns").json()["error"]["code"] == "no_campaign_run"
+
+
+def test_concurrent_runs_are_refused_not_stacked() -> None:
+    from cryptoguard.api.campaign_routes import RUN_LOCK
+
+    with rpc_client_for(make_node(), **SHADOW) as client:
+        snapshots(client)
+        assert RUN_LOCK.acquire(blocking=False)  # a run is in progress
+        try:
+            r = client.post("/api/v1/campaigns/runs")
+        finally:
+            RUN_LOCK.release()
+        assert r.status_code == 409
+        assert r.json()["error"]["code"] == "campaign_run_in_progress"
+        assert client.post("/api/v1/campaigns/runs").status_code == 200

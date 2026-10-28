@@ -161,6 +161,12 @@ API:
 | GET | `/api/v1/replay/cases` | Packaged incident cases (manifest, sources, fixture hash) |
 | POST | `/api/v1/replay/runs` | `{"case_id"}` → offline point-in-time replay result (not stored; no RPC) |
 | GET | `/api/v1/rules` | The ruleset: id, version, severities, rule descriptions |
+| GET | `/api/v1/wallets/{address}/analysis` | Experimental network/activity/structure context (`CRYPTOGUARD_ANALYSIS_*=shadow`); sections report `disabled` by default |
+| POST | `/api/v1/campaigns/runs` | Experimental: cluster stored poisoning attempts of all monitored wallets (`{}` body; no RPC; one run at a time) |
+| GET | `/api/v1/campaigns` | Candidate clusters of the latest run (`limit`, `offset`) |
+| GET | `/api/v1/campaigns/{campaign_id}` | Cluster detail: evidence with strengths, joining points, member attempts (`limit`) |
+| GET | `/api/v1/campaigns/{campaign_id}/graph` | Typed campaign graph, attempts as nodes (`max_attempts` 1–500) |
+| GET | `/api/v1/wallets/{address}/related-activity` | Clusters that include this wallet's attempts; campaign endpoints answer 409 `feature_disabled` unless `CRYPTOGUARD_CAMPAIGN_ANALYSIS=shadow` |
 | GET | `/api/v1/wallets/{address}/observations` | Stored observations, paginated (`limit`, `offset`) |
 | GET | `/api/v1/demo/addresses` | Fixture addresses (demo mode only) |
 
@@ -201,9 +207,17 @@ $env:CRYPTOGUARD_LIVE_RPC_URL = "https://ethereum-rpc.publicnode.com"; uv run py
 4. ~~Address-poisoning detector with false-positive fixtures~~
 5. ~~Web UI (Vite, React, TypeScript, Tailwind)~~
 6. ~~Threat graph~~
-7. ~~Historical incident replay with point-in-time guarantees~~ (this milestone; more cases
-   needed before any rate can be estimated)
-8. ML only if it beats the deterministic baseline on honest temporal splits
+7. ~~Historical incident replay with point-in-time guarantees~~ (4 incidents, 9 background
+   wallets; more needed before any rate can be estimated). Experimental graph, spectral,
+   temporal and cross-wallet campaign analyses were evaluated on top; none is enabled by
+   default ([EVALUATION.md](EVALUATION.md), [CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md)).
+8. **Machine learning: deferred, deliberately.** The brief allows ML only once enough data
+   exists. It does not: 4 labelled thefts, 9 unlabelled background wallets, and no
+   independent labels for attempts or campaigns. Any classifier trained here would either
+   overfit 4 positives or learn to imitate CryptoGuard's own rules (circular). Revisit when a
+   labelled, time-split dataset exists that a deterministic baseline can be measured on.
+9. ~~Release quality~~: security, dependency, reproducibility and packaging review (see
+   [CHANGELOG.md](CHANGELOG.md)). Not independently audited.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [DETECTION_METHODS.md](DETECTION_METHODS.md) and
 [SECURITY.md](SECURITY.md).

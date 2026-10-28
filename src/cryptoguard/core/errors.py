@@ -157,6 +157,12 @@ class CampaignNotFoundError(CryptoGuardError):
     http_status = 404
 
 
+class CampaignRunInProgressError(CryptoGuardError):
+    code = "campaign_run_in_progress"
+    http_status = 409
+    retryable = True
+
+
 class ScanBudgetExceededError(CryptoGuardError):
     code = "scan_budget_exceeded"
     http_status = 422

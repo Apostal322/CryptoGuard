@@ -60,7 +60,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Python dependency vulnerability scan
         run: |
-          uv export --locked --no-hashes --format requirements-txt > requirements.txt
+          uv export --locked --no-hashes --all-extras --all-groups --no-emit-project --format requirements-txt > requirements.txt
           uvx pip-audit -r requirements.txt
       - name: npm dependency vulnerability scan
         working-directory: apps/web
