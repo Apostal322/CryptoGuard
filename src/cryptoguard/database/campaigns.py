@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
 from cryptoguard.database.models import (
     CampaignExpansionTaskRecord,
@@ -46,10 +48,14 @@ class CampaignStore:
         result: dict[str, Any],
         memberships: list[tuple[str, str, str]],  # (cluster id, role, address)
         retained: int,
+        guard: Callable[[Session], None] | None = None,
     ) -> tuple[int, bool]:
         """Store a run unless the same inputs were already analysed; returns (id, created).
-        Keeps only the newest ``retained`` runs."""
+        Keeps only the newest ``retained`` runs. ``guard`` (lease fencing) runs first inside
+        the write transaction and aborts it by raising."""
         with self._sessions() as session, session.begin():
+            if guard is not None:
+                guard(session)
             existing = session.scalar(
                 select(CampaignRunRecord.id).where(
                     (CampaignRunRecord.chain_id == chain_id)

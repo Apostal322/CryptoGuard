@@ -33,4 +33,7 @@ Optional: `uvx pre-commit install` to run the same checks before each commit.
 - Every fixed bug gets a regression test where practical. Mocks isolate the network; they
   must not replace the behaviour under test (see `tests/fakenode.py`).
 - Tests that hit a real network are marked `live` and are excluded by default.
+- A change to an existing table needs a migration in `database/migrations.py` (idempotent,
+  with a `down` step) and an upgrade test; `verify` fails startup on any drift.
+- API POST endpoints receive JSON only; keep it that way (it is part of the CSRF defence).
 - Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).

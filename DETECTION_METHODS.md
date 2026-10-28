@@ -200,7 +200,11 @@ transaction the wallet signed in their window by nonce search (`services/wallet_
 gallop down from the newest known block, then bisect `eth_getTransactionCount`, then read the
 transaction from its block. Each snapshot stores the wallet's nonce, so the next one needs no
 old state. On providers without historical state, transactions beyond the readable horizon
-are counted as *unlocated* in the coverage instead of guessed. The 1,155 WBTC case shows why
+are counted as *unlocated* in the coverage instead of guessed. Each ETH-carrying transaction's
+receipt is read: a **reverted** send (nonce used, no ETH moved) still shows which recipient the
+wallet meant to pay, so it can be a reference, but it is never evidence that funds reached a
+lookalike; a receipt that cannot be read, or that comes from another block, leaves the status
+unknown and the send is treated as executed (the conservative choice for warnings). The 1,155 WBTC case shows why
 this matters: the victim paid the later-imitated address in native ETH, so ERC-20 data alone
 never reveals it (see [EVALUATION.md](EVALUATION.md)). Confirmed through the live snapshot
 pipeline on 2026-10-24 (eth.drpc.org, 477 requests): snapshots at blocks 19,788,641 /

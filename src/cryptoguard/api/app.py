@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -331,13 +332,39 @@ def create_app(
     return app
 
 
+def _origin_allowed(origin: str, request: Request, settings: Settings) -> bool:
+    """A configured CORS origin, or the API's own origin (UI served from the same host)."""
+    if origin in settings.cors_origins:
+        return True
+    parts = urlsplit(origin)
+    return parts.scheme in ("http", "https") and parts.netloc == request.headers.get("host", "")
+
+
 async def _enforce_limits(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
     settings: Settings,
     limiter: TokenBucketLimiter,
 ) -> Response:
+    # DNS rebinding: a hostile page can point its own hostname at 127.0.0.1; the browser then
+    # treats this API as same-origin with it. Only answer to the configured hostnames.
+    host = urlsplit("//" + request.headers.get("host", "")).hostname or ""
+    if host.lower() not in settings.allowed_hosts:
+        return _error(400, "invalid_host", "This API only answers to its configured hostnames.")
     if request.method == "POST":
+        # CSRF: cross-site pages can send "simple" POSTs (text/plain, form encodings) without a
+        # CORS preflight, and CORS only hides the response, it does not stop the request.
+        # Requiring JSON forces a preflight; the Origin check rejects foreign pages outright.
+        origin = request.headers.get("origin")
+        if origin is not None and not _origin_allowed(origin, request, settings):
+            return _error(403, "origin_not_allowed", "Requests from this origin are not allowed.")
+        content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            return _error(
+                415,
+                "unsupported_media_type",
+                "POST requests must send Content-Type: application/json.",
+            )
         length = request.headers.get("content-length")
         if length is None:
             return _error(411, "length_required", "POST requests must send Content-Length.")

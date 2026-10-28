@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import re
-import threading
 
 from fastapi import APIRouter, Query, Request
 
 from cryptoguard.api.state import get_state
 from cryptoguard.core.address import to_checksum_address
-from cryptoguard.core.errors import CampaignNotFoundError, CampaignRunInProgressError
+from cryptoguard.core.errors import CampaignNotFoundError
 from cryptoguard.services.campaigns import (
     CampaignDetail,
     CampaignGraphView,
@@ -37,31 +36,21 @@ def _source(request: Request) -> str:
     return "demo_fixture" if get_state(request).settings.mode == "demo" else "rpc"
 
 
-# One run at a time per process: a run is CPU- and memory-bound, so concurrent requests
-# would multiply its footprint instead of finishing sooner. A thread lock (not an asyncio
-# one) because the run itself executes in a worker thread.
-RUN_LOCK = threading.Lock()
-
-
-def _single_run(request: Request) -> RunInfo:
-    if not RUN_LOCK.acquire(blocking=False):
-        raise CampaignRunInProgressError("A campaign analysis is already running; retry shortly.")
-    try:
-        state = get_state(request)
-        return run_analysis(
-            state.repository,
-            chain_id=state.chain.chain_id,
-            data_source="demo_fixture" if state.settings.mode == "demo" else "rpc",
-            settings=state.settings,
-        )
-    finally:
-        RUN_LOCK.release()
+def _run(request: Request) -> RunInfo:
+    # Single-flight is enforced by run_analysis with a database lease (all processes).
+    state = get_state(request)
+    return run_analysis(
+        state.repository,
+        chain_id=state.chain.chain_id,
+        data_source="demo_fixture" if state.settings.mode == "demo" else "rpc",
+        settings=state.settings,
+    )
 
 
 @router.post("/campaigns/runs", response_model=RunInfo)
 async def create_run(request: Request) -> RunInfo:
     """Cluster the stored poisoning attempts of all monitored wallets (experimental)."""
-    return await asyncio.to_thread(_single_run, request)
+    return await asyncio.to_thread(_run, request)
 
 
 @router.get("/campaigns", response_model=CampaignPage)

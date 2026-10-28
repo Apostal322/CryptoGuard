@@ -93,6 +93,7 @@ class FakeNode:
         self.state_history: int | None = None
         self.created_at: dict[str, int] = {}  # contract -> creation block (code absent before)
         self.created_by_tx: dict[str, str] = {}  # creation tx hash -> contract address
+        self.reverted: set[str] = set()  # tx hashes whose receipt reports status 0 (no effect)
 
     def plant(
         self, signer: str, token: str, transfers: list[tuple[str, str, int]], *, block: int
@@ -292,11 +293,16 @@ class FakeNode:
             tx_hash = params[0]
             if tx_hash not in self.tx_senders:
                 return None
+            logs = [log for log in self.logs if log["transactionHash"] == tx_hash]
+            sent = next((t for t in self.sent_txs if t["hash"] == tx_hash), None)
             return {
                 "transactionHash": tx_hash,
-                "status": "0x1",
+                "blockHash": sent["blockHash"]
+                if sent
+                else (logs[0]["blockHash"] if logs else None),
+                "status": "0x0" if tx_hash in self.reverted else "0x1",
                 "contractAddress": self.created_by_tx.get(tx_hash),
-                "logs": [log for log in self.logs if log["transactionHash"] == tx_hash],
+                "logs": [] if tx_hash in self.reverted else logs,
             }
         if method == "eth_getLogs":
             return self._get_logs(params[0])

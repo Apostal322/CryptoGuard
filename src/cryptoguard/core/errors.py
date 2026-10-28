@@ -157,6 +157,12 @@ class CampaignNotFoundError(CryptoGuardError):
     http_status = 404
 
 
+class SnapshotInProgressError(CryptoGuardError):
+    code = "snapshot_in_progress"
+    http_status = 409
+    retryable = True
+
+
 class CampaignRunInProgressError(CryptoGuardError):
     code = "campaign_run_in_progress"
     http_status = 409

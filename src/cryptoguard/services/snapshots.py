@@ -16,19 +16,26 @@ Coverage is cumulative and explicit: windows that were never scanned are listed 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
 
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from cryptoguard.blockchain.erc20 import ApprovalEvent
 from cryptoguard.blockchain.provider import EthereumProvider
 from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.chains import ChainInfo
 from cryptoguard.core.config import Settings
-from cryptoguard.core.errors import InvalidScanRequestError, ReorgDetectedError
+from cryptoguard.core.errors import (
+    InvalidScanRequestError,
+    ReorgDetectedError,
+    SnapshotInProgressError,
+)
 from cryptoguard.database.history import FindingEvent, HistoryRepository, NewSnapshot, SnapshotRef
+from cryptoguard.database.leases import LeaseStore
 from cryptoguard.detectors.base import DetectionContext, StateRulesDetector, run_detectors
 from cryptoguard.detectors.poisoning import PoisoningConfig, PoisoningDetector
 from cryptoguard.history.delta import Change, compute_delta
@@ -263,8 +270,51 @@ async def take_snapshot(
     tokens: list[str] | None = None,
     lookback_blocks: int | None = None,
     options: DetectionOptions = DEFAULT_DETECTION,
+    lease_seconds: float = 900,
 ) -> SnapshotOutcome:
+    """One snapshot per wallet at a time, across threads and processes (database lease);
+    a concurrent request gets ``snapshot_in_progress`` instead of racing the first."""
     owner = to_checksum_address(owner)
+    leases = LeaseStore(repo)
+    key = f"snapshot:{chain.chain_id}:{provider.source}:{owner}"
+    lease = await asyncio.to_thread(leases.acquire, key, lease_seconds)
+    if lease is None:
+        raise SnapshotInProgressError(
+            "A snapshot of this wallet is already running; retry shortly."
+        )
+    try:
+        return await _take_snapshot(
+            provider,
+            repo,
+            owner,
+            chain=chain,
+            limits=limits,
+            confirmations=confirmations,
+            block=block,
+            tokens=tokens,
+            lookback_blocks=lookback_blocks,
+            options=options,
+            guard=lambda session: LeaseStore.check(session, lease),
+        )
+    finally:
+        # Synchronous on purpose: it must also run when the request is cancelled.
+        leases.release(lease)
+
+
+async def _take_snapshot(
+    provider: EthereumProvider,
+    repo: HistoryRepository,
+    owner: str,
+    *,
+    chain: ChainInfo,
+    limits: ScanLimits,
+    confirmations: int,
+    block: int | None,
+    tokens: list[str] | None,
+    lookback_blocks: int | None,
+    options: DetectionOptions,
+    guard: Callable[[Session], None],
+) -> SnapshotOutcome:
     source = provider.source
     await provider.verify_chain()
     head = await provider.block_number()
@@ -431,6 +481,7 @@ async def take_snapshot(
         evaluation,
         transfers.transfers,
         wallet_txs.transactions,
+        guard,
     )
     notes = _notes(base, simulated, orphaned)
     return SnapshotOutcome(

@@ -256,6 +256,8 @@ class WalletTransactionRecord(Base):
     nonce: Mapped[int] = mapped_column(BigInteger)
     to: Mapped[str | None] = mapped_column(String(42), nullable=True)
     value: Mapped[str] = mapped_column(String(78))
+    # Receipt status of an ETH-carrying transaction (None: not read). Added by migration 2.
+    succeeded: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     data_source: Mapped[str] = mapped_column(String(32))
     ingested_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
@@ -322,3 +324,26 @@ class CampaignExpansionTaskRecord(Base):
     status: Mapped[str] = mapped_column(String(16))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
     recorded_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class OperationLeaseRecord(Base):
+    """Exclusive, expiring ownership of a long operation (one snapshot per wallet, one
+    campaign run) across threads, processes and restarts. See ``database/leases.py``."""
+
+    __tablename__ = "operation_leases"
+
+    key: Mapped[str] = mapped_column(String(160), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(32))
+    generation: Mapped[int] = mapped_column(BigInteger)
+    acquired_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class SchemaVersionRecord(Base):
+    """Applied schema migrations (see ``database/migrations.py``)."""
+
+    __tablename__ = "schema_versions"
+
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    description: Mapped[str] = mapped_column(String(200))
+    applied_at: Mapped[datetime] = mapped_column(UTCDateTime())

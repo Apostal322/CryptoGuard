@@ -19,6 +19,7 @@ from tests.fakenode import FakeNode, rpc_error
 WALLET = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
 DELEGATE = "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb"
 RPC_URL = "https://rpc.example.invalid/v2/SECRETKEY123"
+LOCAL = "http://127.0.0.1"  # the API only answers to its configured hostnames
 
 
 def make_settings(**overrides: object) -> Settings:
@@ -52,7 +53,7 @@ def rpc_client_for(node: FakeNode, **overrides: object) -> TestClient:
         )
 
     app = create_app(settings, provider_factory=factory, repository=memory_repository())
-    return TestClient(app, raise_server_exceptions=False)
+    return TestClient(app, base_url=LOCAL, raise_server_exceptions=False)
 
 
 @pytest.fixture
@@ -206,7 +207,7 @@ def test_cors_is_restricted(client: TestClient) -> None:
 
 def test_real_mode_without_rpc_never_falls_back_to_demo() -> None:
     app = create_app(make_settings(), repository=memory_repository())
-    with TestClient(app) as c:
+    with TestClient(app, base_url=LOCAL) as c:
         status = c.get("/api/v1/status").json()
         assert status["rpc_configured"] is False
         assert status["simulated"] is False
@@ -219,7 +220,7 @@ def test_real_mode_without_rpc_never_falls_back_to_demo() -> None:
 
 def test_demo_mode_is_explicit_and_labelled() -> None:
     app = create_app(make_settings(mode="demo"), repository=memory_repository())
-    with TestClient(app) as c:
+    with TestClient(app, base_url=LOCAL) as c:
         listing = c.get("/api/v1/demo/addresses").json()
         assert listing["simulated"] is True
         assert len(listing["addresses"]) == len(DEMO_ACCOUNTS)
@@ -245,7 +246,7 @@ def test_unexpected_errors_are_generic(node: FakeNode) -> None:
     engine = create_db_engine("sqlite://")
     init_schema(engine)
     app = create_app(make_settings(), repository=Boom(engine))
-    with TestClient(app, raise_server_exceptions=False) as c:
+    with TestClient(app, base_url=LOCAL, raise_server_exceptions=False) as c:
         response = c.get("/api/v1/health")
     assert response.status_code == 500
     assert response.json()["error"] == {

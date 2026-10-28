@@ -13,6 +13,7 @@ transactions themselves (relayers and bundlers do), so their native payments are
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 
 from cryptoguard.blockchain.provider import EthereumProvider
@@ -20,6 +21,7 @@ from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.errors import (
     HistoricalStateUnavailableError,
     InvalidAddressError,
+    RpcError,
     RpcInvalidResponseError,
 )
 from cryptoguard.core.hexutil import parse_hash32, parse_quantity
@@ -37,6 +39,9 @@ class WalletTransaction:
     nonce: int
     to: str | None
     value: int
+    # Receipt status for ETH-carrying transactions: True = executed, False = reverted (no ETH
+    # moved, although the nonce was used), None = not read or unknown.
+    succeeded: bool | None = None
 
     def as_native_send(self) -> NativeSend | None:
         if self.to is None or self.value == 0:
@@ -47,6 +52,7 @@ class WalletTransaction:
             block_number=self.block_number,
             transaction_hash=self.transaction_hash,
             transaction_index=self.transaction_index,
+            succeeded=self.succeeded,
         )
 
 
@@ -73,6 +79,46 @@ async def locate_wallet_transactions(
     to_block: int,
     start_nonce: int | None = None,
     max_transactions: int = DEFAULT_MAX_TRANSACTIONS,
+) -> WalletTxDiscovery:
+    """Transactions signed by ``wallet`` in ``[from_block, to_block]``, each ETH-carrying one
+    with its receipt status (a reverted transaction consumes a nonce but moves no ETH)."""
+    found = await _locate(
+        provider,
+        wallet,
+        from_block=from_block,
+        to_block=to_block,
+        start_nonce=start_nonce,
+        max_transactions=max_transactions,
+    )
+    if not found.transactions:
+        return found
+    return dataclasses.replace(
+        found, transactions=[await _with_status(provider, t) for t in found.transactions]
+    )
+
+
+async def _with_status(provider: EthereumProvider, tx: WalletTransaction) -> WalletTransaction:
+    if tx.value == 0:
+        return tx  # nothing to verify: no ETH could move either way
+    try:
+        receipt = await provider.get_transaction_receipt(tx.transaction_hash)
+    except RpcError:
+        return tx  # unknown, not failed: the status stays None
+    if not receipt or str(receipt.get("blockHash", "")).lower() != tx.block_hash.lower():
+        return tx  # missing, or from another (reorganized) block: unknown
+    status = receipt.get("status")
+    succeeded = True if status == "0x1" else False if status == "0x0" else None
+    return dataclasses.replace(tx, succeeded=succeeded)
+
+
+async def _locate(
+    provider: EthereumProvider,
+    wallet: str,
+    *,
+    from_block: int,
+    to_block: int,
+    start_nonce: int | None,
+    max_transactions: int,
 ) -> WalletTxDiscovery:
     """Transactions signed by ``wallet`` in ``[from_block, to_block]``.
 

@@ -9,7 +9,13 @@ from cryptoguard.api.app import create_app
 from cryptoguard.blockchain.abi import UINT256_MAX
 from cryptoguard.services.demo import DEMO_ACCOUNTS
 from tests.fakenode import FakeNode
-from tests.integration.test_api import WALLET, make_settings, memory_repository, rpc_client_for
+from tests.integration.test_api import (
+    LOCAL,
+    WALLET,
+    make_settings,
+    memory_repository,
+    rpc_client_for,
+)
 
 TOKEN = "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB"
 SPENDER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
@@ -84,7 +90,7 @@ def test_invalid_address(client: TestClient) -> None:
 
 def test_scan_requires_rpc_in_real_mode() -> None:
     app = create_app(make_settings(), repository=memory_repository())
-    with TestClient(app) as c:
+    with TestClient(app, base_url=LOCAL) as c:
         response = c.post(f"/api/v1/wallets/{WALLET}/approvals/scan", json={})
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "rpc_not_configured"
@@ -93,7 +99,7 @@ def test_scan_requires_rpc_in_real_mode() -> None:
 def test_demo_scan() -> None:
     wallet = next(a.address for a in DEMO_ACCOUNTS if a.label == "plain-wallet")
     app = create_app(make_settings(mode="demo"), repository=memory_repository())
-    with TestClient(app) as c:
+    with TestClient(app, base_url=LOCAL) as c:
         report = c.post(f"/api/v1/wallets/{wallet}/approvals/scan", json={}).json()["report"]
     assert report["simulated"] is True
     assert report["data_source"] == "demo_fixture"

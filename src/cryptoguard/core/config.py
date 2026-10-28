@@ -103,8 +103,15 @@ class Settings(BaseSettings):
     campaign_expansion_max_requests: int = Field(default=600, ge=1, le=20_000)
 
     database_url: str = "sqlite:///./data/cryptoguard.db"
+    # Lifetime of the database lease that makes snapshots (per wallet) and campaign runs
+    # single-flight across processes. Must exceed the longest expected run; an overrunning
+    # run loses its lease and its results are not saved.
+    operation_lease_seconds: int = Field(default=900, ge=30, le=86_400)
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # Hostnames the API answers to (Host header); anything else is refused, which defeats
+    # DNS-rebinding attacks on a local instance. Add a name only if you deliberately serve it.
+    allowed_hosts: list[str] = ["127.0.0.1", "localhost", "::1"]
     rate_limit_per_minute: int = Field(default=30, ge=1, le=10_000)
     max_request_body_bytes: int = Field(default=16 * 1024, ge=256, le=1024 * 1024)
 
@@ -141,6 +148,14 @@ class Settings(BaseSettings):
             if urlsplit(origin).scheme not in {"http", "https"}:
                 raise ValueError(f"invalid CORS origin: {origin!r}")
         return value
+
+    @field_validator("allowed_hosts")
+    @classmethod
+    def _check_hosts(cls, value: list[str]) -> list[str]:
+        cleaned = [h.strip().lower().strip("[]") for h in value]
+        if not cleaned or any(not h or "*" in h or "/" in h for h in cleaned):
+            raise ValueError("allowed_hosts must list explicit hostnames (no wildcards)")
+        return cleaned
 
     @property
     def rpc_endpoint_display(self) -> str | None:

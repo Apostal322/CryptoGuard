@@ -35,6 +35,18 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   and `CAMPAIGN_EVALUATION.md`: real shared-signer links found, no earlier theft warning
   (`3fde4a8`).
 
+### Release validation (phase 10)
+- Local API hardened against DNS rebinding (host allow-list) and CSRF (JSON-only POSTs,
+  Origin check).
+- Snapshots (per wallet) and campaign runs single-flight across processes via fenced
+  database leases; concurrent same-wallet snapshots no longer fail with 500.
+- Reverted ETH payments are recognised (receipt status) and never treated as funds sent to
+  a lookalike; all recorded fixtures re-checked on-chain (all executed).
+- Versioned, reversible schema migrations with startup verification; upgrade from the
+  `7fe824a` schema tested.
+- Metamorphic point-in-time tests on real fixtures; clean-environment wheel install tested.
+  See RELEASE_AUDIT.md.
+
 ### Release review
 - Security, dependency (pip-audit, npm audit), reproducibility and packaging review; stale
   threat model updated; campaign runs made single-flight. See SECURITY.md.
@@ -44,5 +56,5 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
 - Native ETH received by a wallet, internal transfers and funding sources are not visible
   over standard JSON-RPC.
 - No scheduled monitoring loop; snapshots run on request.
-- No Alembic migrations yet; schema changes so far only added tables.
+- No authentication: one trusted local user (see SECURITY.md).
 - CI (Windows + Linux) is defined but has not run: the repository has no remote yet.

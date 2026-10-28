@@ -235,6 +235,7 @@ async def _snapshot(
             tokens=tokens,
             lookback_blocks=lookback,
             options=DetectionOptions.from_settings(settings),
+            lease_seconds=settings.operation_lease_seconds,
         )
     finally:
         await provider.aclose()

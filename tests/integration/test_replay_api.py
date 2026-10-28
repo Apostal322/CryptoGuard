@@ -3,13 +3,13 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from cryptoguard.api.app import create_app
-from tests.integration.test_api import make_settings, memory_repository
+from tests.integration.test_api import LOCAL, make_settings, memory_repository
 
 CASE = "wbtc-1155-poisoning-2024-05-03"
 
 
 def client() -> TestClient:
-    return TestClient(create_app(make_settings(), repository=memory_repository()))
+    return TestClient(create_app(make_settings(), repository=memory_repository()), base_url=LOCAL)
 
 
 def test_cases_and_offline_run() -> None:

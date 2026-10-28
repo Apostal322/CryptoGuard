@@ -111,6 +111,7 @@ async def record_window(
             nonce=t.nonce,
             to=t.to,
             value=str(t.value),
+            succeeded=t.succeeded,
         )
         for t in located.transactions
     ]

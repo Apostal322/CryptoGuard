@@ -138,6 +138,7 @@
   {
    "block_number": 23881889,
    "nonce": 45,
+   "succeeded": null,
    "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
    "transaction_hash": "0x6a6db294a8bb1bf85b9ab900b38f4b74f4ccab051df91f038d108b23d0607cd7",
    "transaction_index": 25,
@@ -146,6 +147,7 @@
   {
    "block_number": 23896175,
    "nonce": 46,
+   "succeeded": null,
    "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
    "transaction_hash": "0x8435e7b6ca6ca73a6be317f3e568dd43aa5761dff33a4a4a9883a11443f76453",
    "transaction_index": 23,

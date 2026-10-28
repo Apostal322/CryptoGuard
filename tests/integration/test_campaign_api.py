@@ -50,7 +50,7 @@ def test_disabled_by_default() -> None:
             ("get", "/api/v1/campaigns"),
             ("get", f"/api/v1/wallets/{W1}/related-activity"),
         ):
-            r = getattr(client, method)(path)
+            r = client.post(path, json={}) if method == "post" else client.get(path)
             assert r.status_code == 409
             assert r.json()["error"]["code"] == "feature_disabled"
 
@@ -59,12 +59,12 @@ def test_shadow_run_links_wallets_through_a_shared_signer_only() -> None:
     with rpc_client_for(make_node(), **SHADOW) as client:
         snapshots(client)
         assert client.get("/api/v1/campaigns").json()["error"]["code"] == "no_campaign_run"
-        run = client.post("/api/v1/campaigns/runs").json()
+        run = client.post("/api/v1/campaigns/runs", json={}).json()
         assert run["attempts"] == 3
         assert run["clusters"] == 1
         assert run["unclustered"] == 1
         assert run["experimental"] is True
-        again = client.post("/api/v1/campaigns/runs").json()
+        again = client.post("/api/v1/campaigns/runs", json={}).json()
         assert again["created"] is False
         assert again["input_sha256"] == run["input_sha256"]
 
@@ -99,7 +99,7 @@ def test_shadow_mode_does_not_change_findings() -> None:
         off_findings = snapshots(off)
     with rpc_client_for(make_node(), **SHADOW) as shadow:
         shadow_findings = snapshots(shadow)
-        shadow.post("/api/v1/campaigns/runs")
+        shadow.post("/api/v1/campaigns/runs", json={})
         after = shadow.get(f"/api/v1/wallets/{W1}/findings").json()
     assert off_findings == shadow_findings
     assert any(rule == "CG-POI-001" for events in off_findings for rule, _ in events)
@@ -109,22 +109,44 @@ def test_shadow_mode_does_not_change_findings() -> None:
 def test_purging_a_wallet_removes_runs_that_mention_it() -> None:
     with rpc_client_for(make_node(), **SHADOW) as client:
         snapshots(client)
-        client.post("/api/v1/campaigns/runs")
+        client.post("/api/v1/campaigns/runs", json={})
         app_state = client.app.state.cryptoguard  # type: ignore[attr-defined]
         app_state.repository.purge(W1)
         assert client.get("/api/v1/campaigns").json()["error"]["code"] == "no_campaign_run"
 
 
 def test_concurrent_runs_are_refused_not_stacked() -> None:
-    from cryptoguard.api.campaign_routes import RUN_LOCK
+    from cryptoguard.database.leases import LeaseStore
 
     with rpc_client_for(make_node(), **SHADOW) as client:
         snapshots(client)
-        assert RUN_LOCK.acquire(blocking=False)  # a run is in progress
-        try:
-            r = client.post("/api/v1/campaigns/runs")
-        finally:
-            RUN_LOCK.release()
+        leases = LeaseStore(client.app.state.cryptoguard.repository)  # type: ignore[attr-defined]
+        held = leases.acquire("campaign-run:1:rpc", 60)  # another process is running one
+        assert held is not None
+        r = client.post("/api/v1/campaigns/runs", json={})
         assert r.status_code == 409
         assert r.json()["error"]["code"] == "campaign_run_in_progress"
-        assert client.post("/api/v1/campaigns/runs").status_code == 200
+        assert leases.release(held)
+        assert client.post("/api/v1/campaigns/runs", json={}).status_code == 200
+        assert leases.holder("campaign-run:1:rpc") is None  # released after the run
+
+
+def test_concurrent_snapshot_of_one_wallet_is_refused() -> None:
+    from cryptoguard.database.leases import LeaseStore
+
+    with rpc_client_for(make_node()) as client:
+        leases = LeaseStore(client.app.state.cryptoguard.repository)  # type: ignore[attr-defined]
+        held = leases.acquire(f"snapshot:1:rpc:{W1}", 60)
+        assert held is not None
+        r = client.post(f"/api/v1/wallets/{W1}/snapshots", json={"lookback_blocks": 1_000})
+        assert r.status_code == 409
+        assert r.json()["error"]["code"] == "snapshot_in_progress"
+        other = client.post(f"/api/v1/wallets/{W2}/snapshots", json={"lookback_blocks": 1_000})
+        assert other.status_code == 200  # other wallets are not blocked
+        leases.release(held)
+        assert (
+            client.post(
+                f"/api/v1/wallets/{W1}/snapshots", json={"lookback_blocks": 1_000}
+            ).status_code
+            == 200
+        )

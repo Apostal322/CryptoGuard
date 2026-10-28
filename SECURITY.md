@@ -31,7 +31,14 @@
   in poisoning titles, to illustrate how a wallet would display the lookalike.
 - **Local, single-user API.** There is no authentication: anyone who can reach the API can
   take snapshots or acknowledge findings. Bind to `127.0.0.1` (the default) and do not expose
-  it to a network without an authenticating reverse proxy.
+  it to a network without an authenticating reverse proxy. CORS is not authentication.
+- **Browser attacks on the local API.** The API answers only to `CRYPTOGUARD_ALLOWED_HOSTS`
+  (default `127.0.0.1`, `localhost`, `::1`), which defeats DNS rebinding. POSTs must be
+  `application/json` (cross-site "simple" requests are refused with 415) and a present
+  `Origin` must be a configured CORS origin or the API's own origin (403 otherwise).
+- **Concurrency.** Snapshots (per wallet) and campaign runs are single-flight across threads,
+  processes and restarts through database leases with fencing; a conflicting request gets
+  409 and a run that loses its lease cannot write results.
 
 ## Threat model (summary)
 
@@ -77,6 +84,10 @@ Performed by the development process itself, not independently:
   lockfile reported no known vulnerabilities on 2026-10-28.
 - New endpoints: inputs validated (checksummed addresses, id pattern, bounded pagination and
   graph sizes); campaign runs are single-flight; experimental features are off by default.
+
+Phase 10 release validation (2026-10-28) fixed CSRF and DNS-rebinding exposure of the local
+API, cross-process single-flight, concurrent-snapshot failures and the handling of reverted
+ETH payments; see [RELEASE_AUDIT.md](RELEASE_AUDIT.md) for the register.
 
 ## Reporting a vulnerability
 

@@ -197,8 +197,11 @@ runs are kept. `campaign_memberships` indexes which addresses (targets, lookalik
 appear in which cluster; purging a wallet deletes every run that mentions it.
 `campaign_expansion_tasks` holds expansion task outcomes (unique per task id), the checkpoint
 that makes expansion resumable without refetching.
-All times are UTC. Schema creation currently uses
-`create_all`; Alembic migrations must be introduced before the first schema change.
+operation_leases holds one row per running exclusive operation (owner token, generation,
+expiry) and schema_versions the applied migrations.
+All times are UTC. `init_schema` creates missing tables, applies pending migrations from
+`database/migrations.py` (version 2 added `wallet_transactions.succeeded`) and verifies every
+mapped column; databases created by `7fe824a` upgrade in place (tested from its captured DDL).
 
 ## Extension points
 
@@ -221,8 +224,10 @@ All times are UTC. Schema creation currently uses
 
 ## Known gaps / technical debt
 
-- No Alembic migrations yet (`create_all` only). Every schema change so far only added tables;
-  migrations are required before any existing table changes.
+- Schema changes use the small versioned migration list in `database/migrations.py`, not
+  Alembic; a schema that does not match the models refuses to start. Revisit Alembic when
+  migrations become frequent or PostgreSQL-specific.
+- Operation leases are not renewed during long runs (default 15 minutes).
 - Snapshots are taken on request; there is no scheduled monitoring loop yet. The previous
   snapshot acts as the ingestion checkpoint.
 - Reorg rebase looks back at most 10 snapshots; findings first seen in an orphaned snapshot

@@ -82,6 +82,8 @@ class RecordedTransaction(BaseModel):
     nonce: int
     to: str | None
     value: str
+    # Receipt status (ETH-carrying transactions): False = reverted, None = not recorded.
+    succeeded: bool | None = None
 
     def as_native_send(self) -> NativeSend | None:
         if self.to is None or int(self.value) == 0:
@@ -92,6 +94,7 @@ class RecordedTransaction(BaseModel):
             block_number=self.block_number,
             transaction_hash=self.transaction_hash,
             transaction_index=self.transaction_index,
+            succeeded=self.succeeded,
         )
 
 

@@ -11,7 +11,8 @@
   "Signer (tx.from) of every outgoing transfer's transaction (eth_getTransactionByHash).",
   "Every wallet-signed transaction in the window, located by nonce bisection (eth_getTransactionCount) and read from its block (eth_getBlockByNumber).",
   "Wallet code at the window start and one block before the harmful block (eth_getCode).",
-  "Timestamps of all referenced blocks (eth_getBlockByNumber)."
+  "Timestamps of all referenced blocks (eth_getBlockByNumber).",
+  "Receipt status of each ETH-carrying wallet transaction (eth_getTransactionReceipt; the receipt's block must match), added 2026-10-28."
  ],
  "recorded_at": "2026-10-27T21:23:55.800779Z",
  "recorded_with": "https://eth.drpc.org",
@@ -90,6 +91,7 @@
   {
    "block_number": 23906264,
    "nonce": 84,
+   "succeeded": true,
    "to": "0x3F836Cd1fEb4E414997c385b8e8aE6509A60E62b",
    "transaction_hash": "0xe8355341398cfc9d07fa615b83fe573ac43f3de55b55b1cdde23bafd9fcdea4b",
    "transaction_index": 115,
@@ -98,6 +100,7 @@
   {
    "block_number": 23906288,
    "nonce": 85,
+   "succeeded": true,
    "to": "0x10b6eA968fAeef78d7E355d3981026774A513623",
    "transaction_hash": "0x85fff7718391b4cfc0823cdd021bee8288b71b29cf63b651ca07aac082ffe957",
    "transaction_index": 98,
@@ -106,6 +109,7 @@
   {
    "block_number": 23906305,
    "nonce": 86,
+   "succeeded": null,
    "to": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
    "transaction_hash": "0xf2caf00cc15ac2ceb727efe49e1c5be14843c5822b9f79457e7d39be6920d5a6",
    "transaction_index": 154,
@@ -114,6 +118,7 @@
   {
    "block_number": 23906327,
    "nonce": 87,
+   "succeeded": null,
    "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
    "transaction_hash": "0xe6a1c1e04409bbe5970433e0c5e84590ea55fbce4aa98366fb314b26ca4d98a4",
    "transaction_index": 168,

@@ -213,6 +213,7 @@ async def create_snapshot(request: Request, address: str, body: SnapshotRequest)
         tokens=body.tokens,
         lookback_blocks=body.lookback_blocks,
         options=DetectionOptions.from_settings(state.settings),
+        lease_seconds=state.settings.operation_lease_seconds,
     )
     if _analysis_enabled(state.settings):
         # Shadow mode: runs after the snapshot is stored and cannot change its outcome.

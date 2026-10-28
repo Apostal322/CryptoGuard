@@ -11,7 +11,8 @@
   "Signer (tx.from) of every outgoing transfer's transaction (eth_getTransactionByHash).",
   "Every wallet-signed transaction in the window, located by nonce bisection (eth_getTransactionCount) and read from its block (eth_getBlockByNumber).",
   "Wallet code at the window start and one block before the harmful block (eth_getCode).",
-  "Timestamps of all referenced blocks (eth_getBlockByNumber)."
+  "Timestamps of all referenced blocks (eth_getBlockByNumber).",
+  "Receipt status of each ETH-carrying wallet transaction (eth_getTransactionReceipt; the receipt's block must match), added 2026-10-28."
  ],
  "recorded_at": "2026-10-27T21:22:30.368959Z",
  "recorded_with": "https://eth.drpc.org",
@@ -29,6 +30,7 @@
   {
    "block_number": 23535654,
    "nonce": 0,
+   "succeeded": true,
    "to": "0xEbA88149813BEc1cCcccFDb0daCEFaaa5DE94cB1",
    "transaction_hash": "0xeafe50e51bda8fb48850fe352517ab4ba3ba42a62670775330cb9019f0c7ea77",
    "transaction_index": 36,

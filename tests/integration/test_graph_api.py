@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from cryptoguard.api.app import create_app
 from cryptoguard.services.demo import DEMO_ACCOUNTS
-from tests.integration.test_api import WALLET, make_settings, memory_repository
+from tests.integration.test_api import LOCAL, WALLET, make_settings, memory_repository
 
 PLAIN = next(a.address for a in DEMO_ACCOUNTS if a.label == "plain-wallet")
 LOOKALIKE = next(a.address for a in DEMO_ACCOUNTS if a.label == "demo-lookalike")
@@ -15,7 +15,7 @@ def test_graph_requires_a_snapshot_and_reflects_stored_data() -> None:
     app = create_app(
         make_settings(mode="demo", snapshot_confirmations=0), repository=memory_repository()
     )
-    with TestClient(app) as c:
+    with TestClient(app, base_url=LOCAL) as c:
         missing = c.get(f"/api/v1/wallets/{PLAIN}/graph")
         assert missing.status_code == 404
         assert missing.json()["error"]["code"] == "no_snapshot"
@@ -42,7 +42,7 @@ def test_graph_requires_a_snapshot_and_reflects_stored_data() -> None:
 
 def test_graph_parameter_validation() -> None:
     app = create_app(make_settings(mode="demo"), repository=memory_repository())
-    with TestClient(app) as c:
+    with TestClient(app, base_url=LOCAL) as c:
         assert c.get(f"/api/v1/wallets/{WALLET}/graph?max_nodes=5").status_code == 422
         assert c.get(f"/api/v1/wallets/{WALLET}/graph?max_nodes=1000").status_code == 422
         assert c.get("/api/v1/wallets/0x12/graph").status_code == 422

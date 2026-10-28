@@ -17,7 +17,6 @@ from cryptoguard.blockchain.erc20 import ApprovalEvent, TransferEvent
 from cryptoguard.database.models import (
     AddressObservation,
     ApprovalEventRecord,
-    Base,
     CampaignExpansionTaskRecord,
     CampaignMembershipRecord,
     CampaignRunRecord,
@@ -47,9 +46,11 @@ def create_db_engine(database_url: str) -> Engine:
 
 
 def init_schema(engine: Engine) -> None:
-    """Create missing tables. Alembic migrations must replace this before an existing table
-    changes; so far every schema change has only added tables."""
-    Base.metadata.create_all(engine)
+    """Create missing tables, apply pending migrations, then verify the live schema."""
+    from cryptoguard.database.migrations import migrate, verify
+
+    migrate(engine)
+    verify(engine)
 
 
 def insert_approval_events(
@@ -120,6 +121,7 @@ def insert_wallet_transactions(
             nonce=t.nonce,
             to=t.to,
             value=str(t.value),
+            succeeded=t.succeeded,
             data_source=data_source,
             ingested_at=now,
         )

@@ -11,7 +11,8 @@
   "Signer (tx.from) of every outgoing transfer's transaction (eth_getTransactionByHash).",
   "Every wallet-signed transaction in the window, located by nonce bisection (eth_getTransactionCount) and read from its block (eth_getBlockByNumber).",
   "Wallet code at the window start and one block before the harmful block (eth_getCode).",
-  "Timestamps of all referenced blocks (eth_getBlockByNumber)."
+  "Timestamps of all referenced blocks (eth_getBlockByNumber).",
+  "Receipt status of each ETH-carrying wallet transaction (eth_getTransactionReceipt; the receipt's block must match), added 2026-10-28."
  ],
  "recorded_at": "2026-10-27T21:27:04.376941Z",
  "recorded_with": "https://eth.drpc.org",
@@ -42,6 +43,7 @@
   {
    "block_number": 18991061,
    "nonce": 446,
+   "succeeded": null,
    "to": "0x5c891d76584b46bC7F1E700169a76569Bb77d2Db",
    "transaction_hash": "0xbb3de66240fd1a20094f4653ada3d49dfc9f5a1c8843bdbd66855f4911f582b4",
    "transaction_index": 66,
@@ -50,6 +52,7 @@
   {
    "block_number": 19002939,
    "nonce": 447,
+   "succeeded": true,
    "to": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
    "transaction_hash": "0x8014308cf7c81493ef91522d745840ef1a06b67292f092c228a6fbacad5396d4",
    "transaction_index": 185,
@@ -58,6 +61,7 @@
   {
    "block_number": 19002951,
    "nonce": 448,
+   "succeeded": true,
    "to": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
    "transaction_hash": "0x1e5d66b1f7df71d11f694abd8b32028aaeff803c3d8eaa1af1e2e37d64d14379",
    "transaction_index": 890,
@@ -66,6 +70,7 @@
   {
    "block_number": 19002955,
    "nonce": 449,
+   "succeeded": true,
    "to": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
    "transaction_hash": "0x96500d96f088d411a2286bc923663f461590857bd660e05de92a3f81900b7a92",
    "transaction_index": 61,
@@ -74,6 +79,7 @@
   {
    "block_number": 19002973,
    "nonce": 450,
+   "succeeded": true,
    "to": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
    "transaction_hash": "0x42b616f61d9a0820046edb1853aa0b47f958defab6d587fa6fc03b4e5d1c1820",
    "transaction_index": 53,
@@ -82,6 +88,7 @@
   {
    "block_number": 19002974,
    "nonce": 451,
+   "succeeded": true,
    "to": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
    "transaction_hash": "0x6a03e200b9f675db69dd27ec0850a691851db2aaab221346478a0a9e52e8c7f2",
    "transaction_index": 74,
@@ -90,6 +97,7 @@
   {
    "block_number": 19003097,
    "nonce": 452,
+   "succeeded": true,
    "to": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
    "transaction_hash": "0x02cc88ca05ee64a5ec453ddd7283aadde13e27762a1a8aa8b95062b9c727e9e6",
    "transaction_index": 291,
@@ -98,6 +106,7 @@
   {
    "block_number": 19003116,
    "nonce": 453,
+   "succeeded": true,
    "to": "0xE4eDb277e41dc89aB076a1F049f4a3EfA700bCE8",
    "transaction_hash": "0x99b39361ff6162a47c69c366ffad95a6edc6b2099ce7537964608e95091ddade",
    "transaction_index": 485,
@@ -106,6 +115,7 @@
   {
    "block_number": 19011053,
    "nonce": 454,
+   "succeeded": true,
    "to": "0x7251FEbEABB01eC9dE53ECe7a96f1C951F886Dd2",
    "transaction_hash": "0x6b9ceb06097a2050dd80e92b899dda41adacd41a08285a60b4f1d42ace4e6112",
    "transaction_index": 54,

@@ -163,6 +163,9 @@ class NativeSend:
     block_number: int
     transaction_hash: str
     transaction_index: int
+    # Receipt status: False = reverted (the wallet chose this recipient, but no ETH moved),
+    # None = unknown (treated as executed, as before statuses were read).
+    succeeded: bool | None = None
 
     def as_transfer(self, wallet: str) -> TransferEvent:
         return TransferEvent(
@@ -195,13 +198,23 @@ def detect_poisoning(
     wallet = to_checksum_address(wallet)
     signer = _Signer(wallet_is_plain_eoa)
     ordered = sorted(
-        [*transfers, *(n.as_transfer(wallet) for n in native_sends if n.value > 0)],
+        [
+            *transfers,
+            *(
+                n.as_transfer(wallet)
+                for n in native_sends
+                if n.value > 0 and n.succeeded is not False
+            ),
+        ],
         key=lambda e: e.position,
     )
+    # A reverted ETH send still shows which recipient the wallet meant to pay, so it can be a
+    # reference; it is never evidence that funds reached a lookalike.
+    reverted = [n.as_transfer(wallet) for n in native_sends if n.value > 0 and n.succeeded is False]
 
     # 1. References: first nonzero outgoing send to each recipient, confirmed if wallet-signed.
     references: dict[str, tuple[TransferEvent, bool]] = {}
-    for e in ordered:
+    for e in sorted([*ordered, *reverted], key=lambda e: e.position):
         if e.sender != wallet or e.value == 0 or e.recipient in BURN_ADDRESSES | {wallet}:
             continue
         signed = signer.wallet_signed(e, wallet)

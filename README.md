@@ -66,6 +66,11 @@ All settings are environment variables (or `.env`) with the `CRYPTOGUARD_` prefi
   — `off` (default) or `shadow`. Shadow mode computes the experimental analyses from stored
   data for review only; they never create findings. They need the optional extra:
   `uv sync --extra analytics`.
+- `CRYPTOGUARD_ALLOWED_HOSTS` — hostnames the API answers to (default `127.0.0.1`,
+  `localhost`, `::1`); other `Host` headers are refused, which blocks DNS-rebinding attacks.
+  The API has no authentication and is meant for one local user.
+- `CRYPTOGUARD_OPERATION_LEASE_SECONDS` — lifetime (default 900) of the database lease that
+  makes snapshots per wallet and campaign runs single-flight across processes.
 - `CRYPTOGUARD_CAMPAIGN_ANALYSIS` — `off` (default) or `shadow`: groups poisoning attempts of
   all monitored wallets that share planting infrastructure ("potentially related poisoning
   activity"). Read-only context; never findings, never ownership claims.

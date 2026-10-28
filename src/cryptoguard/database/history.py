@@ -6,7 +6,7 @@ transition in a single transaction, so the timeline never shows half-applied sta
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -215,6 +215,7 @@ class HistoryRepository(ObservationRepository):
                 nonce=r.nonce,
                 to=r.to,
                 value=int(r.value),
+                succeeded=r.succeeded,
             )
             for r in reversed(rows)
         ]
@@ -226,9 +227,14 @@ class HistoryRepository(ObservationRepository):
         evaluation: RuleEvaluation,
         transfers: Sequence[TransferEvent] = (),
         wallet_transactions: Sequence[WalletTransaction] = (),
+        guard: Callable[[Session], None] | None = None,
     ) -> RecordedSnapshot:
+        """``guard`` runs first inside the write transaction (lease fencing: it raises to
+        abort the whole write if this worker no longer owns the operation)."""
         now = datetime.now(UTC)
         with self._sessions() as session, session.begin():
+            if guard is not None:
+                guard(session)
             existing = session.scalar(
                 select(WalletSnapshotRecord).where(
                     (WalletSnapshotRecord.chain_id == new.chain_id)

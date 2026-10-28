@@ -10,11 +10,12 @@ evidence and limits.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict
 from typing import Any, Literal
 
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from cryptoguard.blockchain.eip7702 import CodeKind
 from cryptoguard.blockchain.provider import DataSource
@@ -36,11 +37,13 @@ from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.config import Settings
 from cryptoguard.core.errors import (
     CampaignNotFoundError,
+    CampaignRunInProgressError,
     FeatureDisabledError,
     NoCampaignRunError,
 )
 from cryptoguard.database.campaigns import CampaignStore
 from cryptoguard.database.history import HistoryRepository
+from cryptoguard.database.leases import LeaseStore
 
 DISABLED = (
     "Campaign analysis is disabled. Set CRYPTOGUARD_CAMPAIGN_ANALYSIS=shadow to compute "
@@ -237,7 +240,35 @@ def collect_attempts(
 def run_analysis(
     repo: HistoryRepository, *, chain_id: int, data_source: DataSource, settings: Settings
 ) -> RunInfo:
+    """One run at a time per chain and data source, across threads and processes (database
+    lease, fenced at the final write)."""
     require_enabled(settings)
+    leases = LeaseStore(repo)
+    lease = leases.acquire(
+        f"campaign-run:{chain_id}:{data_source}", settings.operation_lease_seconds
+    )
+    if lease is None:
+        raise CampaignRunInProgressError("A campaign analysis is already running; retry shortly.")
+    try:
+        return _run_analysis(
+            repo,
+            chain_id=chain_id,
+            data_source=data_source,
+            settings=settings,
+            guard=lambda session: LeaseStore.check(session, lease),
+        )
+    finally:
+        leases.release(lease)
+
+
+def _run_analysis(
+    repo: HistoryRepository,
+    *,
+    chain_id: int,
+    data_source: DataSource,
+    settings: Settings,
+    guard: Callable[[Session], None],
+) -> RunInfo:
     attempts, cutoff, notes, wallets = collect_attempts(
         repo,
         chain_id=chain_id,
@@ -286,6 +317,7 @@ def run_analysis(
         result=analysis_to_dict(analysis),
         memberships=memberships,
         retained=settings.campaign_runs_retained,
+        guard=guard,
     )
     return _run_info(run_id, created, chain_id, cutoff, analysis.input_sha256, summary)
 

@@ -42,6 +42,7 @@
   {
    "block_number": 20712105,
    "nonce": 8,
+   "succeeded": null,
    "to": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
    "transaction_hash": "0x440082fa80710c4c45f245a475b92a9b889fea240d0c9c0be9504c5e1c2042b7",
    "transaction_index": 54,
