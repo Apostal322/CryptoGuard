@@ -91,6 +91,28 @@ class FakeNode:
         self.sent_txs: list[dict[str, Any]] = []  # full transactions, for nonce and block reads
         # Emulate a non-archive node: nonces older than this many blocks are unavailable.
         self.state_history: int | None = None
+        self.created_at: dict[str, int] = {}  # contract -> creation block (code absent before)
+        self.created_by_tx: dict[str, str] = {}  # creation tx hash -> contract address
+
+    def plant(
+        self, signer: str, token: str, transfers: list[tuple[str, str, int]], *, block: int
+    ) -> str:
+        """A transaction signed by ``signer`` that emits several Transfer logs (a batch)."""
+        tx_hash = self.send_native(signer, token, 0, block=block)
+        for i, (sender, recipient, value) in enumerate(transfers):
+            log = self.add_transfer_log(
+                token, sender, recipient, value, block=block, signer=signer, log_index=100 + i
+            )
+            log["transactionHash"] = tx_hash
+        return tx_hash
+
+    def deploy(self, deployer: str, contract: str, *, block: int) -> str:
+        tx_hash = self.send_native(deployer, "0x" + "00" * 20, 0, block=block)
+        self.sent_txs[-1]["to"] = None
+        self.created_at[contract.lower()] = block
+        self.created_by_tx[tx_hash] = contract.lower()
+        self.code.setdefault(contract.lower(), bytes.fromhex("6080604052"))
+        return tx_hash
 
     def send_native(self, sender: str, to: str, value: int, *, block: int) -> str:
         """Record a transaction signed by ``sender`` (nonces assigned in order)."""
@@ -257,7 +279,25 @@ class FakeNode:
         if method == "eth_getBalance":
             return hex(self.balances.get(params[0].lower(), 0))
         if method == "eth_getCode":
-            return "0x" + self.code.get(params[0].lower(), b"").hex()
+            address = params[0].lower()
+            created = self.created_at.get(address)
+            if (
+                created is not None
+                and params[1] not in ("latest",)
+                and int(params[1], 16) < created
+            ):
+                return "0x"
+            return "0x" + self.code.get(address, b"").hex()
+        if method == "eth_getTransactionReceipt":
+            tx_hash = params[0]
+            if tx_hash not in self.tx_senders:
+                return None
+            return {
+                "transactionHash": tx_hash,
+                "status": "0x1",
+                "contractAddress": self.created_by_tx.get(tx_hash),
+                "logs": [log for log in self.logs if log["transactionHash"] == tx_hash],
+            }
         if method == "eth_getLogs":
             return self._get_logs(params[0])
         if method == "eth_getTransactionByHash":

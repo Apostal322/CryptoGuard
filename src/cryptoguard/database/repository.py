@@ -18,6 +18,9 @@ from cryptoguard.database.models import (
     AddressObservation,
     ApprovalEventRecord,
     Base,
+    CampaignExpansionTaskRecord,
+    CampaignMembershipRecord,
+    CampaignRunRecord,
     FindingRecord,
     FindingTransitionRecord,
     TokenTransferRecord,
@@ -292,7 +295,13 @@ class ObservationRepository:
         events = delete(ApprovalEventRecord)
         transfers = delete(TokenTransferRecord)
         wallet_txs = delete(WalletTransactionRecord)
+        # Campaign runs are derived from many wallets: purging one wallet removes every run
+        # that mentions it, so no derived copy of its data outlives the purge.
+        run_ids = select(CampaignMembershipRecord.run_id).distinct()
+        tasks = delete(CampaignExpansionTaskRecord)
         if address is not None:
+            run_ids = run_ids.where(CampaignMembershipRecord.address == address)
+            tasks = tasks.where(CampaignExpansionTaskRecord.entity == address)
             transfers = transfers.where(TokenTransferRecord.wallet == address)
             wallet_txs = wallet_txs.where(WalletTransactionRecord.wallet == address)
             finding_ids = finding_ids.where(FindingRecord.address == address)
@@ -304,7 +313,16 @@ class ObservationRepository:
         removed = 0
         with self._sessions() as session, session.begin():
             # Children first, so foreign keys hold on databases that enforce them.
+            members = delete(CampaignMembershipRecord)
+            runs = delete(CampaignRunRecord)
+            if address is not None:
+                run_list = [int(r) for r in session.scalars(run_ids).all()]
+                members = members.where(CampaignMembershipRecord.run_id.in_(run_list))
+                runs = runs.where(CampaignRunRecord.id.in_(run_list))
             for statement in (
+                members,
+                runs,
+                tasks,
                 transitions,
                 findings,
                 snapshots,

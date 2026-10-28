@@ -142,6 +142,21 @@ class LogFilterRestrictedError(RpcError):
     code = "log_filter_restricted"
 
 
+class FeatureDisabledError(CryptoGuardError):
+    code = "feature_disabled"
+    http_status = 409
+
+
+class NoCampaignRunError(CryptoGuardError):
+    code = "no_campaign_run"
+    http_status = 404
+
+
+class CampaignNotFoundError(CryptoGuardError):
+    code = "campaign_not_found"
+    http_status = 404
+
+
 class ScanBudgetExceededError(CryptoGuardError):
     code = "scan_budget_exceeded"
     http_status = 422

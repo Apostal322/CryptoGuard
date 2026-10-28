@@ -504,6 +504,172 @@ def _background_command(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _campaign_command(args: argparse.Namespace, settings: Settings) -> int:
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from cryptoguard.campaigns import dataset
+
+    if args.campaign_command in ("analyze", "expand"):
+        return _campaign_product_command(args, settings)
+    if args.campaign_command == "evaluate":
+        from cryptoguard.campaigns.evaluate import render_report, run_campaign_evaluation
+
+        evaluation = run_campaign_evaluation()
+        if args.json:
+            Path(args.json).write_text(evaluation.model_dump_json(indent=1), encoding="utf-8")
+        report = render_report(evaluation)
+        if args.write_report:
+            Path(args.write_report).write_text(report, encoding="utf-8")
+            print(f"Wrote {args.write_report}")
+        else:
+            print(report)
+        return 0
+
+    from cryptoguard.blockchain.provider import build_rpc_provider
+    from cryptoguard.campaigns.expansion import (
+        ExpansionBudget,
+        ExpansionResult,
+        TaskOutcome,
+        expand,
+    )
+    from cryptoguard.core.config import validate_rpc_url
+
+    subjects = dataset.fixture_attempts()
+    attempts = [a for s in subjects for a in s.attempts]
+    cutoff = max(s.cutoff_block for s in subjects)
+    budget = ExpansionBudget(max_requests=args.max_requests, max_seconds=args.max_seconds)
+    path = dataset.expansion_path()
+    previous = dataset.load_expansion(path)
+    completed: dict[str, TaskOutcome] = {}
+    if previous is not None and previous[0].cutoff_block == cutoff:
+        completed = {o.task.task_id: o for o in previous[0].outcomes if o.status == "complete"}
+    rpc_settings = settings.model_copy(
+        update={"rpc_url": SecretStr(validate_rpc_url(args.rpc_url)), "rpc_max_concurrency": 2}
+    )
+
+    async def run() -> str:
+        provider = build_rpc_provider(rpc_settings)
+        done: list[TaskOutcome] = []
+        try:
+            header = await provider.get_block(cutoff)
+            meta = {
+                "recorded_at": datetime.now(UTC).isoformat(),
+                "recorded_with": provider.endpoint_display,
+                "cutoff_block_hash": header.hash,
+                "seed_attempts": sorted(a.attempt_id for a in attempts),
+                "subjects": {s.subject_id: s.fixture_sha256 for s in subjects},
+            }
+
+            def checkpoint(outcome: TaskOutcome) -> None:  # safe interruption: save as we go
+                done.append(outcome)
+                partial = ExpansionResult(
+                    "campaign-expansion/1",
+                    1,
+                    cutoff,
+                    budget,
+                    [*completed.values(), *done],
+                    0,
+                    0.0,
+                    "interrupted",
+                )
+                dataset.save_expansion(path, partial, meta)
+
+            result = await expand(
+                provider,
+                attempts,
+                chain_id=1,
+                cutoff_block=cutoff,
+                budget=budget,
+                completed=completed,
+                on_task=checkpoint,
+            )
+            dataset.save_expansion(path, result, meta)
+        finally:
+            await provider.aclose()
+        verified = len(result.attempts())
+        return (
+            f"{len(result.outcomes)} tasks, {result.requests} requests, {result.seconds:.0f}s, "
+            f"{len(result.candidates)} candidates ({verified} verified attempts), "
+            f"stopped: {result.stopped}. Wrote {path}"
+        )
+
+    print(asyncio.run(run()))
+    return 0
+
+
+def _campaign_product_command(args: argparse.Namespace, settings: Settings) -> int:
+    from cryptoguard.blockchain.provider import DataSource
+    from cryptoguard.campaigns.expansion import (
+        ExpansionBudget,
+        TaskOutcome,
+        expand,
+        outcome_to_dict,
+    )
+    from cryptoguard.database.campaigns import CampaignStore
+    from cryptoguard.database.repository import open_repository
+    from cryptoguard.services.campaigns import collect_attempts, require_enabled, run_analysis
+
+    require_enabled(settings)
+    repo = open_repository(settings.database_url)
+    source: DataSource = "demo_fixture" if settings.mode == "demo" else "rpc"
+    if args.campaign_command == "analyze":
+        info = run_analysis(repo, chain_id=settings.chain_id, data_source=source, settings=settings)
+        print(info.model_dump_json(indent=2))
+        return 0
+
+    provider = build_provider(settings)
+    if provider is None or source != "rpc":
+        print("error: expansion needs a configured RPC provider in real mode", file=sys.stderr)
+        return 1
+    store = CampaignStore(repo)
+    attempts, cutoff, _, _ = collect_attempts(
+        repo,
+        chain_id=settings.chain_id,
+        data_source=source,
+        history_limit=settings.transfer_history_limit,
+    )
+    from cryptoguard.campaigns.expansion import outcome_from_dict
+
+    completed = {
+        o.task.task_id: o
+        for o in (outcome_from_dict(p) for p in store.load_tasks(settings.chain_id, source))
+        if o.status == "complete"
+    }
+
+    def save(outcome: TaskOutcome) -> None:
+        store.save_task(
+            chain_id=settings.chain_id,
+            data_source=source,
+            task_id=outcome.task.task_id,
+            kind=outcome.task.kind,
+            entity=outcome.task.key,
+            seed_block=outcome.task.seed_block,
+            status=outcome.status,
+            payload=outcome_to_dict(outcome),
+        )
+
+    async def run() -> str:
+        try:
+            result = await expand(
+                provider,
+                attempts,
+                chain_id=settings.chain_id,
+                cutoff_block=cutoff,
+                budget=ExpansionBudget(
+                    max_requests=args.max_requests or settings.campaign_expansion_max_requests
+                ),
+                completed=completed,
+                on_task=save,
+            )
+        finally:
+            await provider.aclose()
+        return json.dumps(result.coverage(), indent=2)
+
+    print(asyncio.run(run()))
+    return 0
+
+
 async def _status(settings: Settings) -> dict[str, object]:
     provider = build_provider(settings)
     result: dict[str, object] = {
@@ -621,6 +787,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_run.add_argument("--no-scaling", action="store_true", help="skip the synthetic benchmark")
     p_run.add_argument("--analytics-json", metavar="PATH", help="write raw evaluation JSON here")
 
+    p_camp = sub.add_parser("campaigns", help="cross-wallet poisoning campaigns (experimental)")
+    camp_sub = p_camp.add_subparsers(dest="campaign_command", required=True)
+    p_rec = camp_sub.add_parser(
+        "record-expansion",
+        help="record a bounded expansion around the replay fixtures' attempts (resumable)",
+    )
+    p_rec.add_argument("--rpc-url", required=True, help="RPC with historical logs and state")
+    p_rec.add_argument("--max-requests", type=int, default=2_500)
+    p_rec.add_argument("--max-seconds", type=float, default=1_200)
+    camp_sub.add_parser(
+        "analyze", help="cluster stored poisoning attempts of monitored wallets (shadow mode)"
+    )
+    p_expand = camp_sub.add_parser(
+        "expand", help="budgeted expansion around stored attempts via the configured RPC"
+    )
+    p_expand.add_argument("--max-requests", type=int, default=None)
+    p_eval = camp_sub.add_parser("evaluate", help="evaluate campaign clustering offline")
+    p_eval.add_argument("--write-report", metavar="PATH")
+    p_eval.add_argument("--json", metavar="PATH", help="write raw evaluation JSON here")
+
     p_ack = sub.add_parser("ack", help="acknowledge a finding by id")
     p_ack.add_argument("finding_id")
 
@@ -733,6 +919,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == "replay":
             return _replay_command(args, settings)
+        if args.command == "campaigns":
+            return _campaign_command(args, settings)
 
         if args.command == "ack":
             from cryptoguard.database.repository import open_repository

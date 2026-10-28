@@ -526,3 +526,82 @@ export interface WalletAnalysis {
   structure: { status: AnalysisSectionStatus; features: Record<string, number | string | null>; notes: string[] };
   notes: string[];
 }
+
+// Experimental campaign analysis (shadow mode; off by default on the server).
+export interface CampaignRunInfo {
+  run_id: number;
+  created: boolean;
+  chain_id: number;
+  cutoff_block: number;
+  algorithm_version: string;
+  attempt_model_version: string;
+  input_sha256: string;
+  attempts: number;
+  clusters: number;
+  unclustered: number;
+  wallets_analysed: number;
+  expansion_tasks_used: number;
+  coverage: string[];
+  limitations: string[];
+  experimental: boolean;
+}
+
+export interface CampaignSummary {
+  campaign_id: string;
+  attempts: number;
+  targeted_wallets: number;
+  lookalikes: number;
+  signers: number;
+  first_block: number;
+  last_block: number;
+  structure: "shared_entity" | "multiply_connected" | "chained";
+  confidence: "directly_observed" | "strongly_supported" | "tentative" | "insufficient";
+  explanation: string;
+}
+
+export interface CampaignEvidence {
+  kind: string;
+  key: string;
+  statement: string;
+  strength: string;
+  attempts: number;
+  wallets: number;
+  lookalikes: number;
+  reason: string;
+  merges: boolean;
+}
+
+export interface CampaignAttempt {
+  attempt_id: string;
+  victim: string;
+  lookalike: string;
+  imitated: string | null;
+  event_type: string;
+  transaction_hash: string;
+  block_number: number;
+  log_index: number;
+  contract: string;
+  log_from: string;
+  log_to: string;
+  value: string;
+  signer: string | null;
+  source: string;
+  rule_id: string;
+}
+
+export interface CampaignDetail extends CampaignSummary {
+  evidence: CampaignEvidence[];
+  articulation_entities: string[];
+  articulation_attempts: string[];
+  members: CampaignAttempt[];
+  members_total: number;
+}
+
+export interface RelatedActivity {
+  run: CampaignRunInfo;
+  wallet: string;
+  status: "related_activity" | "attempts_without_links" | "no_attempts";
+  attempts_on_wallet: number;
+  campaigns: CampaignSummary[];
+  statement: string;
+}

@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     analysis_temporal: Literal["off", "shadow"] = "off"
     analysis_max_nodes: int = Field(default=2_000, ge=10, le=20_000)
 
+    # Cross-wallet poisoning campaign analysis (experimental). "off": endpoints refuse and
+    # nothing is computed. "shadow": candidate clusters are computed from stored data on
+    # request and stored as runs; they never create findings or change severities.
+    campaign_analysis: Literal["off", "shadow"] = "off"
+    campaign_max_attempts: int = Field(default=10_000, ge=10, le=200_000)
+    campaign_runs_retained: int = Field(default=20, ge=1, le=1_000)
+    campaign_expansion_max_requests: int = Field(default=600, ge=1, le=20_000)
+
     database_url: str = "sqlite:///./data/cryptoguard.db"
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]

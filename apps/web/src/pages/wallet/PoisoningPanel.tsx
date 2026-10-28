@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ApiError, api } from "../../api/client";
 import type { PoisoningCase, PoisoningReport } from "../../api/types";
 import { ScanForm, type ScanOptions } from "../../components/ScanForm";
+import { RelatedActivityPanel } from "./RelatedActivity";
 import {
   Badge,
   Callout,
@@ -139,6 +140,7 @@ export function PoisoningPanel({ address }: { address: string }) {
           </div>
         </Card>
       )}
+      <RelatedActivityPanel address={address} />
     </div>
   );
 }

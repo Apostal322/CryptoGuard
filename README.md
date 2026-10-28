@@ -35,6 +35,7 @@ it has no code path that signs or broadcasts transactions.
 | Web UI (`apps/web`): dashboard, wallet overview, permission inspector, security timeline, findings with evidence and acknowledgement, address-poisoning view, settings; demo/real labelling and loading, empty, partial-coverage and error states | Implemented |
 | Threat graph: typed edges (approved spender, holds token, delegates to, transfers in/out, resembles) built from stored observations, each with its evidence; only similarity edges are inferred; node and approval limits with an explicit summary node; interactive Cytoscape view plus an accessible list | Implemented |
 | Historical incident replay: publicly sourced manifests, recorded mainnet fixtures, offline point-in-time engine with leakage checks, generated [EVALUATION.md](EVALUATION.md), Replay page in the UI | Implemented (4 cases, plus 9 sampled background wallets) |
+| Cross-wallet poisoning campaign analysis: canonical attempts, planting-side relationship evidence (shared planting transaction, verified signer, lookalike), conservative clustering with hub and transitivity guards, budgeted resumable expansion around planting signers and lookalikes, read-only API and UI section ([CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md)) | Experimental, **off by default** (shadow mode): real cross-wallet links found, no earlier theft warning than the existing detector |
 | Network, structural and activity-rate analyses (graph propagation, spectral features, robust burst statistics) over stored observations, coverage-aware and point in time | Experimental, **off by default**: evaluated with no measurable gain over the existing detector; available in shadow mode only (see [DETECTION_METHODS.md](DETECTION_METHODS.md)) |
 | Wallet-signed transactions (incl. native-ETH payments) located by nonce search in snapshots and scans; used by the poisoning detector and the graph; degrades to explicit "unlocated" counts without archive state | Implemented |
 | Scheduled monitoring loop, native ETH *received*, NFT/Permit2 approvals, ML | Not yet |
@@ -65,6 +66,9 @@ All settings are environment variables (or `.env`) with the `CRYPTOGUARD_` prefi
   — `off` (default) or `shadow`. Shadow mode computes the experimental analyses from stored
   data for review only; they never create findings. They need the optional extra:
   `uv sync --extra analytics`.
+- `CRYPTOGUARD_CAMPAIGN_ANALYSIS` — `off` (default) or `shadow`: groups poisoning attempts of
+  all monitored wallets that share planting infrastructure ("potentially related poisoning
+  activity"). Read-only context; never findings, never ownership claims.
 
 ### RPC provider limitations
 
@@ -119,6 +123,13 @@ uv run --extra analytics cryptoguard replay run --analytics --write-report EVALU
 # Background wallets: seeded random sample, then record their fixtures
 uv run cryptoguard replay sample-background --rpc-url <RPC> --seed <n> --from-block <a> --to-block <b>
 uv run cryptoguard replay record-background --rpc-url <RPC>
+
+# Cross-wallet campaigns (CRYPTOGUARD_CAMPAIGN_ANALYSIS=shadow)
+uv run cryptoguard campaigns analyze                 # cluster stored attempts, no RPC calls
+uv run cryptoguard campaigns expand --max-requests 300   # budgeted, resumable, uses the RPC
+# Research: record expansion around the replay fixtures, then evaluate offline
+uv run cryptoguard campaigns record-expansion --rpc-url <archive-capable RPC>
+uv run --extra analytics cryptoguard campaigns evaluate --write-report CAMPAIGN_EVALUATION.md
 
 # Fictional fixtures, no RPC needed (output is labelled SIMULATED):
 uv run cryptoguard demo-addresses

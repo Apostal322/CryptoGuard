@@ -258,3 +258,67 @@ class WalletTransactionRecord(Base):
     value: Mapped[str] = mapped_column(String(78))
     data_source: Mapped[str] = mapped_column(String(32))
     ingested_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class CampaignRunRecord(Base):
+    """One experimental campaign analysis over stored data at a fixed cutoff.
+
+    ``result`` holds the attempts, clusters and evidence exactly as computed (JSON), keyed by
+    the input hash, so the same inputs never produce two runs and every run is reproducible.
+    Only the newest runs are retained (``CRYPTOGUARD_CAMPAIGN_RUNS_RETAINED``).
+    """
+
+    __tablename__ = "campaign_runs"
+    __table_args__ = (
+        UniqueConstraint("chain_id", "data_source", "input_sha256", name="uq_campaign_run_input"),
+        Index("ix_campaign_run_cutoff", "chain_id", "data_source", "cutoff_block"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chain_id: Mapped[int] = mapped_column(BigInteger)
+    data_source: Mapped[str] = mapped_column(String(32))
+    cutoff_block: Mapped[int] = mapped_column(BigInteger)
+    algorithm_version: Mapped[str] = mapped_column(String(64))
+    input_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class CampaignMembershipRecord(Base):
+    """Which wallets (as targets) and addresses appear in which cluster of a run; indexed
+    lookup for "related activity" without loading every run."""
+
+    __tablename__ = "campaign_memberships"
+    __table_args__ = (
+        UniqueConstraint("run_id", "cluster_id", "role", "address", name="uq_campaign_member"),
+        Index("ix_campaign_member_address", "address", "role"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("campaign_runs.id", ondelete="CASCADE"))
+    cluster_id: Mapped[str] = mapped_column(String(32))
+    role: Mapped[str] = mapped_column(String(16))  # target | lookalike | signer
+    address: Mapped[str] = mapped_column(String(42))
+
+
+class CampaignExpansionTaskRecord(Base):
+    """A completed (or failed) expansion task: the checkpoint that makes expansion resumable
+    and prevents refetching data already stored with provenance."""
+
+    __tablename__ = "campaign_expansion_tasks"
+    __table_args__ = (
+        UniqueConstraint("chain_id", "data_source", "task_id", name="uq_campaign_task"),
+        Index("ix_campaign_task_entity", "chain_id", "kind", "entity"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chain_id: Mapped[int] = mapped_column(BigInteger)
+    data_source: Mapped[str] = mapped_column(String(32))
+    task_id: Mapped[str] = mapped_column(String(66))
+    kind: Mapped[str] = mapped_column(String(32))
+    entity: Mapped[str] = mapped_column(String(66))
+    seed_block: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(16))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    recorded_at: Mapped[datetime] = mapped_column(UTCDateTime())

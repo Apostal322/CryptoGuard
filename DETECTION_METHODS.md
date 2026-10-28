@@ -304,6 +304,73 @@ unlabelled), all methods point in time per bin.
   subjects), confirming burstiness, but it was not turned into a detector: the simpler
   temporal statistics already add nothing here.
 
+## Cross-wallet poisoning campaigns (`campaigns/`, `campaign-cluster/1`): off by default
+
+With `CRYPTOGUARD_CAMPAIGN_ANALYSIS=shadow`, CryptoGuard groups poisoning attempts on
+different monitored wallets that share planting infrastructure and shows them as
+"potentially related poisoning activity". It never creates a finding, changes a severity
+or calls any address malicious; tested by taking the same snapshots with the setting off
+and in shadow mode.
+
+**Attempt.** One planting event (spoofed outgoing transfer, zero-value transfer, unsolicited
+incoming transfer) that the existing detector attributes to a lookalike for that wallet.
+The transaction signer (`tx.from`, read from the chain) is kept apart from the Transfer
+log's `from`/`to` and from the emitting contract; a Transfer log is never treated as proof
+that assets moved. Identity: keccak(chain | tx hash | log index | victim | lookalike).
+
+**Relationships** (two attempts share an entity on the planting side; the victim and the
+imitated payee never link):
+
+| Shared entity | Strength | Merges |
+|---|---|---|
+| planting transaction | directly observed | yes |
+| lookalike address | strongly supported | yes |
+| verified planting signer (≤ 25 distinct lookalikes) | strongly supported | yes |
+| narrow token contract, contract deployer | tentative | no (context) |
+| popular token contract (USDT, USDC, WETH, DAI, WBTC), hub signer, block proximity | insufficient | no |
+
+"Strongly supported" describes the evidence of shared infrastructure, not of one operator:
+a planting key could belong to a service used by several attackers.
+
+**Clusters.** Connected components of attempts over merging links. Each cluster states
+its structure: `shared_entity` (every member shares one entity), `multiply_connected`, or
+`chained` (an attempt or entity is an articulation point; members on either side may share
+nothing directly), and chained clusters are at most *tentative*. IDs hash the exact
+membership, so a changed cluster gets a new id; lineage (grown, split, merged) is reported.
+
+**Expansion** (`campaigns expand`, budgeted and resumable): the planting signer's own
+transactions near a known attempt (nonce search, then receipts), Transfer logs to and from
+the lookalike around it, and the creator of narrow token contracts (code bisection; only
+top-level deployments). An expanded event becomes an attempt only if the candidate target
+had just paid an address the lookalike resembles (within 100 blocks, detector
+thresholds); everything else stays an unverified candidate. Funding sources and
+factory-created contracts are not visible over standard JSON-RPC and are reported as not
+attempted.
+
+**Point in time.** Historical analyses re-run the detector at the cutoff (a planting event
+can qualify only after a later payment), use expansion tasks only once their seed entity
+was recognised, and ignore deployers created later. Each rule has a regression test.
+
+**Evaluation** ([CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md); 4 incidents, 9 background
+wallets, one recorded expansion of 2,382 RPC requests). There is no independent label of
+common control, so no precision or recall is claimed. Findings:
+
+- Real cross-wallet links exist. Monitored wallets alone give 4 multi-wallet clusters,
+  linked by verified planting signers; the expansion found 140 verified attempts on 100
+  further wallets and raises that to 9. 13 planting transactions targeted several wallets
+  at once.
+- 23 of 54 attempts on monitored wallets used a planting signer already seen on another
+  wallet earlier, including the plantings of two eventual theft recipients (each signer was
+  already linked to 15 other targeted wallets).
+- It never warned earlier than the existing detector: before 3 of the 4 thefts the
+  recipient's cluster spanned several wallets, but only from the block of the detector's
+  own warning or later.
+- Guards matter: merging on every shared entity grows the largest cluster from 31 attempts
+  on 12 wallets to 58 on 34; block proximity alone would add 95 unsupported links.
+- Diffusion rankings agree with hop distance, shared-neighbour counts and PageRank (4.3–5
+  of the top 5), and the spectral gap only restates what articulation points show; neither
+  is used in clustering.
+
 ## Finality
 
 `finalized` if the observed block number ≤ the provider's `finalized` block, otherwise

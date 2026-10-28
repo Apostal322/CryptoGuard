@@ -51,6 +51,14 @@ SQLAlchemy or the CLI, so detectors added later can be run, tested and replayed 
 | `analytics/temporal.py` | Coverage-aware activity bins, robust-z and EWMA burst statistics |
 | `analytics/hawkes.py` | Exponential-kernel Hawkes MLE (evaluation only) |
 | `services/analysis.py` | Shadow-mode wallet analysis from stored data; never produces findings |
+| `campaigns/attempts.py` | Canonical poisoning attempts (one per planting event per victim), deterministic ids |
+| `campaigns/relations.py` | Planting-side shared entities, strength categories, common-contract and hub guards |
+| `campaigns/cluster.py` | Conservative clustering (union over strong links), structure/articulation, stable ids, lineage |
+| `campaigns/graph.py` | Typed campaign multigraph with attempts as nodes; sparse projection for diffusion |
+| `campaigns/expansion.py` | Budgeted, checkpointed expansion around signers, lookalikes and contracts |
+| `campaigns/dataset.py`, `evaluate.py`, `report.py` | Research dataset (fixtures + recorded expansion), offline evaluation, `CAMPAIGN_EVALUATION.md` |
+| `database/campaigns.py` | Campaign runs, memberships and expansion checkpoints |
+| `services/campaigns.py`, `api/campaign_routes.py` | Shadow-mode runs over stored data and read-only campaign endpoints |
 | `services/demo.py` | Demo provider over fictional, deterministic fixtures |
 | `services/providers.py` | Mode → provider selection; no silent fallback |
 | `database/` | ORM models, idempotent observation repository |
@@ -151,6 +159,23 @@ cannot leak into detection; each checkpoint asserts that no input is newer than 
 A warning counts as early only if it appears at a block before the harmful transaction; a
 finding that needs the harmful transfer itself is reported as post-incident classification.
 
+## Cross-wallet campaigns (`campaigns/`, experimental)
+
+Decision record:
+
+| Decision | Rationale |
+|---|---|
+| Attempts derived from the existing poisoning detector, not a second detector | One definition of "poisoning attempt"; campaign analysis cannot drift from production findings. |
+| Attempts are graph nodes; links only through planting-side entities | Avoids inventing address-to-address relationships, and stops anyone from pulling an innocent wallet into a cluster by sending it tokens (victims never link). |
+| Union over strong links + articulation analysis, not community detection | Simplest rule whose every merge can be shown; transitive (chained) groups are labelled tentative instead of hidden. |
+| Expansion reuses `scan_logs`, `locate_wallet_transactions`, receipts and code reads | No new ingestion pipeline or indexer; budgets and failure classification already exist. |
+| Runs stored as JSON keyed by input hash; tasks as checkpoints | Reproducible, idempotent, resumable; no message broker or job queue needed at this scale. |
+| Point in time by re-running the detector at each cutoff | Filtering final attempts by block leaks: a planting event can qualify only after a later payment (found as a bug during evaluation; regression-tested). |
+
+Flow: stored wallet observations → `extract_attempts` (per wallet, at its latest snapshot)
+→ + verified attempts from stored expansion tasks usable at the cutoff → `cluster_attempts`
+→ `campaign_runs`. Nothing feeds back into `run_detectors` or the finding lifecycle.
+
 ## Storage
 
 `address_observations` stores each observation with block number, block hash, block
@@ -166,6 +191,12 @@ severity, confidence and evidence; `finding_transitions` is the append-only audi
 log index) with the transaction signer when known. `wallet_transactions` holds the wallet's
 own signed transactions (unique per chain, wallet, tx hash, block hash); snapshot state
 (`wallet-snapshot/2`) records the wallet nonce so the next snapshot starts from it.
+`campaign_runs` (unique per chain, data source, input hash) stores each experimental campaign
+run's attempts and clusters as JSON with its cutoff and algorithm version; only the newest
+runs are kept. `campaign_memberships` indexes which addresses (targets, lookalikes, signers)
+appear in which cluster; purging a wallet deletes every run that mentions it.
+`campaign_expansion_tasks` holds expansion task outcomes (unique per task id), the checkpoint
+that makes expansion resumable without refetching.
 All times are UTC. Schema creation currently uses
 `create_all`; Alembic migrations must be introduced before the first schema change.
 
