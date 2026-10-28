@@ -74,7 +74,7 @@ Each has a regression test ([RELEASE_AUDIT.md](RELEASE_AUDIT.md)):
 
 ## Verification
 
-GitHub Actions on the release commit: backend (402 tests, lint, types) on Windows and Ubuntu
+GitHub Actions on the release commit: backend (403 tests, lint, types) on Windows and Ubuntu
 with Python 3.12 and on Ubuntu with 3.13; frontend (52 tests, typecheck, build) on both;
 browser end-to-end tests (27, headless Chromium, real API against a fictional test chain) on
 Ubuntu; wheel and sdist built, inspected and clean-installed (core and `analytics` extra) on
