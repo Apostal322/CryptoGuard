@@ -1,14 +1,22 @@
 version: 2
+# A cooldown keeps brand-new releases (the window in which compromised versions are usually
+# caught and yanked) out of update proposals.
 updates:
   - package-ecosystem: uv
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: npm
     directory: /apps/web
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7

@@ -26,8 +26,8 @@ Step "ruff check" { uv run ruff check . }
 Step "ruff format --check" { uv run ruff format --check . }
 Step "mypy" { uv run mypy src }
 Step "pytest" { uv run pytest -q }
-Step "uv build" { uv build --out-dir dist }
-Step "inspect dist" { uv run python scripts/inspect_dist.py dist }
+Step "uv build" { Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue; uv build --out-dir dist }
+Step "inspect dist" { uv run --no-project python scripts/inspect_dist.py dist }
 Push-Location apps/web
 try {
     Step "npm ci" { npm ci }

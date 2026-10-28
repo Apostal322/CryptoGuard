@@ -61,4 +61,13 @@ P2 = later work. Every "fixed" item has a regression test (named).
 | 19 | P2 | Mobile (375 px) timeline scrolled sideways: unbreakable full addresses in finding titles (E2E layout check). | Titles wrap. | `layout.spec.ts` |
 | 20 | P2 | Stale UI text: dashboard said native ETH is not analyzed (sent ETH is); poisoning check described ERC-20 only. Snapshot button stretched across the card. Campaign explanation garbled. | Text and layout fixed. | E2E journeys, screenshots |
 | 21 | P2 | Flaky lease test: a 1 s lease could expire during process teardown on a loaded machine (one failure in a 320 s run). | Asserts against the lease's real expiry. | `test_leases.py` |
-| 22 | P2 | All 12 GitHub Actions references are tag-pinned (`zizmor` `unpinned-uses`). | Open: pin to SHAs before accepting outside contributions (docs/RELEASING.md). | — |
+| 22 | P2 | All 12 GitHub Actions references are tag-pinned (`zizmor` `unpinned-uses`). | Fixed in the GitHub deployment phase (below). | `zizmor --persona=auditor`: no findings |
+
+## GitHub deployment phase (private repository `Apostal322/CryptoGuard`)
+
+| # | Pri | Finding (how found) | Fix | Regression test |
+|---|---|---|---|---|
+| 23 | P1 | **A local file leaked into the sdist.** `uv build` on the development machine shipped the untracked `.claude/settings.local.json` (local tool permissions): hatchling honours the repository's `.gitignore` but not a developer's global excludes file. Found by `scripts/inspect_dist.py` during the clean-install check. No release had been built from it. | Explicit sdist excludes in `pyproject.toml`; the inspector now fails on any sdist file git does not track. | `scripts/inspect_dist.py` (CI package job, both OSes) |
+| 24 | P2 | Actions tag-pinned; Dependabot without cooldown; `pip-audit` and uv unpinned in CI. | Every action pinned to a full commit SHA, each resolved from the upstream release tag through the REST API and `git ls-remote` (both agreed; all four commits signed): checkout v7.0.1, setup-node v7.1.0, upload-artifact v7.0.2, setup-uv v10.3.2. 7-day Dependabot cooldown; `pip-audit==2.10.1`, uv 0.13.1. A tag trigger was tried and removed (cache-poisoning exposure of release builds); the artifact-producing package job uses no cache. | `zizmor 1.31.1 --persona=auditor`: no findings; actionlint, schema validation |
+| 25 | P2 | `scripts/check.sh` was not executable in git (mode 644), and both check scripts failed on a stale `dist/`. | Mode 755; `dist/` cleared before building; shellcheck in CI. | CI audit job |
+| 26 | P2 | The CI clean-install smoke test covered only `--help` and `replay run` on Ubuntu. | `scripts/smoke_install.py`: import location outside the checkout, CLI, replay leads, demo API (health, status, Host and content-type refusals, snapshot), analytics `unavailable` without the extra and both offline evaluations with it; Windows and Ubuntu. | CI package job |

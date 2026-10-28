@@ -11,6 +11,46 @@ it has no code path that signs or broadcasts transactions.
 > [CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md). Release status:
 > [RELEASE_CANDIDATE_REPORT.md](RELEASE_CANDIDATE_REPORT.md).
 
+| Security finding with evidence | Security timeline |
+|---|---|
+| ![A CG-POI-003 address-poisoning finding with its evidence and history](docs/screenshots/security-finding.png) | ![Three snapshots: baseline, poisoning warning, escalation](docs/screenshots/security-timeline.png) |
+
+*Screenshots from the browser E2E suite: the real frontend and API, connected to a
+**fictional** test chain. Every address, transaction and block in them is made up (each
+image carries a banner). More in [docs/screenshots](docs/screenshots/README.md).*
+
+## How it works
+
+```
+Ethereum JSON-RPC (your provider) ──► hardened RPC client (chain check, block pinning, budgets)
+        │
+        ▼
+services: inspection · approvals · transfers · wallet-signed txs (nonce search) · snapshots
+        │                                         │
+        ▼                                         ▼
+pure detectors + versioned rules ──► findings with evidence, lifecycle, timeline (SQLite)
+        │
+        ├─► FastAPI /api/v1 (local, read-only) ──► React UI (apps/web)
+        └─► CLI; offline incident replay from recorded fixtures (no RPC)
+```
+
+Everything shown is derived from observations at a named block; a finding carries the
+transactions and state reads that support it. Experimental analyses (graph, spectral,
+temporal, cross-wallet campaigns) run only in *shadow mode* and never create findings.
+Details: [ARCHITECTURE.md](ARCHITECTURE.md), [DETECTION_METHODS.md](DETECTION_METHODS.md).
+
+## Historical evaluation at a glance
+
+Four recorded mainnet address-poisoning thefts are replayed offline at every block before the
+theft, seeing only data available at that block ([EVALUATION.md](EVALUATION.md)). With the
+wallet's own signed transactions visible, the detector warned on the address that later
+received the funds **367, 42, 113 and 13,057 blocks** before the theft (about 74 min, 8 min,
+22 min and 44 h). With ERC-20 data alone, two of the four were not detected. Four cases are
+case studies, not an accuracy estimate: no detection rate, false-positive rate or
+generalization is claimed. Cross-wallet campaign analysis found real shared planting
+infrastructure across wallets, but no earlier warning than the existing detector and no
+evidence of common ownership ([CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md)).
+
 ## What works today
 
 | Capability | Status |
@@ -52,7 +92,7 @@ not been run yet; the Bash commands below are unverified there.
 
 ```powershell
 # Windows PowerShell (verified)
-git clone <repo> cryptoguard; cd cryptoguard
+git clone https://github.com/Apostal322/CryptoGuard.git cryptoguard; cd cryptoguard
 uv sync                          # backend; add --extra analytics for the experimental analyses
 uv run cryptoguard serve --demo  # API on http://127.0.0.1:8000 with fictional demo data
 # second terminal:
@@ -61,7 +101,7 @@ cd apps/web; npm ci; npm run dev # UI on http://127.0.0.1:3000
 
 ```bash
 # Linux / macOS (unverified)
-git clone <repo> cryptoguard && cd cryptoguard
+git clone https://github.com/Apostal322/CryptoGuard.git cryptoguard && cd cryptoguard
 uv sync
 uv run cryptoguard serve --demo &
 cd apps/web && npm ci && npm run dev
@@ -248,6 +288,33 @@ $env:CRYPTOGUARD_LIVE_RPC_URL = "https://ethereum-rpc.publicnode.com"; uv run py
 ```
 
 On Linux/macOS, `scripts/check.sh` is the equivalent (not yet run on Linux).
+
+## Security model
+
+- **Read-only.** No private keys, seed phrases or signatures are ever requested; there is no
+  code path that signs or broadcasts a transaction.
+- **Local, single user.** The API binds to `127.0.0.1` and has no authentication. It refuses
+  foreign `Host` headers (DNS rebinding), foreign `Origin`s and non-JSON POSTs (CSRF), and
+  limits body size and request rate. Expose it only behind an authenticating proxy.
+- **Untrusted chain data.** Token names and symbols are rendered as text, never HTML; the RPC
+  URL comes only from operator configuration and is redacted everywhere it is shown.
+- **Consistency.** Snapshots per wallet and campaign runs are single-flight across processes
+  (database leases with fencing); schema changes are versioned, transactional migrations.
+
+See [SECURITY.md](SECURITY.md) for reporting and the threat model.
+
+## Limitations
+
+- Standard JSON-RPC cannot list all of an address's activity: native ETH *received*,
+  internal transfers and funding sources are not visible; approval and transfer scans cover
+  the block window they report.
+- Non-archive providers lack historical state; affected results say what was not covered.
+- Detection is evaluated on four incidents only. It will miss attacks it has no rule for, and
+  a quiet result is never a safety verdict.
+- The experimental analyses showed no gain over the existing detector and stay off by
+  default; campaign groups are candidate links, never attribution.
+- Tested on SQLite. PostgreSQL is supported through SQLAlchemy but has not been tested.
+- Not independently audited.
 
 ## Roadmap
 

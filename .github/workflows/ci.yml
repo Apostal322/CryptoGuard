@@ -4,37 +4,48 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Read-only token everywhere; no job needs secrets, and none runs on pull_request_target.
 permissions:
   contents: read
 
-# One run per branch or PR; a newer push cancels the older run.
+# One run per ref. A newer push to a pull request cancels its older run; runs on main always
+# finish, so every commit there keeps a complete result.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Actions are pinned to major-version tags and kept current by Dependabot
-# (.github/dependabot.yml). Pinning to commit SHAs is recommended before accepting
-# outside contributions; see RELEASE_CANDIDATE_REPORT.md.
+# Third-party actions are pinned to full commit SHAs (verified against the upstream tag via
+# the REST API and `git ls-remote`); the comment names the release. The package job, whose
+# distributions become release assets, uses no dependency cache. Tags do not trigger CI: a
+# release tag points at a main commit whose complete run passed (docs/RELEASING.md). Dependabot (.github/dependabot.yml) proposes updates. uv itself is
+# pinned to the version that produced uv.lock.
 
 jobs:
   backend:
-    name: backend (${{ matrix.os }})
+    name: backend (${{ matrix.os }}, Python ${{ matrix.python }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        python: ["3.12"]
+        include:
+          - os: ubuntu-latest
+            python: "3.13"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      UV_PYTHON: ${{ matrix.python }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: "0.13.1"
           enable-cache: true
-      - name: Install (locked; Python from .python-version)
+      - name: Install (locked)
         run: uv sync --locked
       - name: Lint
         run: uv run ruff check .
@@ -57,10 +68,10 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -79,13 +90,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: "0.13.1"
           enable-cache: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -101,49 +113,78 @@ jobs:
       - name: End-to-end tests (real backend + production build, fictional test chain)
         working-directory: apps/web
         run: npm run e2e
-      - name: Upload report on failure
+      - name: Upload traces and report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
+          # Traces, screenshots and the HTML report only; the test databases are temporary
+          # files outside these folders and the test chain holds no secrets.
           path: |
             apps/web/e2e-report
             apps/web/e2e-results
           retention-days: 7
 
   package:
-    name: package (build, inspect, clean install)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: package (${{ matrix.os }}; build, inspect, clean install)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.1"
+          enable-cache: false
       - name: Build wheel and sdist
         run: uv build
       - name: Inspect artifacts
         run: uv run --no-project python scripts/inspect_dist.py dist
-      - name: Install the wheel into a clean venv and smoke-test it
+      - name: Clean install, core (no numpy/scipy), outside the checkout
         run: |
-          uv venv /tmp/cg-venv
-          uv pip install --python /tmp/cg-venv/bin/python dist/*.whl
-          cd /tmp
-          /tmp/cg-venv/bin/cryptoguard --help
-          /tmp/cg-venv/bin/cryptoguard replay run
+          uv venv --python 3.12 "$RUNNER_TEMP/cg-core"
+          uv pip install --python "$RUNNER_TEMP/cg-core" dist/*.whl
+          uv run --no-project python scripts/smoke_install.py --venv "$RUNNER_TEMP/cg-core"
+      - name: Clean install with the analytics extra
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/cg-analytics"
+          wheel=$(ls dist/*.whl)
+          uv pip install --python "$RUNNER_TEMP/cg-analytics" "${wheel}[analytics]"
+          uv run --no-project python scripts/smoke_install.py --venv "$RUNNER_TEMP/cg-analytics" --analytics
+      - name: Keep the distributions
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
 
   audit:
+    name: dependency audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.1"
       - name: Python dependency vulnerability scan
         run: |
-          uv export --locked --no-hashes --all-extras --all-groups --no-emit-project --format requirements-txt > requirements.txt
-          uvx pip-audit -r requirements.txt
+          uv export --locked --no-hashes --all-extras --all-groups --no-emit-project --format requirements-txt > "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit==2.10.1 -r "$RUNNER_TEMP/requirements.txt"
+      - name: Shell script lint (scripts/check.sh)
+        run: shellcheck scripts/check.sh
       - name: npm dependency vulnerability scan
         working-directory: apps/web
         run: npm audit --audit-level=high

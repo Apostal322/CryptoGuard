@@ -5,6 +5,7 @@ Usage: python scripts/inspect_dist.py dist   (exit code 1 on any problem)
 
 from __future__ import annotations
 
+import subprocess
 import sys
 import tarfile
 import zipfile
@@ -41,6 +42,20 @@ def forbidden(name: str) -> bool:
     return any(part in name or name.endswith(part) for part in FORBIDDEN)
 
 
+def tracked_files() -> set[str] | None:
+    """Files git tracks here, or None outside a git checkout (e.g. an unpacked sdist)."""
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "-z"],  # noqa: S607
+            capture_output=True,
+            check=True,
+            cwd=Path(__file__).resolve().parent.parent,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return {name for name in out.decode().split("\0") if name}
+
+
 def main(directory: str) -> int:
     dist = Path(directory)
     problems: list[str] = []
@@ -64,6 +79,14 @@ def main(directory: str) -> int:
             problems += [f"sdist: forbidden {n}" for n in names if forbidden(n)]
             if not any(n.endswith("/LICENSE") for n in names):
                 problems.append("sdist: LICENSE missing")
+            # Anything that is not a tracked file (an untracked local file hidden only by a
+            # global excludes file, say) must not ship.
+            tracked = tracked_files()
+            if tracked is not None:
+                files = {m.name.split("/", 1)[1] for m in t.getmembers() if m.isfile()}
+                problems += [
+                    f"sdist: untracked file {n}" for n in sorted(files - tracked) if n != "PKG-INFO"
+                ]
             print(f"{sdist.name}: {len(names)} files")
     for p in problems:
         print("PROBLEM:", p)

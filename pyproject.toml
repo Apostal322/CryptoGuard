@@ -42,6 +42,20 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/cryptoguard"]
 
+# Hatchling honours the repository's .gitignore but not a developer's global excludes file,
+# so local tool and data files are excluded explicitly (scripts/inspect_dist.py checks).
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.claude",
+    "/.vscode",
+    "/.idea",
+    "/data",
+    "/.env",
+    "*.db",
+    "*.sqlite",
+    "*.sqlite3",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

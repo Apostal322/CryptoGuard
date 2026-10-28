@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Local equivalent of .github/workflows/ci.yml (Linux/macOS). Exits non-zero on the first
 # failing step. Usage: scripts/check.sh [--skip-e2e]
-# NOTE: written for Linux CI parity but NOT yet run on Linux (only Windows was available).
+# CI runs the same steps as separate jobs and checks this script with shellcheck.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -13,8 +13,9 @@ step "ruff check" uv run ruff check .
 step "ruff format --check" uv run ruff format --check .
 step "mypy" uv run mypy src
 step "pytest" uv run pytest -q
+rm -rf dist
 step "uv build" uv build --out-dir dist
-step "inspect dist" uv run python scripts/inspect_dist.py dist
+step "inspect dist" uv run --no-project python scripts/inspect_dist.py dist
 cd apps/web
 step "npm ci" npm ci
 step "typecheck" npm run typecheck
