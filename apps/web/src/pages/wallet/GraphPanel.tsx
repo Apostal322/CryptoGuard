@@ -44,7 +44,7 @@ function NodeDetail({ node, graph }: { node: GraphNode; graph: WalletGraph }) {
           {node.findings.map((f) => (
             <li key={f.finding_id} className="rounded-lg bg-surface-2 px-3 py-2">
               <SeverityBadges severity={f.severity} confidence={f.confidence} />
-              <p className="mt-1">{f.title}</p>
+              <p className="mt-1 [overflow-wrap:anywhere]">{f.title}</p>
               <p className="text-xs text-faint">
                 {f.rule_id} · {f.status}
               </p>

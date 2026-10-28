@@ -23,8 +23,14 @@ async function noHorizontalOverflow(page: import("@playwright/test").Page, view:
   const { scroll, width, culprits } = await page.evaluate(() => {
     const width = window.innerWidth;
     // Innermost elements that stick out on the right, to say *what* overflows.
+    const clipped = (el: Element) => {
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        if (["auto", "scroll", "hidden", "clip"].includes(getComputedStyle(p).overflowX)) return true;
+      }
+      return false;
+    };
     const culprits = [...document.querySelectorAll("body *")]
-      .filter((el) => el.getBoundingClientRect().right > width + 1)
+      .filter((el) => el.getBoundingClientRect().right > width + 1 && !clipped(el))
       .filter((el) => ![...el.children].some((c) => c.getBoundingClientRect().right > width + 1))
       .slice(0, 5)
       .map((el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80));
@@ -45,23 +51,34 @@ const views = (s: Scenarios) =>
     ["campaign", `/wallet/${s.campaign[0]}?tab=poisoning`],
   ] as const;
 
-for (const viewport of [
-  { name: "desktop", width: 1280, height: 900 },
-  { name: "mobile", width: 375, height: 812 },
-  // The narrowest common phone. Also catches overflow that only wider fonts cause at 375 px
-  // (Linux's DejaVu Sans overflowed the header where Windows' Segoe UI still fitted).
-  { name: "small mobile", width: 320, height: 640 },
-]) {
-  test(`no sideways scrolling on any main view (${viewport.name})`, async ({ page, scenarios }) => {
-    const s = await scenarios("shadow");
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    for (const [view, path] of views(s)) {
-      await page.goto(uiUrl("shadow", path));
-      await page.waitForLoadState("networkidle");
-      await noHorizontalOverflow(page, view);
-    }
-  });
-}
+// Overflow depends on font metrics: Linux's DejaVu Sans overflowed views at 375 px that fitted
+// with Windows' Segoe UI. "wide font" forces Verdana (DejaVu Sans where Verdana is missing; the
+// two share Bitstream Vera's wide metrics), so every platform checks the wide case. 320 px is
+// the narrowest common phone.
+test.describe("no sideways scrolling", () => {
+  // Only so the wide-font style can be injected; the app's own CSP is tested elsewhere.
+  test.use({ bypassCSP: true });
+
+  for (const viewport of [
+    { name: "desktop", width: 1280, height: 900, wideFont: false },
+    { name: "mobile", width: 375, height: 812, wideFont: false },
+    { name: "small mobile", width: 320, height: 640, wideFont: false },
+    { name: "mobile, wide font", width: 375, height: 812, wideFont: true },
+  ]) {
+    test(`on any main view (${viewport.name})`, async ({ page, scenarios }) => {
+      const s = await scenarios("shadow");
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      for (const [view, path] of views(s)) {
+        await page.goto(uiUrl("shadow", path));
+        if (viewport.wideFont) {
+          await page.addStyleTag({ content: `* { font-family: Verdana, "DejaVu Sans", sans-serif !important; }` });
+        }
+        await page.waitForLoadState("networkidle");
+        await noHorizontalOverflow(page, view);
+      }
+    });
+  }
+});
 
 test("keyboard: search field, tabs with arrow keys, visible focus", async ({ page, scenarios }) => {
   const s = await scenarios("default");

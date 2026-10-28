@@ -114,7 +114,8 @@ export function FindingItem({ finding, chainId, onChanged }: { finding: FindingV
           <Badge>{humanize(finding.status)}</Badge>
           {finding.simulated && <SimulatedBadge simulated />}
         </span>
-        <span className="text-sm font-medium">{finding.title}</span>
+        {/* Titles carry full 42-character addresses: let them wrap instead of widening the page. */}
+        <span className="max-w-full text-sm font-medium [overflow-wrap:anywhere]">{finding.title}</span>
         <span className="text-xs text-muted">
           {humanize(finding.category)} · first seen block {finding.first_seen_block.toLocaleString("en-US")} · last
           seen block {finding.last_seen_block.toLocaleString("en-US")}

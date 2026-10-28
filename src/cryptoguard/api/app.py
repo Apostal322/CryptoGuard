@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -44,6 +45,7 @@ from cryptoguard.core.config import Settings
 from cryptoguard.core.errors import CryptoGuardError, UnsupportedChainError
 from cryptoguard.database.history import HistoryRepository
 from cryptoguard.database.repository import open_repository
+from cryptoguard.services.analysis import warm_up
 from cryptoguard.services.approvals import (
     APPROVAL_SCAN_OBSERVATION_TYPE,
     ApprovalScanReport,
@@ -263,6 +265,13 @@ def create_app(
         repo = repository or open_repository(settings.database_url)
         provider = provider_factory(settings)
         app.state.cryptoguard = AppState(settings, chain, provider, repo)
+        # Before the server accepts requests, so readiness includes it (no-op by default).
+        started = time.perf_counter()
+        if await asyncio.to_thread(warm_up, settings):
+            logger.info(
+                "experimental analysis libraries loaded",
+                extra={"ctx": {"seconds": round(time.perf_counter() - started, 2)}},
+            )
         logger.info(
             "cryptoguard api started",
             extra={

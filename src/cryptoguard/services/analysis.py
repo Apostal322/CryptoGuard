@@ -9,6 +9,7 @@ statement means the wallet is safe.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from typing import Literal
 
@@ -110,6 +111,43 @@ def _available() -> bool:
 
 
 UNAVAILABLE = "The optional analytics dependencies (numpy, scipy) are not installed."
+
+
+def analysis_enabled(settings: Settings) -> bool:
+    """Whether any experimental analysis is in shadow mode."""
+    return "shadow" in (
+        settings.analysis_graph,
+        settings.analysis_spectral,
+        settings.analysis_temporal,
+    )
+
+
+def warm_up(settings: Settings) -> bool:
+    """Import the numerical libraries ahead of the first request when an analysis is enabled.
+
+    The analyses import NumPy/SciPy lazily, so with everything ``off`` (the default) they
+    cost nothing. Once enabled, the first request would otherwise pay a cold import of
+    seconds (measured 8.5 s on a busy Windows machine against 1.5 s warm). Returns whether
+    the libraries were loaded.
+    """
+    if not analysis_enabled(settings) or not _available():
+        return False
+    for module in _WARM_MODULES:
+        importlib.import_module(module)
+    return True
+
+
+# Everything the analyses import lazily, inside their functions.
+_WARM_MODULES = (
+    "scipy.sparse",
+    "scipy.sparse.csgraph",
+    "scipy.sparse.linalg",
+    "scipy.stats",
+    "cryptoguard.analytics.diffusion",
+    "cryptoguard.analytics.graph",
+    "cryptoguard.analytics.spectral",
+    "cryptoguard.analytics.temporal",
+)
 
 
 def wallet_analysis(

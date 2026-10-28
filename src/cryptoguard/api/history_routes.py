@@ -14,7 +14,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from cryptoguard.api.state import error_response, get_state
 from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.chains import ChainInfo, explorer_block_url
-from cryptoguard.core.config import Settings
 from cryptoguard.core.errors import InvalidScanRequestError
 from cryptoguard.core.hexutil import parse_hash32
 from cryptoguard.database.history import TimelineRow
@@ -23,7 +22,12 @@ from cryptoguard.graph.build import WalletGraph
 from cryptoguard.history.delta import Change
 from cryptoguard.risk.lifecycle import OPEN_STATUSES, FindingStatus, InvalidTransitionError
 from cryptoguard.risk.rules import RULES, RULESET_ID, RULESET_VERSION, Severity
-from cryptoguard.services.analysis import WalletAnalysis, shadow_log, wallet_analysis
+from cryptoguard.services.analysis import (
+    WalletAnalysis,
+    analysis_enabled,
+    shadow_log,
+    wallet_analysis,
+)
 from cryptoguard.services.approvals import ScanLimits
 from cryptoguard.services.graph import wallet_graph
 from cryptoguard.services.poisoning import PoisoningReport, scan_poisoning
@@ -215,7 +219,7 @@ async def create_snapshot(request: Request, address: str, body: SnapshotRequest)
         options=DetectionOptions.from_settings(state.settings),
         lease_seconds=state.settings.operation_lease_seconds,
     )
-    if _analysis_enabled(state.settings):
+    if analysis_enabled(state.settings):
         # Shadow mode: runs after the snapshot is stored and cannot change its outcome.
         try:
             shadow_log(
@@ -226,14 +230,6 @@ async def create_snapshot(request: Request, address: str, body: SnapshotRequest)
         except Exception:  # never let an experimental analysis fail a snapshot
             logger.warning("shadow analysis failed or timed out", exc_info=True)
     return outcome
-
-
-def _analysis_enabled(settings: Settings) -> bool:
-    return "shadow" in (
-        settings.analysis_graph,
-        settings.analysis_spectral,
-        settings.analysis_temporal,
-    )
 
 
 def _analysis(request: Request, address: str) -> WalletAnalysis:

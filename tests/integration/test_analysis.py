@@ -120,3 +120,17 @@ def test_analysis_requires_a_snapshot(api_node: FakeNode) -> None:  # noqa: F811
     with rpc_client_for(api_node, **SHADOW) as client:
         response = client.get(f"/api/v1/wallets/{API_WALLET}/analysis")
     assert response.status_code == 404
+
+
+def test_warm_up_loads_the_libraries_only_when_an_analysis_is_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from cryptoguard.services import analysis
+
+    assert analysis.warm_up(settings()) is False  # default: nothing to load
+    assert analysis.warm_up(settings(analysis_temporal="shadow")) is True
+    assert {"scipy.sparse.linalg", "scipy.stats"} <= set(sys.modules)
+    monkeypatch.setattr(analysis, "_available", lambda: False)
+    assert analysis.warm_up(settings(**SHADOW)) is False  # extra missing: no error
