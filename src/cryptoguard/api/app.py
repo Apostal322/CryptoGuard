@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from cryptoguard import __version__
 from cryptoguard.api.campaign_routes import router as campaign_router
 from cryptoguard.api.history_routes import router as history_router
+from cryptoguard.api.ml_routes import router as ml_router
 from cryptoguard.api.ratelimit import TokenBucketLimiter
 from cryptoguard.api.replay_routes import router as replay_router
 from cryptoguard.api.schemas import (
@@ -338,6 +339,7 @@ def create_app(
     app.include_router(history_router)
     app.include_router(replay_router)
     app.include_router(campaign_router)
+    app.include_router(ml_router)
     return app
 
 

@@ -159,6 +159,15 @@ jobs:
           wheel=$(ls dist/*.whl)
           uv pip install --python "$RUNNER_TEMP/cg-analytics" "${wheel}[analytics]"
           uv run --no-project python scripts/smoke_install.py --venv "$RUNNER_TEMP/cg-analytics" --analytics
+      - name: Clean install with the experimental ml extra
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/cg-ml"
+          wheel=$(ls dist/*.whl)
+          uv pip install --python "$RUNNER_TEMP/cg-ml" "${wheel}[ml]"
+          cd "$RUNNER_TEMP"
+          if [ -x cg-ml/bin/python ]; then py=cg-ml/bin/python; else py=cg-ml/Scripts/python.exe; fi
+          "$py" -I -c "from cryptoguard.ml import ml_available; assert ml_available()"
+          "$py" -I -m cryptoguard.cli ml --help
       - name: Keep the distributions
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

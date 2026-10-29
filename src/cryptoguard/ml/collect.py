@@ -88,7 +88,7 @@ def _done(path: Path) -> set[str]:
     return done
 
 
-async def _collect_one(client: JsonRpcClient, tx_hash: str) -> dict[str, Any]:
+async def collect_one(client: JsonRpcClient, tx_hash: str) -> dict[str, Any]:
     tx = await client.call("eth_getTransactionByHash", [tx_hash])
     if tx is None or tx.get("blockNumber") is None:
         return {"tx_hash": tx_hash, "status": "not_found"}
@@ -174,7 +174,7 @@ async def collect(
                 stats["skipped_budget"] += 1
                 continue
             try:
-                row = await _collect_one(rpc, tx_hash)
+                row = await collect_one(rpc, tx_hash)
             except RpcError as exc:
                 row = {"tx_hash": tx_hash, "status": "error", "error": exc.code}
             async with lock:

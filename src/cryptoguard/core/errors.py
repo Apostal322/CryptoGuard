@@ -147,6 +147,13 @@ class FeatureDisabledError(CryptoGuardError):
     http_status = 409
 
 
+class MlUnavailableError(CryptoGuardError):
+    """The ml extra is not installed, or no validated shadow model is promoted."""
+
+    code = "ml_unavailable"
+    http_status = 503
+
+
 class NoCampaignRunError(CryptoGuardError):
     code = "no_campaign_run"
     http_status = 404

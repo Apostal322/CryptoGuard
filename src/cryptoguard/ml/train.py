@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from cryptoguard.ml import FEATURE_SET_VERSION, ML_VERSION
 from cryptoguard.ml.features import FEATURES
+from cryptoguard.ml.monitoring import reference_bins
 
 if TYPE_CHECKING:
     import numpy as np
@@ -160,25 +161,43 @@ def best_threshold(y: np.ndarray, score: np.ndarray) -> float:
     return float(candidates[int(np.argmax(f1s))])
 
 
+def fast_average_precision(y: np.ndarray, score: np.ndarray) -> float:
+    """Average precision exactly as ``sklearn.metrics.average_precision_score`` defines it
+    (sum over distinct thresholds of recall increments times precision), vectorised: the
+    bootstrap calls it thousands of times, where sklearn's input checks dominate."""
+    import numpy as np
+
+    order = np.argsort(-score, kind="mergesort")
+    ys, ss = y[order], score[order]
+    last_of_threshold = np.r_[ss[1:] != ss[:-1], True]
+    tps = np.cumsum(ys)[last_of_threshold]
+    fps = (np.arange(1, len(ys) + 1) - np.cumsum(ys))[last_of_threshold]
+    precision = tps / (tps + fps)
+    recall = tps / tps[-1]
+    return float(np.sum(np.diff(np.r_[0.0, recall]) * precision))
+
+
 def bootstrap_ci(
     y: np.ndarray, score: np.ndarray, threshold: float, n: int = 1000
 ) -> dict[str, list[float]]:
     """95% percentile intervals for test AP, recall and false-positive rate (seeded
-    resamples of rows)."""
+    resamples of rows). Empty when the split lacks one class: no interval exists."""
+    if len(set(y.tolist())) < 2:
+        return {}
     import numpy as np
-    from sklearn.metrics import average_precision_score, recall_score
 
     rng = np.random.default_rng(SEED)
     ap, rec, fpr = [], [], []
     for _ in range(n):
         idx = rng.integers(0, len(y), len(y))
-        if len(np.unique(y[idx])) < 2:
+        yi, si = y[idx], score[idx]
+        positives = int(yi.sum())
+        if positives in (0, len(yi)):
             continue
-        pred = (score[idx] >= threshold).astype(int)
-        ap.append(average_precision_score(y[idx], score[idx]))
-        rec.append(recall_score(y[idx], pred, zero_division=0))
-        neg = y[idx] == 0
-        fpr.append(float(pred[neg].mean()))
+        pred = si >= threshold
+        ap.append(fast_average_precision(yi, si))
+        rec.append(float(pred[yi == 1].mean()))
+        fpr.append(float(pred[yi == 0].mean()))
 
     def q(values: list[float]) -> list[float]:
         return [float(np.percentile(values, 2.5)), float(np.percentile(values, 97.5))]
@@ -241,9 +260,12 @@ def make_model(name: str, params: dict[str, Any]):  # type: ignore[no-untyped-de
     raise ValueError(name)
 
 
-def run_training(table: pd.DataFrame, split: pd.Series) -> dict[str, Any]:
+def run_training(
+    table: pd.DataFrame,
+    split: pd.Series,
+    candidates: list[tuple[str, dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     """Fit everything, select on validation, score test once. Returns the full result."""
-    import numpy as np
     from sklearn.dummy import DummyClassifier
     from sklearn.inspection import permutation_importance
 
@@ -277,7 +299,7 @@ def run_training(table: pd.DataFrame, split: pd.Series) -> dict[str, Any]:
     # validation log loss (a proper scoring rule: AP saturates near 1 on this data).
     best: dict[tuple[str, str], tuple[float, dict[str, Any], Any, np.ndarray]] = {}
     for fs_name, fs_tuple in FEATURE_SETS.items():
-        for name, params in _candidates():
+        for name, params in candidates or _candidates():
             model = make_model(name, params).fit(train[list(fs_tuple)], y_tr)
             s_va = model.predict_proba(val[list(fs_tuple)])[:, 1]
             loss = metrics(y_va, s_va, 0.5)["log_loss"]
@@ -336,9 +358,7 @@ def run_training(table: pd.DataFrame, split: pd.Series) -> dict[str, Any]:
             .to_dict("records"),
         },
         "seconds": round(time.perf_counter() - started, 1),
-        "reference": {
-            c: [float(q) for q in np.quantile(train[c], np.linspace(0, 1, 11))] for c in cols
-        },
+        "reference": {c: reference_bins([float(v) for v in train[c]]) for c in cols},
     }
 
 
@@ -360,7 +380,8 @@ def promotion_gate(results: list[ModelResult], selected: ModelResult) -> dict[st
     model_val = selected.validation["average_precision"] or 0.0
     gap_closed = (model_val - base_val) / (1 - base_val) if base_val < 1 else 0.0
     val_ok = gap_closed >= GATE_GAP_REDUCTION
-    test_ok = selected.test["ci95"]["average_precision"][0] > base_test
+    interval = selected.test["ci95"].get("average_precision")
+    test_ok = interval is not None and interval[0] > base_test
     return {
         "best_baseline_validation_ap": base_val,
         "best_baseline_test_ap": base_test,
@@ -420,7 +441,7 @@ def save_run(run_dir: Path, entry: dict[str, Any], out: dict[str, Any]) -> Path:
         "selected": entry["selected"],
         "gate": entry["gate"],
         "model_sha256": hashlib.sha256(model_path.read_bytes()).hexdigest(),
-        "reference_quantiles": out["reference"],
+        "reference_bins": out["reference"],
         "trained_on": entry["config"],
     }
     (run_dir / "model_card.json").write_text(json.dumps(card, indent=1), encoding="utf-8")

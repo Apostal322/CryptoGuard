@@ -32,6 +32,12 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     b.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     t = ml.add_parser("train", help="train, select on validation, test once, record the run")
     t.add_argument("--report", type=Path, default=Path("ML_EVALUATION.md"))
+    pr = ml.add_parser("promote", help="make a run the shadow model (only if its gate passed)")
+    pr.add_argument("run_dir", type=Path)
+    sc = ml.add_parser("score", help="shadow-mode score for one transaction (not a finding)")
+    sc.add_argument("tx_hash")
+    sc.add_argument("--rpc-url", required=True)
+    ml.add_parser("monitor", help="feature drift of shadow-scored transactions")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -77,7 +83,45 @@ def run(args: argparse.Namespace) -> int:
         return _build(args)
     if args.ml_command == "train":
         return _train(args)
+    if args.ml_command == "promote":
+        from cryptoguard.ml.registry import ModelRegistryError, promote
+
+        try:
+            print(promote(args.run_dir))
+        except ModelRegistryError as exc:
+            print(f"error [not_promoted]: {exc}")
+            return 1
+        return 0
+    if args.ml_command in ("score", "monitor"):
+        return _shadow(args)
     raise AssertionError(args.ml_command)
+
+
+def _shadow(args: argparse.Namespace) -> int:
+    import json
+
+    from cryptoguard.blockchain.rpc import JsonRpcClient
+    from cryptoguard.core.config import Settings
+    from cryptoguard.ml.inference import loaded_model, score_transaction
+    from cryptoguard.ml.monitoring import drift_report
+
+    settings = Settings(ml_shadow="shadow")  # the command itself is the opt-in
+    if args.ml_command == "monitor":
+        model = loaded_model(settings)
+        print(json.dumps(drift_report(model.card, Path(settings.ml_score_log_path)), indent=1))
+        return 0
+
+    async def run() -> str:
+        client = JsonRpcClient(args.rpc_url, timeout=20)
+        try:
+            return (await score_transaction(client, args.tx_hash, settings)).model_dump_json(
+                indent=1
+            )
+        finally:
+            await client.aclose()
+
+    print(asyncio.run(run()))
+    return 0
 
 
 TABLE = ML_DIR / "dataset.csv"

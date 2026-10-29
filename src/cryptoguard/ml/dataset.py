@@ -1,16 +1,17 @@
 """Build the validated modelling table and its manifest from labels plus collected chain data.
 
 Rows are grouped by the accounts they tie together (``features.parties``), joined by
-union-find. Accounts used by many distinct senders (tokens, routers, marketplaces) are
-public infrastructure: they do not join rows, or every row would collapse into one group.
-The rule is label-free; ``group_report`` states how much it cuts.
+union-find. Only a curated registry of public infrastructure (major tokens, DEX routers,
+marketplaces, Permit2) does not join rows. Degree-based rules ("used by many senders") were
+tried and rejected: a scam contract called by many victims looks exactly like a popular
+router, and exempting it lets its later victims leak into the test split. Over-linking only
+costs evaluation rows; under-linking leaks. ``group_report`` states the effect.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,12 +21,25 @@ from cryptoguard.ml.features import FEATURES, extract, parties
 if TYPE_CHECKING:
     import pandas as pd
 
-# Public infrastructure (label-free): an account used by at least HUB_MIN_SENDERS distinct
-# senders (routers, Permit2), or a log-emitting contract (token, marketplace) touched by
-# at least EMITTER_MIN_SENDERS distinct senders. Phishing contracts that victims call
-# directly emit no logs and stay linking accounts unless they reach HUB_MIN_SENDERS.
-HUB_MIN_SENDERS = 10
-EMITTER_MIN_SENDERS = 2
+# Public infrastructure on Ethereum mainnet, identified by name from the projects' own
+# published deployments (independent of any label source). Lower-case.
+PUBLIC_INFRASTRUCTURE: dict[str, str] = {
+    "0xdac17f958d2ee523a2206206994597c13d831ec7": "Tether USD (USDT)",
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USD Coin (USDC)",
+    "0x6b175474e89094c44da98b954eedeac495271d0f": "Dai (DAI)",
+    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "Wrapped Ether (WETH)",
+    "0xae7ab96520de3a18e5e111b5eaab095312d7fe84": "Lido staked ETH (stETH)",
+    "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": "Uniswap V2 Router 02",
+    "0xe592427a0aece92de3edee1f18e0157c05861564": "Uniswap V3 SwapRouter",
+    "0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45": "Uniswap V3 SwapRouter02",
+    "0x000000000022d473030f116ddee9f6b43ac78ba3": "Uniswap Permit2",
+    "0x1111111254eeb25477b68fb85ed929f73a960582": "1inch Aggregation Router v5",
+    "0xdef1c0ded9bec7f1a1670819833240f027b25eff": "0x Exchange Proxy",
+    "0x00000000006c3852cbef3e08e8df289169ede581": "OpenSea Seaport 1.1",
+    "0x00000000000000adc04c56bf30ac9d3c0aaf14dc": "OpenSea Seaport 1.5",
+    "0x1e0049783f008a0085193e00003d00cd54003c71": "OpenSea Conduit",
+    "0x000000000000ad05ccc4f10045630fb830b95127": "Blur Marketplace",
+}
 
 
 def table_schema() -> Any:
@@ -65,17 +79,11 @@ class _UnionFind:
 
 
 def hubs(records: dict[str, dict[str, Any]]) -> set[str]:
-    senders: dict[str, set[str]] = defaultdict(set)
-    emitter_senders: dict[str, set[str]] = defaultdict(set)
+    """Registry accounts that occur in ``records`` (the rest always link rows)."""
+    seen: set[str] = set()
     for rec in records.values():
-        sender = (rec["tx"].get("from") or "").lower()
-        for account in parties(rec):
-            senders[account].add(sender)
-        for log in (rec.get("receipt") or {}).get("logs") or []:
-            emitter_senders[log["address"].lower()].add(sender)
-    return {a for a, s in senders.items() if len(s) >= HUB_MIN_SENDERS} | {
-        a for a, s in emitter_senders.items() if len(s) >= EMITTER_MIN_SENDERS
-    }
+        seen |= parties(rec)
+    return seen & set(PUBLIC_INFRASTRUCTURE)
 
 
 def assign_groups(records: dict[str, dict[str, Any]], hub_set: set[str]) -> dict[str, str]:
@@ -121,7 +129,7 @@ def build_table(
         "rows": len(table),
         "not_found": sum(r["status"] == "not_found" for r in records.values()),
         "hub_accounts": len(hub_set),
-        "hub_rule": {"min_senders": HUB_MIN_SENDERS, "emitter_min_senders": EMITTER_MIN_SENDERS},
+        "hub_rule": "curated public-infrastructure registry only",
     }
     return table, facts
 
