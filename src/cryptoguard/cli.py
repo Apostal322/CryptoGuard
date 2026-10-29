@@ -825,6 +825,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_purge.add_argument("--address", help="only this address")
     p_purge.add_argument("--yes", action="store_true", help="confirm deletion")
 
+    from cryptoguard.ml.cli import add_parser as add_ml_parser
+
+    add_ml_parser(sub)
+
     args = parser.parse_args(argv)
 
     try:
@@ -922,6 +926,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _replay_command(args, settings)
         if args.command == "campaigns":
             return _campaign_command(args, settings)
+        if args.command == "ml":
+            from cryptoguard.ml.cli import run as run_ml
+
+            return run_ml(args)
 
         if args.command == "ack":
             from cryptoguard.database.repository import open_repository
