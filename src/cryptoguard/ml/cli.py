@@ -190,7 +190,7 @@ def _train(args: argparse.Namespace) -> int:
     with (RUNS / "ledger.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({k: entry[k] for k in entry if k != "results"}, default=str) + "\n")
     report = render_report(entry, out, json.loads(manifest_path.read_text()))
-    args.report.write_text(report, encoding="utf-8")
+    args.report.write_text(report, encoding="utf-8", newline="\n")  # same bytes on every OS
     sel = entry["selected"]
     print(
         f"run {run_id}: selected {sel['name']} ({sel['feature_set']}), "
