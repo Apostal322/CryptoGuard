@@ -2,6 +2,18 @@
 
 All notable changes. Versions follow semantic versioning; 0.x means interfaces may change.
 
+## Unreleased (branch `feature/ml-pipeline`)
+
+### Experimental machine learning (shadow mode, `ml` extra)
+- Pinned, hash-verified external label sources (PTXPhish, Poison-Hunter, Forta); the two
+  without a license are fetched locally, never redistributed (`aee2bf4`).
+- Budgeted, resumable collection of point-in-time chain data for a deterministic
+  stratified sample; validated feature table with an input-hash manifest (`aee2bf4`).
+- Study window, time-ordered splits and per-account purge against reused attacker
+  infrastructure; trivial, rule and learned baselines; run ledger; promotion gate;
+  hash-pinned model registry; shadow scoring API and CLI; PSI drift monitoring
+  (`e9b49f1`). Results in ML_EVALUATION.md, data card and decision log in ML.md.
+
 ## 0.1.0 — 2026-10-28 (first release candidate, not independently audited)
 
 ### Detection and monitoring

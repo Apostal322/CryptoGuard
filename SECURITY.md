@@ -18,6 +18,10 @@
   characters and truncated, and is always labelled untrusted. Responses are JSON only (`Content-Security-Policy: default-src 'none'`,
   `nosniff`), and validation errors do not echo input.
 - **Chain verification.** `eth_chainId` must match the configured chain before any state read.
+- **Experimental ML model files** are pickles, and loading a pickle runs code. The shadow
+  model is loaded only from the local registry and only if its SHA-256 matches the hash its
+  model card recorded at training time; a model file from anywhere else must never be placed
+  there. ML scoring is off by default and accepts only a transaction hash.
 - **Resource limits.** Request timeouts, bounded retries (with capped `Retry-After`), bounded
   RPC concurrency, a response-size cap, bounded `eth_getLogs` block ranges, a request-body
   limit (POST requires `Content-Length`), and per-client rate limiting with bounded memory.
