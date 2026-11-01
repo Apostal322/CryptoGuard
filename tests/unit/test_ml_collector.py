@@ -143,7 +143,7 @@ def test_ledger_reservations_from_many_threads_are_never_lost(tmp_path: Path) ->
     errors: list[BaseException] = []
 
     def worker() -> None:
-        ledger = RequestLedger(ledger_path, cap=150)
+        ledger = RequestLedger(ledger_path, cap=150, lock_timeout=300)  # timeouts are fail-safe
         for _ in range(40):
             try:
                 ledger.reserve(1)
@@ -234,3 +234,198 @@ def test_duplicate_records_keep_the_latest_success(tmp_path: Path) -> None:
         '{"tx_hash": "0xa", "status": "ok", "tx": {"n": 2}}\n'
     )
     assert load_collected(out)["0xa"]["tx"] == {"n": 2}
+
+
+# --- Phase 11.2: process-level failure modes ------------------------------------------
+
+_WORKER = """
+import sys
+from pathlib import Path
+from cryptoguard.ml.collect import BudgetExhaustedError, RequestLedger
+ledger = RequestLedger(Path(sys.argv[1]), cap=int(sys.argv[2]))
+granted = 0
+for _ in range(int(sys.argv[3])):
+    try:
+        ledger.reserve(1)
+        granted += 1
+    except BudgetExhaustedError:
+        break
+print(granted)
+"""
+
+_DIES_HOLDING_LOCK = """
+import os, sys
+from pathlib import Path
+from cryptoguard.ml.collect import RequestLedger
+ledger = RequestLedger(Path(sys.argv[1]), cap=10)
+ledger._acquire()  # take the lock, then die without releasing it
+os._exit(0)
+"""
+
+
+def _python(code: str, *args: str) -> str:
+    import subprocess
+    import sys
+
+    done = subprocess.run(  # noqa: S603 - fixed test code
+        [sys.executable, "-c", code, *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
+    return done.stdout.strip()
+
+
+def test_two_processes_cannot_exceed_a_shared_cap(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    path = tmp_path / "budget.json"
+    procs = [
+        subprocess.Popen(  # noqa: S603 - fixed test code
+            [sys.executable, "-c", _WORKER, str(path), "120", "100"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(2)
+    ]
+    granted = []
+    for p in procs:
+        out, err = p.communicate(timeout=60)
+        assert p.returncode == 0, err
+        granted.append(int(out))
+    assert sum(granted) == 120  # 200 asked across two processes, exactly the cap granted
+    assert RequestLedger(path, cap=120).used() == 120
+
+
+def test_a_process_that_dies_holding_the_lock_does_not_block_or_corrupt(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    RequestLedger(path, cap=10).reserve(3)
+    _python(_DIES_HOLDING_LOCK, str(path))
+    ledger = RequestLedger(path, cap=10, lock_timeout=5)
+    assert ledger.reserve(1) == 4  # the OS released the dead holder's lock at once
+
+
+def test_lock_held_by_a_live_holder_times_out_instead_of_being_broken(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    holder = RequestLedger(path, cap=10)
+    fd = holder._acquire()
+    try:
+        with pytest.raises(TimeoutError):
+            RequestLedger(path, cap=10, lock_timeout=0.2).reserve(1)
+    finally:
+        holder._release(fd)
+    assert RequestLedger(path, cap=10).used() == 0
+
+
+def test_zero_budget_sends_nothing(tmp_path: Path) -> None:
+    labels, records = make_records(n=3)
+    transport = Counting(FakeRpc(records).transport())
+    stats = _run(
+        pd.DataFrame(labels),
+        tmp_path / "c.jsonl",
+        RequestLedger(tmp_path / "b.json", cap=0),
+        transport,
+    )
+    assert transport.attempts == 0
+    assert stats["skipped_budget"] == 3
+
+
+class Flaky(httpx.AsyncBaseTransport):
+    """Answers 429 or times out on chosen attempts, else a valid eth_chainId reply."""
+
+    def __init__(self, plan: list[str]):
+        self.plan = plan
+        self.attempts = 0
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        kind = self.plan[self.attempts] if self.attempts < len(self.plan) else "ok"
+        self.attempts += 1
+        if kind == "429":
+            return httpx.Response(429, json={"error": "rate limited"})
+        if kind == "timeout":
+            raise httpx.ReadTimeout("slow", request=request)
+        body = json.loads(request.content)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": "0x1"})
+
+
+def _client(transport: httpx.AsyncBaseTransport, ledger: RequestLedger):  # type: ignore[no-untyped-def]
+    from cryptoguard.blockchain.rpc import JsonRpcClient, RetryPolicy
+    from cryptoguard.ml.collect import BudgetedTransport
+
+    return JsonRpcClient(
+        "https://rpc.invalid",
+        retry=RetryPolicy(max_retries=4, base_delay=0, max_delay=0),
+        transport=BudgetedTransport(transport, ledger),
+        sleep=_no_sleep,
+    )
+
+
+def test_rate_limits_and_timeouts_are_counted_as_attempts(tmp_path: Path) -> None:
+    ledger = RequestLedger(tmp_path / "b.json", cap=100)
+    inner = Flaky(["429", "timeout", "429"])
+
+    async def go() -> object:
+        client = _client(inner, ledger)
+        try:
+            return await client.call("eth_chainId", [])
+        finally:
+            await client.aclose()
+
+    assert asyncio.run(go()) == "0x1"
+    assert inner.attempts == 4
+    assert ledger.used() == 4  # three failed attempts and the success, all reserved first
+
+
+def test_retries_stop_at_the_cap_mid_call(tmp_path: Path) -> None:
+    ledger = RequestLedger(tmp_path / "b.json", cap=2)
+    inner = Flaky(["429"] * 10)
+
+    async def go() -> None:
+        client = _client(inner, ledger)
+        try:
+            await client.call("eth_chainId", [])
+        finally:
+            await client.aclose()
+
+    with pytest.raises(BudgetExhaustedError):
+        asyncio.run(go())
+    assert inner.attempts == 2
+    assert ledger.used() == 2
+
+
+def test_five_async_workers_on_one_client_stay_under_the_cap(tmp_path: Path) -> None:
+    ledger = RequestLedger(tmp_path / "b.json", cap=37)
+    inner = Flaky([])
+
+    async def go() -> int:
+        client = _client(inner, ledger)
+
+        async def worker() -> int:
+            done = 0
+            for _ in range(20):
+                try:
+                    await client.call("eth_chainId", [])
+                except BudgetExhaustedError:
+                    break
+                done += 1
+            return done
+
+        try:
+            return sum(await asyncio.gather(*(worker() for _ in range(5))))
+        finally:
+            await client.aclose()
+
+    assert asyncio.run(go()) == 37
+    assert inner.attempts == 37
+    assert ledger.used() == 37
+
+
+def test_truncated_ledger_file_fails_closed(tmp_path: Path) -> None:
+    path = tmp_path / "budget.json"
+    path.write_text("")  # e.g. a filesystem that lost an unsynced write
+    with pytest.raises(LedgerCorruptError):
+        RequestLedger(path, cap=10).reserve(1)
+    assert path.read_text() == ""  # never silently reset to zero

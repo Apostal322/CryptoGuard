@@ -24,12 +24,13 @@ import asyncio
 import json
 import os
 import random
+import sys
 import threading
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx
 
@@ -151,12 +152,49 @@ class LedgerCorruptError(RuntimeError):
     """The request ledger cannot be read; collection refuses to guess (fail closed)."""
 
 
+def _try_os_lock(fd: int) -> bool:
+    """Non-blocking exclusive lock on byte 0 of ``fd``; the OS drops it when the process dies."""
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _os_unlock(fd: int) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 class RequestLedger:
     """Durable, cross-process request budget: one unit is *reserved before* every HTTP
-    attempt (retries included), under an exclusive lock file, with an atomic write.
+    attempt (retries included), under an exclusive OS file lock, with an fsynced atomic write.
 
-    A crash after reserving over-counts (safe); it can never under-count. Two collectors on
-    the same ledger cannot together exceed the cap. The file keeps the Phase 11 format
+    Guarantee: the recorded count is never below the number of attempts budgeted clients
+    have sent. A crash after reserving over-counts by the attempts it never sent (safe); it
+    cannot under-count. Collectors in any number of threads or processes on the same ledger
+    cannot together exceed the cap. The lock is an OS lock (``msvcrt``/``flock``), released
+    by the OS if its holder dies, so no stale-lock breaking (and its race) is needed. What the
+    provider bills is not reconstructed: an attempt cut off in flight may or may not have
+    reached it, and the ledger counts it either way. Each reservation is fsynced before the
+    request is sent (about 50 ms on a desktop disk), which caps one ledger at roughly 20
+    reservations per second: far above free-endpoint rate limits, and the price of surviving
+    power loss. A lock timeout raises before anything is sent. The file keeps the Phase 11 format
     (``{"requests": n, "notes": [...]}``) so earlier usage still counts.
     """
 
@@ -166,27 +204,39 @@ class RequestLedger:
         self.lock_timeout = lock_timeout
         self._lock = path.with_name(path.name + ".lock")
 
-    def _acquire(self) -> None:
+    _local_locks: ClassVar[dict[str, threading.Lock]] = {}
+    _local_guard: ClassVar[threading.Lock] = threading.Lock()
+
+    def _local(self) -> threading.Lock:
+        key = os.path.abspath(self._lock)
+        with self._local_guard:
+            return self._local_locks.setdefault(key, threading.Lock())
+
+    def _acquire(self) -> int:
+        """Threads of one process queue on a blocking in-process lock (no polling, so none
+        starves under load); the OS lock then excludes other processes."""
         deadline = time.monotonic() + self.lock_timeout
-        while True:
-            try:
-                fd = os.open(self._lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(fd, str(os.getpid()).encode())
-                os.close(fd)
-                return
-            except (FileExistsError, PermissionError):
-                # PermissionError: Windows reports it while the holder is deleting the file.
-                # A holder that crashed leaves the file; reservations are quick, so an old
-                # lock is stale.
-                try:
-                    if time.time() - self._lock.stat().st_mtime > 60:
-                        self._lock.unlink(missing_ok=True)
-                        continue
-                except FileNotFoundError:
-                    continue
+        local = self._local()
+        if not local.acquire(timeout=self.lock_timeout):
+            raise TimeoutError(f"request ledger lock {self._lock} is held")
+        try:
+            fd = os.open(self._lock, os.O_CREAT | os.O_RDWR)
+            while not _try_os_lock(fd):
                 if time.monotonic() > deadline:
-                    raise TimeoutError(f"request ledger lock {self._lock} is held") from None
-                time.sleep(0.01)
+                    os.close(fd)
+                    raise TimeoutError(f"request ledger lock {self._lock} is held")
+                time.sleep(0.005)
+        except BaseException:
+            local.release()
+            raise
+        return fd
+
+    def _release(self, fd: int) -> None:
+        try:
+            _os_unlock(fd)
+        finally:
+            os.close(fd)
+            self._local().release()
 
     def _read(self) -> dict[str, Any]:
         if not self.path.exists():
@@ -200,7 +250,10 @@ class RequestLedger:
 
     def _write(self, state: dict[str, Any]) -> None:
         tmp = self.path.with_name(self.path.name + f".{os.getpid()}.{threading.get_ident()}.tmp")
-        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
+        with tmp.open("w", encoding="utf-8") as fh:
+            fh.write(json.dumps(state, indent=1))
+            fh.flush()
+            os.fsync(fh.fileno())  # the count is on disk before it can be relied on
         for attempt in range(50):
             try:
                 os.replace(tmp, self.path)  # atomic on Windows and POSIX
@@ -211,15 +264,15 @@ class RequestLedger:
                 time.sleep(0.01)
 
     def used(self) -> int:
-        self._acquire()  # never read while another process replaces the file
+        fd = self._acquire()  # never read while another process replaces the file
         try:
             return int(self._read()["requests"])
         finally:
-            self._lock.unlink(missing_ok=True)
+            self._release(fd)
 
     def reserve(self, n: int = 1) -> int:
         """Reserve ``n`` attempts or raise; returns the total reserved afterwards."""
-        self._acquire()
+        fd = self._acquire()
         try:
             state = self._read()
             total = int(state["requests"]) + n
@@ -229,11 +282,11 @@ class RequestLedger:
             self._write(state)
             return total
         finally:
-            self._lock.unlink(missing_ok=True)
+            self._release(fd)
 
     def note(self, text: str, requests: int = 0) -> int:
         """Record a manual charge (e.g. requests made outside the collector)."""
-        self._acquire()
+        fd = self._acquire()
         try:
             state = self._read()
             state["requests"] = int(state["requests"]) + requests
@@ -241,7 +294,7 @@ class RequestLedger:
             self._write(state)
             return int(state["requests"])
         finally:
-            self._lock.unlink(missing_ok=True)
+            self._release(fd)
 
 
 class BudgetedTransport(httpx.AsyncBaseTransport):
