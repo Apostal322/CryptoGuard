@@ -48,11 +48,53 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     sc.add_argument("tx_hash")
     sc.add_argument("--rpc-url", required=True)
     ml.add_parser("monitor", help="feature drift of shadow-scored transactions")
+    pz = ml.add_parser(
+        "poisoning-report",
+        help="offline Phase 11.2 report: Poison-Hunter validation, pilot, candidates (no RPC)",
+    )
+    pz.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    pz.add_argument("--pilot-dir", type=Path, default=ML_DIR / "pilot")
+    pz.add_argument("--out", type=Path, default=ML_DIR / "poisoning")
+    pz.add_argument("--tables", type=Path, default=Path("ML_POISONING_TABLES.md"))
+    pc = ml.add_parser(
+        "plan-collection", help="estimate a wallet-history collection job (never collects)"
+    )
+    pc.add_argument("--wallets", type=int, required=True)
+    pc.add_argument("--window-blocks", type=int, required=True)
+    pc.add_argument("--request-cap", type=int, required=True)
+    pc.add_argument("--log-range-blocks", type=int, default=100)
 
 
 def run(args: argparse.Namespace) -> int:
     from cryptoguard.ml import ml_available
 
+    # Pure-Python commands: no ml extra needed.
+    if args.ml_command == "poisoning-report":
+        from cryptoguard.ml.poisoning_report import build, write
+
+        written = write(build(args.data_dir, args.pilot_dir), args.out, args.tables)
+        print(f"Wrote {written} and {args.tables} (0 RPC requests).")
+        return 0
+    if args.ml_command == "plan-collection":
+        import json
+
+        from cryptoguard.ml.planner import (
+            CollectionAssumptions,
+            CollectionJob,
+            PlanRejected,
+            plan,
+        )
+
+        job = CollectionJob(
+            wallets=args.wallets, window_blocks=args.window_blocks, request_cap=args.request_cap
+        )
+        try:
+            body = plan(job, CollectionAssumptions(log_range_blocks=args.log_range_blocks))
+        except PlanRejected as exc:
+            print(f"rejected: {exc}")
+            return 2
+        print(json.dumps(body, indent=1))
+        return 0
     if not ml_available():
         print("error [ml_unavailable]: install the ml extra (uv sync --extra ml)")
         return 1
