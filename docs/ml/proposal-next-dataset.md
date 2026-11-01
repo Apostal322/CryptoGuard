@@ -5,6 +5,10 @@ are not approved.** The Phase 11 authorization (12,000 requests) is exhausted (1
 the pilot used 2,636 of its separate 3,000-request cap. Background:
 ML_GENERALIZATION_AUDIT.md §16–17.
 
+**Phase 11.2 audit (2026-11-02):** the pilot was reconstructed from its raw outputs and two
+claims below were corrected: the 0.069 bound (§11.2) is conditional, not a population bound,
+and the CSV header is aligned, not shifted. See ML_PILOT_AUDIT.md and ML_RESEARCH_PLAN.md.
+
 **Pilot verdict: option B as costed here is not viable.** Cost per wallet is about twice the
 §7 estimate, the free endpoint's throughput is about a third of the Phase 11 figure, and no
 positive was confirmed. See §11 before deciding on B, C or stopping.
@@ -89,7 +93,7 @@ promotion record then gets the `holdout` entry that `shadow_approved` requires.
 
 | Stage | Work | Request cap | Stop rule |
 |---|---|---|---|
-| 0 (offline) | Repair the column-shifted Poison-Hunter sample (verify the field mapping on rows with known structure; reject if ambiguous); freeze the sampling plan and holdout hash | 0 | If the sample cannot be repaired unambiguously, positives fall back to the 4 incidents plus manually curated public reports |
+| 0 (offline) | Validate the Poison-Hunter sample (aligned header, 2 unnamed trailing fields) (verify the field mapping on rows with known structure; reject if ambiguous); freeze the sampling plan and holdout hash | 0 | If the sample cannot be repaired unambiguously, positives fall back to the 4 incidents plus manually curated public reports |
 | 1 = Option A (pilot) | As run (§11): payment check for all 149 candidate rows; 1-day recordings of random wallets. The original design (10 + 10 wallets, 7-day windows) needed ~25,000 requests and was replaced before collection | 3,000 | Report: requests per wallet, eligibility rate, positive yield. Stop for your decision |
 | 2 = B or C | Remaining negatives and candidates | 240,000 (B) or 30,000 (C) | Stop at the cap; report what was reached |
 
@@ -174,8 +178,8 @@ the git-ignored `data/ml/pilot/`, and only aggregates appear here.
 - **"Zero" and "fake" plantings forge `Transfer(victim → attacker)` logs.** A log match
   would therefore confirm every such victim. Only transactions the victim signed are
   counted.
-- **Stage 0 repaired the Poison-Hunter sample.** Every row has 17 fields against a 15-name
-  header. Field types identify the mapping: [0] lookalike, [1] victim, [2] imitated address,
+- **Stage 0 validated the Poison-Hunter sample.** Every row has 17 fields; the 15-name header
+  is aligned with the first 15, and 2 trailing fields are unnamed (ML_POISONING_DATASET.md §5). Field types identify the mapping: [0] lookalike, [1] victim, [2] imitated address,
   [13] block. In 100 rows (types "zero" and "fake") the transaction sender is a batch
   operator, as expected for those attacks. 149 of 150 rows validate: 123 victims, blocks
   15.86M–17.97M. One row was rejected (no address similarity).
@@ -193,18 +197,21 @@ the git-ignored `data/ml/pilot/`, and only aggregates appear here.
 | Signed more than 100 (bot- or exchange-like) | 13 | — |
 | **Confirmed payment to the labelled attacker** | **0** | **0** |
 
-- **Confirmed: 0 of 52 resolved rows.**
-  - Upper bound (Wilson 95%) on the share of candidate rows that end in a payment:
-    **0.069**.
-  - Among rows where the victim was active: 0 of 17, upper bound 0.18.
+- **Confirmed: 0 of 52 rows checked with complete declared coverage.**
+  - *Corrected 2026-11-02 (ML_PILOT_AUDIT.md §3):* an earlier version gave a Wilson 95% upper
+    bound of 0.069 "on the share of candidate rows that end in a payment". That bound holds
+    only if the 52 checked rows were representative. They are not: they are the least active
+    victims, and they include duplicate victim-events. It says nothing about the other 97
+    rows or about Poison-Hunter victims in general.
 - **Not covered:**
   - `transferFrom`, permit and router payments;
   - payments made after 7 days;
   - the 97 unresolved rows, which are the more active victims.
 - 90 of 123 "victims" were active. 13 rows belong to addresses that signed more than 100
   transactions in a week, so the sample's victim list includes automated accounts.
-- **Consequence:** under the full design, the 149 candidate rows would yield at most about
-  10 positives, and plausibly 0. The positive class cannot come from this sample alone.
+- **Consequence:** the pilot cannot estimate how many of the 149 rows ended in a payment.
+  Outcomes for the more active victims are unknown. The positive class cannot be built from
+  this sample by on-chain checks at this cost.
 
 ### 11.3 Cost per wallet and eligibility (random wallets, blocks 18.0M–19.3M)
 

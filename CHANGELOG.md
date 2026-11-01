@@ -26,6 +26,30 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Wallet-centric poisoning research platform (Phase 11.2)
+- Fixed: the option A pilot lost three wallet recordings because its post-processing read a
+  non-existent field (`transactions`, not `wallet_transactions`) inside a broad exception
+  handler. Pilot records are now typed and versioned (`ml/pilot.py`). Schema mismatches
+  raise instead of reading as zero, and lost values are migrated as unknown.
+- Corrected: the pilot's 0.069 payment-rate bound applies only to the 52 least active,
+  completely checked rows, not to all candidates (ML_PILOT_AUDIT.md).
+- Fixed: the request ledger used a lock file broken after 60 s, which two processes could
+  both break; it now uses an OS file lock with fsynced writes, tested across processes.
+- Fixed: PSI hid shifts of mostly-constant features (new references only), returned a large
+  value for empty batches, and binned NaN silently.
+- Added:
+  - a typed Poison-Hunter parser with provenance and quarantine;
+  - the poisoning event schema, with identity, campaign groups, grouped temporal splits,
+    label tiers and quality gates;
+  - an offline payment verifier;
+  - a structural candidate generator and point-in-time event features;
+  - a label review export and import;
+  - a collection cost planner;
+  - `cryptoguard ml poisoning-report` and `ml plan-collection`;
+  - a task identifier on model cards.
+- Docs: ML_POISONING_DATASET.md, ML_PILOT_AUDIT.md, ML_RESEARCH_PLAN.md,
+  ML_POISONING_TABLES.md.
+
 ## 0.1.0 — 2026-10-28 (first release candidate, not independently audited)
 
 ### Detection and monitoring

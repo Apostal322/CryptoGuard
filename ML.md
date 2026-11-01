@@ -20,6 +20,33 @@ Generated results: [ML_EVALUATION.md](ML_EVALUATION.md) (Phase 11, historical) a
 [ML_AUDIT_TABLES.md](ML_AUDIT_TABLES.md) (Phase 11.1 audit). This page is the data card,
 method and decision log.
 
+## Two separate tasks (Phase 11.2)
+
+| Task | Question | Status |
+|---|---|---|
+| `ptxphish-transaction-phishing/1` (this page) | Is a mined transaction part of a phishing operation? | Model trained, research-only |
+| `poisoning-attempt/1` ([ML_POISONING_DATASET.md](ML_POISONING_DATASET.md)) | At a cutoff, is a candidate event an address-poisoning attempt against this wallet? | Data model, candidates, features, review and gates built; **no verified labels, no model** |
+
+- **Isolation.** Model cards carry `task`, and the shadow scorer refuses any task other than
+  the first. Cards without the field predate it and belong to the first task.
+- **Modules for the poisoning task:**
+  - `ml/events.py`: schema, identity, groups, splits and gates;
+  - `ml/poison_hunter.py`: typed parser with provenance;
+  - `ml/pilot.py`: typed pilot records and reconstruction;
+  - `ml/payments.py`: offline payment verification;
+  - `ml/candidates.py`: candidate generation and point-in-time event features;
+  - `ml/review.py`: label review export and import;
+  - `ml/planner.py`: collection cost planning, which never collects;
+  - `ml/poisoning_report.py`: the offline report (`cryptoguard ml poisoning-report`).
+- **Further reading:** [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md) covers the pilot
+  reconstruction and the data-loss fix. [ML_RESEARCH_PLAN.md](ML_RESEARCH_PLAN.md) has the
+  issue register, the collection design and the next experiment.
+- **Monitoring correction.** PSI reference bins created from now on keep a tied decile in
+  its own bin (`closed="left"`). The Phase 11 card's bins use the original binning, under
+  which a feature that is mostly one value sits in one bin and its shifts are invisible.
+  That stays until the model is retrained. Empty or all-missing batches now give no PSI,
+  and missing values are reported separately (`missing_share`).
+
 ## Data card
 
 ### Sources (pinned)
