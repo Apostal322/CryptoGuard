@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from cryptoguard.ml import FEATURE_SET_VERSION
+from cryptoguard.ml import FEATURE_SET_VERSION, TRANSACTION_TASK_ID
 from cryptoguard.ml.features import FEATURES
 
 DEFAULT_REGISTRY = Path("data") / "ml" / "registry.json"
@@ -88,6 +88,10 @@ def _check_card(card: Any) -> dict[str, Any]:
         raise ModelRegistryError(f"model card lacks {sorted(CARD_KEYS - set(card or {}))}")
     if not RUN_ID.match(str(card["run_id"])):
         raise ModelRegistryError(f"invalid run id {card['run_id']!r}")
+    if card.get("task", TRANSACTION_TASK_ID) != TRANSACTION_TASK_ID:
+        raise ModelRegistryError(
+            f"model task {card.get('task')!r} cannot be served by the transaction scorer"
+        )
     if card["feature_set_version"] != FEATURE_SET_VERSION:
         raise ModelRegistryError(
             f"model features {card['feature_set_version']} != code {FEATURE_SET_VERSION}"

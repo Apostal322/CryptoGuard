@@ -25,7 +25,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cryptoguard.ml import FEATURE_SET_VERSION, ML_VERSION
+from cryptoguard.ml import FEATURE_SET_VERSION, ML_VERSION, TRANSACTION_TASK_ID
 from cryptoguard.ml.features import FEATURES
 from cryptoguard.ml.monitoring import reference_bins
 
@@ -431,6 +431,7 @@ def ledger_entry(
     return {
         "run_id": run_id,
         "ml_version": ML_VERSION,
+        "task": TRANSACTION_TASK_ID,
         "feature_set_version": FEATURE_SET_VERSION,
         "git": _git_sha(),
         "versions": _versions(),

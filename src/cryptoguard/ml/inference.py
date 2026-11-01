@@ -60,6 +60,7 @@ UNCALIBRATED = (
 
 class ShadowScore(BaseModel):
     experimental: Literal[True] = True
+    task: Literal["ptxphish-transaction-phishing/1"] = "ptxphish-transaction-phishing/1"
     status: Literal["scored", "not_found", "incomplete"]
     tx_hash: str
     run_id: str

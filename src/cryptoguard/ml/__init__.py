@@ -13,6 +13,9 @@ from __future__ import annotations
 
 ML_VERSION = "cg-ml/0.1.0"
 FEATURE_SET_VERSION = "ptx-features/1"
+# The Phase 11 model's task: is a mined transaction part of a phishing operation? Cards
+# without a task field predate it and belong to this task.
+TRANSACTION_TASK_ID = "ptxphish-transaction-phishing/1"
 
 
 def ml_available() -> bool:

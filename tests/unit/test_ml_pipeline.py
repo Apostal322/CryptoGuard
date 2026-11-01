@@ -449,6 +449,7 @@ def test_registry_refuses_cards_that_do_not_match_this_code(trained: dict, tmp_p
         ({"feature_columns": ["not_a_feature"]}, "feature columns"),
         ({"threshold": 7}, "threshold"),
         ({"versions": {**card["versions"], "lightgbm": "1.0.0"}}, "lightgbm"),
+        ({"task": "poisoning-attempt/1"}, "transaction scorer"),  # another task's model
     ):
         card_path.write_text(json.dumps({**card, **change}))
         with pytest.raises(ModelRegistryError, match=message):
