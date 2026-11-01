@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -50,8 +51,15 @@ def make_splits(
     table: pd.DataFrame,
     records: dict[str, dict[str, Any]],
     plan: SplitPlan = DEFAULT_SPLIT,
+    hub_policy: Callable[[dict[str, dict[str, Any]]], set[str]] = hubs,
 ) -> tuple[pd.Series, dict[str, Any]]:
-    """A split name per row ("train", "validation", "test", or "excluded:<reason>")."""
+    """A split name per row ("train", "validation", "test", or "excluded:<reason>").
+
+    ``hub_policy`` decides which accounts do not link rows (default: the curated registry).
+    Alternatives exist for the sensitivity audit only (``ml/audit.py``); the production
+    split always uses the default. Rows that share accounts *within* one split are kept, so
+    evaluation rows are not independent: intervals must resample account clusters.
+    """
     import pandas as pd
 
     lo, hi = study_window(table)
@@ -67,7 +75,7 @@ def make_splits(
     split[inside.index[inside["block_number"] >= test_start]] = "test"
 
     train_records = {h: records[h] for h in table.loc[split == "train", "tx_hash"]}
-    hub_set = hubs(train_records)
+    hub_set = hub_policy(train_records)
 
     def accounts(tx_hash: str) -> set[str]:
         return parties(records[tx_hash]) - hub_set

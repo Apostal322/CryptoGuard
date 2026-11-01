@@ -68,8 +68,10 @@ def test_ml_shadow_mode_does_not_change_snapshot_findings(api_node: FakeNode) ->
     assert off == shadow
 
 
-@pytest.fixture
-def promoted(tmp_path: Path) -> tuple[Path, dict]:  # type: ignore[type-arg]
+RUN = "20261101T120000Z-cccccccc"
+
+
+def _trained_run(tmp_path: Path, *, holdout_passed: bool) -> tuple[Path, dict]:  # type: ignore[type-arg]
     pd = pytest.importorskip("pandas")
     pytest.importorskip("lightgbm")
     from cryptoguard.ml.dataset import build_table
@@ -85,20 +87,43 @@ def promoted(tmp_path: Path) -> tuple[Path, dict]:  # type: ignore[type-arg]
     out = run_training(table, split, SMALL_GRID)
     gate = {**promotion_gate(out["results"], out["selected"]), "validated_for_shadow": True}
     entry = {
-        "run_id": "test-run",
+        "run_id": RUN,
         "config": {},
         "gate": gate,
         "selected": {"name": out["selected"].name, "threshold": out["selected"].threshold},
     }
+    run_dir = save_run(tmp_path / "runs" / RUN, entry, out)
+    approval = "research_only"
+    if holdout_passed:  # synthetic stand-in for a real untouched-holdout evaluation record
+        card_path = run_dir / "model_card.json"
+        card = json.loads(card_path.read_text())
+        card["holdout"] = {
+            "untouched": True,
+            "evaluated_once": True,
+            "passed": True,
+            "note": "synthetic test fixture, not evidence",
+        }
+        card_path.write_text(json.dumps(card))
+        approval = "shadow_approved"
     registry = tmp_path / "registry.json"
-    promote(save_run(tmp_path / "run", entry, out), registry)
+    promote(run_dir, registry, approval=approval)  # type: ignore[arg-type]
     return registry, records
 
 
-def _client(records: dict, registry: Path, log: Path) -> TestClient:  # type: ignore[type-arg]
+@pytest.fixture
+def promoted(tmp_path: Path) -> tuple[Path, dict]:  # type: ignore[type-arg]
+    return _trained_run(tmp_path, holdout_passed=True)
+
+
+def _client(  # type: ignore[no-untyped-def]
+    records: dict,  # type: ignore[type-arg]
+    registry: Path,
+    log: Path,
+    **rpc: object,
+) -> TestClient:
     from tests.ml_synthetic import FakeRpc
 
-    fake = FakeRpc(records)
+    fake = FakeRpc(records, **rpc)  # type: ignore[arg-type]
     settings: Settings = make_settings(
         rpc_url=RPC_URL,
         ml_shadow="shadow",
@@ -128,11 +153,95 @@ def test_scores_a_transaction_in_shadow_mode(promoted: tuple[Path, dict], tmp_pa
     assert body["experimental"] is True
     assert body["status"] == "scored"
     assert 0.0 <= body["score"] <= 1.0
-    assert body["run_id"] == "test-run"
+    assert body["run_id"] == RUN
+    assert body["approval"] == "shadow_approved"
+    assert body["observation"] == "post_inclusion"
+    assert body["score_semantics"] == "uncalibrated_ranking"
     assert any("not a finding" in note for note in body["notes"])
     logged = [json.loads(line) for line in log.read_text().splitlines()]
-    assert len(logged) == 1
-    assert logged[0]["tx_hash"] == tx_hash
+    scored = [entry for entry in logged if entry["status"] == "scored"]
+    assert len(scored) == 1
+    assert scored[0]["tx_hash"] == tx_hash
+    assert "latency_ms" in scored[0]
     assert missing.json()["status"] == "not_found"
     assert status.status_code == 200
+    assert status.json()["approval"] == "shadow_approved"
     assert status.json()["drift"]["status"] == "insufficient_data"
+
+
+def test_mixed_case_hash_is_accepted_and_normalised(promoted, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    registry, records = promoted
+    tx_hash = next(iter(records))
+    with _client(records, registry, tmp_path / "s.jsonl") as client:
+        response = client.post(
+            "/api/v1/ml/transactions/score", json={"tx_hash": tx_hash.upper().replace("0X", "0x")}
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["tx_hash"] == tx_hash
+
+
+def test_research_only_model_is_refused_by_the_api(tmp_path: Path) -> None:
+    registry, records = _trained_run(tmp_path, holdout_passed=False)
+    with _client(records, registry, tmp_path / "s.jsonl") as client:
+        response = client.post(
+            "/api/v1/ml/transactions/score", json={"tx_hash": next(iter(records))}
+        )
+        status = client.get("/api/v1/ml/status")
+    assert response.status_code == 503
+    assert "research only" in response.json()["error"]["message"]
+    assert status.status_code == 200  # the status of a research-only model is still readable
+    assert status.json()["approval"] == "research_only"
+
+
+def test_a_provider_on_another_chain_is_refused(promoted, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    registry, records = promoted
+    with _client(records, registry, tmp_path / "s.jsonl", chain_id=11155111) as client:
+        response = client.post(
+            "/api/v1/ml/transactions/score", json={"tx_hash": next(iter(records))}
+        )
+    assert response.status_code >= 400
+    assert response.json()["error"]["code"] in ("chain_mismatch", "ml_unavailable")
+    assert not (tmp_path / "s.jsonl").exists()  # nothing scored, nothing logged
+
+
+def test_missing_receipt_is_incomplete_not_a_score(promoted, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    registry, records = promoted
+    tx_hash = next(iter(records))
+    with _client(records, registry, tmp_path / "s.jsonl", no_receipt={tx_hash}) as client:
+        response = client.post("/api/v1/ml/transactions/score", json={"tx_hash": tx_hash})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "incomplete"
+    assert response.json()["score"] is None
+
+
+def test_rpc_failure_is_an_error_not_a_low_score(promoted, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    registry, records = promoted
+    with _client(records, registry, tmp_path / "s.jsonl", fail={"eth_getCode"}) as client:
+        response = client.post(
+            "/api/v1/ml/transactions/score", json={"tx_hash": next(iter(records))}
+        )
+    assert response.status_code >= 500
+    assert "score" not in response.json()
+
+
+def test_scoring_writes_nothing_to_the_database(promoted, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from sqlalchemy import inspect, text
+
+    registry, records = promoted
+    with _client(records, registry, tmp_path / "s.jsonl") as client:
+        engine = client.app.state.cryptoguard.repository._engine  # type: ignore[attr-defined]
+
+        def counts() -> dict[str, int]:
+            with engine.connect() as conn:
+                return {
+                    t: conn.execute(text(f'SELECT COUNT(*) FROM "{t}"')).scalar_one()  # noqa: S608
+                    for t in inspect(engine).get_table_names()
+                }
+
+        before = counts()
+        for tx_hash in list(records)[:3]:
+            assert (
+                client.post("/api/v1/ml/transactions/score", json={"tx_hash": tx_hash}).status_code
+                == 200
+            )
+        assert counts() == before

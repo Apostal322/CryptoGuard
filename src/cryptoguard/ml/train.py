@@ -178,18 +178,30 @@ def fast_average_precision(y: np.ndarray, score: np.ndarray) -> float:
 
 
 def bootstrap_ci(
-    y: np.ndarray, score: np.ndarray, threshold: float, n: int = 1000
+    y: np.ndarray,
+    score: np.ndarray,
+    threshold: float,
+    n: int = 1000,
+    clusters: np.ndarray | None = None,
 ) -> dict[str, list[float]]:
-    """95% percentile intervals for test AP, recall and false-positive rate (seeded
-    resamples of rows). Empty when the split lacks one class: no interval exists."""
+    """95% percentile intervals for test AP, recall and false-positive rate (seeded).
+
+    With ``clusters`` (the account group of each row), whole clusters are resampled: PTXPhish
+    rows come in batches per account (up to 200 benign transactions per account, up to 50 per
+    scammer address), so resampling rows as if independent understates the uncertainty.
+    Empty when the split lacks one class: no interval exists."""
     if len(set(y.tolist())) < 2:
         return {}
     import numpy as np
 
     rng = np.random.default_rng(SEED)
+    if clusters is None:
+        clusters = np.arange(len(y))
+    ids = np.unique(clusters)
+    members = [np.flatnonzero(clusters == c) for c in ids]
     ap, rec, fpr = [], [], []
     for _ in range(n):
-        idx = rng.integers(0, len(y), len(y))
+        idx = np.concatenate([members[i] for i in rng.integers(0, len(ids), len(ids))])
         yi, si = y[idx], score[idx]
         positives = int(yi.sum())
         if positives in (0, len(yi)):
@@ -289,10 +301,13 @@ def run_training(
         )
         res.test = metrics(y_te, dummy.predict_proba(test[list(FEATURES)])[:, 1], 0.5)
         results.append(res)
+    groups = test["group"].to_numpy() if "group" in test else None
+    predictions: dict[str, Any] = {}
     for rule in ("rule_phishing_shape", "rule_cryptoguard_signals"):
         res = ModelResult(rule, "rule", None, {}, metrics(y_va, rule_scores(val, rule), 0.5))
         res.test = metrics(y_te, rule_scores(test, rule), 0.5)
-        res.test["ci95"] = bootstrap_ci(y_te, rule_scores(test, rule), 0.5)
+        res.test["ci95"] = bootstrap_ci(y_te, rule_scores(test, rule), 0.5, clusters=groups)
+        predictions[rule] = (rule_scores(val, rule), rule_scores(test, rule))
         results.append(res)
 
     # Learned models: every candidate scored on validation; best per (family, feature set) by
@@ -312,7 +327,8 @@ def run_training(
         res = ModelResult(name, "learned", fs_name, params, metrics(y_va, s_va, thr), threshold=thr)
         s_te = model.predict_proba(test[fs_cols])[:, 1]
         res.test = metrics(y_te, s_te, thr)
-        res.test["ci95"] = bootstrap_ci(y_te, s_te, thr)
+        res.test["ci95"] = bootstrap_ci(y_te, s_te, thr, clusters=groups)
+        predictions[f"{name}/{fs_name}"] = (s_va, s_te)
         res.test["recall_by_family"] = {
             fam: float(
                 ((s_te >= thr) & (test["family"] == fam).to_numpy()).sum()
@@ -339,6 +355,16 @@ def run_training(
     )
     s_te = model.predict_proba(test[cols])[:, 1]
     errors = test.assign(score=s_te)
+    import pandas as pd
+
+    # Every model's scores per evaluated row, so metrics can be recomputed from the artifact.
+    frames = []
+    for part, rows in (("validation", val), ("test", test)):
+        frame = rows[["tx_hash", "label"]].assign(split=part)
+        for pred_name, (sv, st) in predictions.items():
+            frame[pred_name] = sv if part == "validation" else st
+        frames.append(frame)
+    prediction_table = pd.concat(frames, ignore_index=True)
     fn = errors[(errors["label"] == 1) & (errors["score"] < selected.threshold)]
     fp = errors[(errors["label"] == 0) & (errors["score"] >= selected.threshold)]
     return {
@@ -359,6 +385,7 @@ def run_training(
         },
         "seconds": round(time.perf_counter() - started, 1),
         "reference": {c: reference_bins([float(v) for v in train[c]]) for c in cols},
+        "predictions": prediction_table,
     }
 
 
@@ -424,14 +451,23 @@ def ledger_entry(
 
 
 def save_run(run_dir: Path, entry: dict[str, Any], out: dict[str, Any]) -> Path:
-    """Persist the selected model with a hash-pinned card (``registry.load_model`` checks it)."""
+    """Persist the selected model with a hash-pinned card (``registry`` checks it), plus every
+    model's validation and test scores (``predictions.csv``).
+
+    LightGBM models are written in LightGBM's own text format, so loading them never
+    unpickles anything; other families fall back to joblib."""
     import hashlib
 
-    import joblib
-
     run_dir.mkdir(parents=True, exist_ok=True)
-    model_path = run_dir / "model.joblib"
-    joblib.dump(out["model"], model_path)
+    model = out["model"]
+    if hasattr(model, "booster_"):
+        model_path, serialization = run_dir / "model.txt", "lightgbm-text"
+        model_path.write_bytes(model.booster_.model_to_string().encode("utf-8"))
+    else:
+        import joblib
+
+        model_path, serialization = run_dir / "model.joblib", "joblib"
+        joblib.dump(model, model_path)
     card = {
         "run_id": entry["run_id"],
         "ml_version": ML_VERSION,
@@ -440,10 +476,17 @@ def save_run(run_dir: Path, entry: dict[str, Any], out: dict[str, Any]) -> Path:
         "threshold": entry["selected"]["threshold"],
         "selected": entry["selected"],
         "gate": entry["gate"],
+        "serialization": serialization,
         "model_sha256": hashlib.sha256(model_path.read_bytes()).hexdigest(),
+        "versions": entry.get("versions") or _versions(),
+        "score_semantics": "uncalibrated ranking score (see ML_GENERALIZATION_AUDIT.md)",
         "reference_bins": out["reference"],
         "trained_on": entry["config"],
     }
     (run_dir / "model_card.json").write_text(json.dumps(card, indent=1), encoding="utf-8")
     (run_dir / "run.json").write_text(json.dumps(entry, indent=1, default=str), encoding="utf-8")
+    if "predictions" in out:
+        out["predictions"].to_csv(
+            run_dir / "predictions.csv", index=False, lineterminator="\n", float_format="%.17g"
+        )
     return run_dir

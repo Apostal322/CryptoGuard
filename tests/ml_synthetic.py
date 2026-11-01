@@ -108,9 +108,18 @@ def make_records(
 class FakeRpc:
     """JSON-RPC over httpx.MockTransport serving the four methods the collector uses."""
 
-    def __init__(self, records: dict[str, dict[str, Any]], *, fail: set[str] | None = None):
+    def __init__(
+        self,
+        records: dict[str, dict[str, Any]],
+        *,
+        fail: set[str] | None = None,
+        chain_id: int = 1,
+        no_receipt: set[str] | None = None,
+    ):
         self.records = records
         self.fail = fail or set()
+        self.chain_id = chain_id
+        self.no_receipt = no_receipt or set()
         self.calls: list[str] = []
 
     def transport(self) -> httpx.MockTransport:
@@ -123,12 +132,14 @@ class FakeRpc:
         if method in self.fail:
             return httpx.Response(503, text="unavailable")
         result: Any = None
-        if method == "eth_getTransactionByHash":
+        if method == "eth_chainId":
+            result = hex(self.chain_id)
+        elif method == "eth_getTransactionByHash":
             rec = self.records.get(params[0])
             result = None if rec is None else {**rec["tx"], "hash": params[0]}
         elif method == "eth_getTransactionReceipt":
             rec = self.records.get(params[0])
-            result = None if rec is None else rec["receipt"]
+            result = None if rec is None or params[0] in self.no_receipt else rec["receipt"]
         elif method == "eth_getTransactionCount":
             rec = next(r for r in self.records.values() if r["tx"]["from"] == params[0])
             result = rec["from_nonce_before"]

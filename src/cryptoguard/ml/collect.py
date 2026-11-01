@@ -10,20 +10,28 @@ For each sampled transaction the collector reads, from one RPC endpoint:
    creations).
 
 Nothing after the transaction's own block is read, so features describe what was knowable
-when the transaction executed. Labels are never sent anywhere: the sample order is fixed by
-a seed before collection starts. Every HTTP attempt counts against ``max_requests``
-(retries included); the run stops cleanly before exceeding it and resumes from its JSONL
-checkpoint, skipping transactions already collected.
+when the transaction executed (post-inclusion: the receipt is part of the input). Labels are
+never sent anywhere: the sample order is fixed by a seed before collection starts.
+
+Budget: every HTTP attempt (retries included) reserves one unit in a durable ledger *before*
+it is sent (``RequestLedger``, ``BudgetedTransport``). The run stops when the ledger is full
+and resumes from its JSONL checkpoint, skipping transactions already collected.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import random
+import threading
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import httpx
 
 from cryptoguard.blockchain.rpc import JsonRpcClient, RetryPolicy
 from cryptoguard.core.errors import RpcError
@@ -93,12 +101,15 @@ async def collect_one(client: JsonRpcClient, tx_hash: str) -> dict[str, Any]:
     if tx is None or tx.get("blockNumber") is None:
         return {"tx_hash": tx_hash, "status": "not_found"}
     receipt = await client.call("eth_getTransactionReceipt", [tx_hash])
+    if receipt is None:
+        # Mined but no receipt served: never stand in "no logs, failed" for missing data.
+        return {"tx_hash": tx_hash, "status": "incomplete"}
     before = hex(int(tx["blockNumber"], 16) - 1)
     nonce = await client.call("eth_getTransactionCount", [tx["from"], before])
     code = "0x"
     if tx.get("to"):
         code = await client.call("eth_getCode", [tx["to"], before])
-    logs = receipt.get("logs", []) if receipt else []
+    logs = receipt.get("logs") or []
     return {
         "tx_hash": tx_hash,
         "status": "ok",
@@ -118,9 +129,7 @@ async def collect_one(client: JsonRpcClient, tx_hash: str) -> dict[str, Any]:
                 "input",
             )
         },
-        "receipt": None
-        if receipt is None
-        else {
+        "receipt": {
             "status": receipt.get("status"),
             "gasUsed": receipt.get("gasUsed"),
             "contractAddress": receipt.get("contractAddress"),
@@ -134,63 +143,199 @@ async def collect_one(client: JsonRpcClient, tx_hash: str) -> dict[str, Any]:
     }
 
 
+class BudgetExhaustedError(RuntimeError):
+    """The request ledger has no room for another attempt."""
+
+
+class LedgerCorruptError(RuntimeError):
+    """The request ledger cannot be read; collection refuses to guess (fail closed)."""
+
+
+class RequestLedger:
+    """Durable, cross-process request budget: one unit is *reserved before* every HTTP
+    attempt (retries included), under an exclusive lock file, with an atomic write.
+
+    A crash after reserving over-counts (safe); it can never under-count. Two collectors on
+    the same ledger cannot together exceed the cap. The file keeps the Phase 11 format
+    (``{"requests": n, "notes": [...]}``) so earlier usage still counts.
+    """
+
+    def __init__(self, path: Path, cap: int, *, lock_timeout: float = 30.0) -> None:
+        self.path = path
+        self.cap = cap
+        self.lock_timeout = lock_timeout
+        self._lock = path.with_name(path.name + ".lock")
+
+    def _acquire(self) -> None:
+        deadline = time.monotonic() + self.lock_timeout
+        while True:
+            try:
+                fd = os.open(self._lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode())
+                os.close(fd)
+                return
+            except (FileExistsError, PermissionError):
+                # PermissionError: Windows reports it while the holder is deleting the file.
+                # A holder that crashed leaves the file; reservations are quick, so an old
+                # lock is stale.
+                try:
+                    if time.time() - self._lock.stat().st_mtime > 60:
+                        self._lock.unlink(missing_ok=True)
+                        continue
+                except FileNotFoundError:
+                    continue
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"request ledger lock {self._lock} is held") from None
+                time.sleep(0.01)
+
+    def _read(self) -> dict[str, Any]:
+        if not self.path.exists():
+            return {"requests": 0}
+        try:
+            state = json.loads(self.path.read_text(encoding="utf-8"))
+            int(state["requests"])
+        except (ValueError, KeyError, TypeError):
+            raise LedgerCorruptError(f"{self.path} is unreadable; fix it by hand") from None
+        return dict(state)
+
+    def _write(self, state: dict[str, Any]) -> None:
+        tmp = self.path.with_name(self.path.name + f".{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
+        for attempt in range(50):
+            try:
+                os.replace(tmp, self.path)  # atomic on Windows and POSIX
+                return
+            except PermissionError:  # Windows: a scanner may hold the target for a moment
+                if attempt == 49:
+                    raise
+                time.sleep(0.01)
+
+    def used(self) -> int:
+        self._acquire()  # never read while another process replaces the file
+        try:
+            return int(self._read()["requests"])
+        finally:
+            self._lock.unlink(missing_ok=True)
+
+    def reserve(self, n: int = 1) -> int:
+        """Reserve ``n`` attempts or raise; returns the total reserved afterwards."""
+        self._acquire()
+        try:
+            state = self._read()
+            total = int(state["requests"]) + n
+            if total > self.cap:
+                raise BudgetExhaustedError(f"{state['requests']} of {self.cap} requests used")
+            state["requests"] = total
+            self._write(state)
+            return total
+        finally:
+            self._lock.unlink(missing_ok=True)
+
+    def note(self, text: str, requests: int = 0) -> int:
+        """Record a manual charge (e.g. requests made outside the collector)."""
+        self._acquire()
+        try:
+            state = self._read()
+            state["requests"] = int(state["requests"]) + requests
+            state.setdefault("notes", []).append(text)
+            self._write(state)
+            return int(state["requests"])
+        finally:
+            self._lock.unlink(missing_ok=True)
+
+
+class BudgetedTransport(httpx.AsyncBaseTransport):
+    """Reserves one ledger unit before handing each HTTP attempt to the real transport."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport, ledger: RequestLedger) -> None:
+        self.inner = inner
+        self.ledger = ledger
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.ledger.reserve(1)
+        return await self.inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+
+def _repair_tail(out: Path) -> bool:
+    """Drop a final checkpoint line cut off by a crash (its transaction is fetched again)."""
+    if not out.exists():
+        return False
+    data = out.read_bytes()
+    if not data or data.endswith(b"\n"):
+        return False
+    cut = data.rfind(b"\n") + 1
+    with out.open("r+b") as fh:
+        fh.truncate(cut)
+    return True
+
+
 async def collect(
     sample: pd.DataFrame,
     out: Path,
     *,
-    rpc_url: str,
-    max_requests: int,
+    ledger: RequestLedger,
+    rpc_url: str = "https://rpc.invalid",
+    transport: httpx.AsyncBaseTransport | None = None,
     concurrency: int = 3,
-    client: JsonRpcClient | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> dict[str, int]:
-    """Collect chain data for the sample in order until done or the budget is spent."""
+    """Collect chain data for the sample in order until done or the ledger is full. Every
+    HTTP attempt is reserved in ``ledger`` first, so the cap holds under retries, crashes
+    and concurrent collectors."""
     out.parent.mkdir(parents=True, exist_ok=True)
+    repaired = _repair_tail(out)
     done = _done(out)
     todo = [h for h in sample["tx_hash"] if h not in done]
-    retry = RetryPolicy(max_retries=4)
-    rpc = client or JsonRpcClient(rpc_url, timeout=20, retry=retry, max_concurrency=concurrency)
-    # Worst case still in flight when a worker checks: every worker's transaction with every
-    # call retried to the limit. Stopping this far below the cap makes it a hard cap.
-    margin = concurrency * REQUESTS_PER_TX * (retry.max_retries + 1)
-    stats = {"already": len(done), "ok": 0, "not_found": 0, "error": 0, "skipped_budget": 0}
+    rpc = JsonRpcClient(
+        rpc_url,
+        timeout=20,
+        retry=RetryPolicy(max_retries=4),
+        max_concurrency=concurrency,
+        transport=BudgetedTransport(transport or httpx.AsyncHTTPTransport(), ledger),
+        sleep=sleep,
+    )
+    stats = {
+        "already": len(done),
+        "ok": 0,
+        "not_found": 0,
+        "incomplete": 0,
+        "error": 0,
+        "skipped_budget": 0,
+        "repaired_tail": int(repaired),
+    }
     lock = asyncio.Lock()
     queue: asyncio.Queue[str] = asyncio.Queue()
     for h in todo:
         queue.put_nowait(h)
-    recorded = 0
-
-    def flush_budget() -> None:
-        # Written after every transaction, so an interrupted run never loses its count.
-        nonlocal recorded
-        delta = rpc.metrics.requests - recorded
-        if delta:
-            record_requests(out, delta)
-            recorded += delta
+    exhausted = False
 
     async def worker() -> None:
-        while not queue.empty():
+        nonlocal exhausted
+        while not queue.empty() and not exhausted:
             tx_hash = queue.get_nowait()
-            if rpc.metrics.requests + margin > max_requests:
-                stats["skipped_budget"] += 1
-                continue
             try:
                 row = await collect_one(rpc, tx_hash)
+            except BudgetExhaustedError:
+                exhausted = True
+                stats["skipped_budget"] += 1
+                return
             except RpcError as exc:
                 row = {"tx_hash": tx_hash, "status": "error", "error": exc.code}
             async with lock:
                 stats[row["status"]] += 1
                 with out.open("a", encoding="utf-8") as fh:
                     fh.write(json.dumps(row, separators=(",", ":")) + "\n")
-                flush_budget()
 
     try:
         await asyncio.gather(*(worker() for _ in range(concurrency)))
     finally:
-        flush_budget()
+        stats["skipped_budget"] += queue.qsize()
         stats["requests"] = rpc.metrics.requests
         stats["retries"] = rpc.metrics.retries
-        if client is None:
-            await rpc.aclose()
+        await rpc.aclose()
     return stats
 
 
@@ -199,30 +344,22 @@ def budget_path(out: Path) -> Path:
 
 
 def requests_used(out: Path) -> int:
-    """Cumulative RPC attempts over every run that wrote ``out`` (the cap is a total)."""
-    path = budget_path(out)
-    return int(json.loads(path.read_text(encoding="utf-8"))["requests"]) if path.exists() else 0
-
-
-def record_requests(out: Path, requests: int, note: str | None = None) -> int:
-    path = budget_path(out)
-    state: dict[str, Any] = (
-        json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"requests": 0}
-    )
-    state["requests"] = int(state["requests"]) + requests
-    if note:
-        notes: list[str] = state.setdefault("notes", [])
-        notes.append(note)
-    path.write_text(json.dumps(state, indent=1), encoding="utf-8")
-    return int(state["requests"])
+    """Cumulative RPC attempts reserved by every run that wrote ``out`` (the cap is a total)."""
+    return RequestLedger(budget_path(out), cap=0).used()
 
 
 def load_collected(path: Path) -> dict[str, dict[str, Any]]:
-    """Latest successful record per transaction."""
+    """Latest successful record per transaction. A cut-off final line (crash during a
+    write) is ignored; a corrupt line anywhere else raises."""
     rows: dict[str, dict[str, Any]] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    for i, line in enumerate(lines):
+        try:
             row = json.loads(line)
-            if row["status"] in ("ok", "not_found"):
-                rows[row["tx_hash"]] = row
+        except ValueError:
+            if i == len(lines) - 1:
+                break
+            raise ValueError(f"{path}: corrupt checkpoint line {i + 1}") from None
+        if row["status"] in ("ok", "not_found"):
+            rows[row["tx_hash"]] = row
     return rows

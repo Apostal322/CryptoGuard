@@ -31,6 +31,8 @@ class ScoreRequest(BaseModel):
 class MlStatus(BaseModel):
     experimental: bool = True
     run_id: str
+    approval: str
+    score_semantics: str = "uncalibrated_ranking"
     selected: dict[str, Any]
     gate: dict[str, Any]
     drift: dict[str, Any]
@@ -40,11 +42,12 @@ class MlStatus(BaseModel):
 async def score(request: Request, body: ScoreRequest) -> ShadowScore:
     """EXPERIMENTAL: shadow-mode phishing score for one transaction (never a finding)."""
     state = get_state(request)
-    loaded_model(state.settings)  # 409 / 503 before any RPC call
+    loaded_model(state.settings)  # 409 / 503 (off, unavailable, not shadow-approved) before RPC
     provider = require_provider(state.provider)
     if not isinstance(provider, RpcEthereumProvider):
         raise MlUnavailableError("ML scoring needs a real RPC provider (not demo fixtures).")
-    return await score_transaction(provider.client, body.tx_hash, state.settings)
+    chain_id = await provider.verify_chain()  # the raw client below bypasses the provider
+    return await score_transaction(provider.client, body.tx_hash, state.settings, chain_id=chain_id)
 
 
 @router.get("/ml/status", response_model=MlStatus)
@@ -53,9 +56,10 @@ async def status(request: Request) -> MlStatus:
     from cryptoguard.ml.monitoring import drift_report
 
     settings = get_state(request).settings
-    model = loaded_model(settings)
+    model = loaded_model(settings, require_shadow_approval=False)  # status of any registered model
     return MlStatus(
         run_id=model.run_id,
+        approval=model.approval,
         selected=model.card["selected"],
         gate=model.card["gate"],
         drift=drift_report(model.card, Path(settings.ml_score_log_path)),

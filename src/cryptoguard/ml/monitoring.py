@@ -51,22 +51,70 @@ def log_score(entry: dict[str, Any], path: Path = DEFAULT_LOG) -> None:
         fh.write(json.dumps(entry, separators=(",", ":")) + "\n")
 
 
+MAX_LOG_ROWS = 10_000  # only the most recent scores are read (the log is append-only)
+
+
+def _quantiles(values: list[float], qs: tuple[float, ...]) -> dict[str, float] | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    return {f"p{round(q * 100)}": ordered[min(int(q * len(ordered)), len(ordered) - 1)] for q in qs}
+
+
 def drift_report(card: dict[str, Any], path: Path = DEFAULT_LOG) -> dict[str, Any]:
-    rows = []
+    """Input drift of recent shadow scores against the training reference.
+
+    This measures *data* drift (PSI per feature) and *prediction* drift (score
+    distribution), plus coverage failures and latency. Without labels it cannot show that
+    accuracy degraded (concept drift or performance loss): a stable PSI is not evidence of
+    a working model."""
+    lines: list[str] = []
     if path.exists():
-        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
-    rows = [r for r in rows if r.get("run_id") == card["run_id"]]
-    if len(rows) < MIN_ROWS:
-        return {"status": "insufficient_data", "rows": len(rows), "min_rows": MIN_ROWS}
+        lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line][
+            -MAX_LOG_ROWS:
+        ]
+    rows: list[dict[str, Any]] = []
+    unreadable = 0
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            unreadable += 1
+            continue
+        if row.get("run_id") == card["run_id"]:
+            rows.append(row)
+    columns = list(card["feature_columns"])
+    scored = [r for r in rows if r.get("status", "scored") == "scored" and "features" in r]
+    valid = [r for r in scored if sorted(r["features"]) == sorted(columns)]
+    statuses: dict[str, int] = {}
+    for r in rows:
+        statuses[r.get("status", "scored")] = statuses.get(r.get("status", "scored"), 0) + 1
+    latencies = [float(r["latency_ms"]) for r in rows if "latency_ms" in r]
+    summary: dict[str, Any] = {
+        "rows": len(rows),
+        "status_counts": statuses,
+        "schema_mismatches": len(scored) - len(valid),
+        "unreadable_lines": unreadable,
+        "latency_ms": _quantiles(latencies, (0.5, 0.95)),
+        "scores": _quantiles([float(r["score"]) for r in valid], (0.1, 0.5, 0.9)),
+        "share_above_threshold": (
+            sum(float(r["score"]) >= float(card["threshold"]) for r in valid) / len(valid)
+            if valid
+            else None
+        ),
+        "note": "Data and prediction drift only; without labels, accuracy cannot be monitored.",
+    }
+    if len(valid) < MIN_ROWS:
+        return {"status": "insufficient_data", "min_rows": MIN_ROWS, **summary}
     reference = card["reference_bins"]
     scores = {
-        feature: psi(reference[feature], [float(r["features"][feature]) for r in rows])
-        for feature in card["feature_columns"]
+        feature: psi(reference[feature], [float(r["features"][feature]) for r in valid])
+        for feature in columns
     }
     worst = sorted(scores.items(), key=lambda kv: -kv[1])
     return {
         "status": "ok",
-        "rows": len(rows),
+        **summary,
         "psi": dict(worst),
         "shifted": [f for f, v in worst if v > 0.25],
         "moderate": [f for f, v in worst if 0.1 < v <= 0.25],

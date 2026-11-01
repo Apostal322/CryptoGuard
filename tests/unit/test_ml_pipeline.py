@@ -1,9 +1,8 @@
-"""ML pipeline: source integrity, label parsing, sampling, leakage-safe splits, collector
-budget, training smoke run, registry and monitoring. Synthetic data only."""
+"""ML pipeline: source integrity, label parsing, sampling, leakage-safe splits, training
+smoke run, registry and monitoring. Synthetic data only."""
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 
@@ -17,17 +16,16 @@ pytest.importorskip("openpyxl")
 
 import pandas as pd
 
-from cryptoguard.blockchain.rpc import JsonRpcClient, RetryPolicy
 from cryptoguard.ml import collect as collect_mod
 from cryptoguard.ml.dataset import build_table, hubs
 from cryptoguard.ml.features import parties
 from cryptoguard.ml.labels import _PTX_HEADER_ROW, load_ptxphish
 from cryptoguard.ml.monitoring import drift_report, log_score, psi, reference_bins
-from cryptoguard.ml.registry import ModelRegistryError, load_shadow_model, promote
+from cryptoguard.ml.registry import ModelRegistryError, load_registered_model, promote
 from cryptoguard.ml.sources import SOURCES, SourceIntegrityError, sha256_file, verify
 from cryptoguard.ml.splits import make_splits
 from cryptoguard.ml.train import promotion_gate, run_training, save_run
-from tests.ml_synthetic import TOKEN, FakeRpc, make_records
+from tests.ml_synthetic import TOKEN, make_records
 
 # --- sources and labels ---------------------------------------------------------------------
 
@@ -103,6 +101,19 @@ def test_malformed_hash_or_layout_change_fails_loudly(
         load_ptxphish(_fake_ptx(tmp_path / "b", monkeypatch, renamed))
 
 
+def test_a_hash_in_two_categories_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Conflicting labels (same transaction, two categories, any casing) fail validation."""
+    import pandera.errors
+
+    columns: dict[str, list[str]] = {name: [] for name in ALL_SUBTYPES}
+    columns["Approve"] = ["0x" + "ab" * 32]
+    columns["Benign KOL"] = ["0x" + "AB" * 32]
+    with pytest.raises(pandera.errors.SchemaError):
+        load_ptxphish(_fake_ptx(tmp_path, monkeypatch, columns))
+
+
 def test_a_tampered_source_file_is_refused(tmp_path: Path) -> None:
     source = SOURCES["forta"]
     for f in source.files:
@@ -176,63 +187,127 @@ def test_reused_attacker_contract_cannot_reach_the_test_split() -> None:
     assert not split[rows].isin(["validation", "test"]).any()
 
 
-# --- collector -----------------------------------------------------------------------------
+def _rec(tx_hash: str, block: int, sender: str, to: str, logs: list[dict] | None = None) -> dict:  # type: ignore[type-arg]
+    return {
+        "tx_hash": tx_hash,
+        "status": "ok",
+        "tx": {
+            "blockNumber": hex(block),
+            "from": sender,
+            "to": to,
+            "value": "0x0",
+            "gas": hex(60_000),
+            "gasPrice": hex(10**9),
+            "input": "0xa9059cbb" + "00" * 64,
+        },
+        "receipt": {"status": "0x1", "gasUsed": hex(50_000), "logs": logs or []},
+        "from_nonce_before": "0x1",
+        "to_code_before": {"size": 100, "prefix": "0x608060"},
+    }
 
 
-def _client(fake: FakeRpc) -> JsonRpcClient:
-    async def no_sleep(_: float) -> None:
-        return None
+def _transfer_log(token: str, src: str, dst: str) -> dict:  # type: ignore[type-arg]
+    from cryptoguard.ml.features import TRANSFER
 
-    return JsonRpcClient(
-        "https://rpc.invalid",
-        transport=fake.transport(),
-        retry=RetryPolicy(max_retries=1),
-        sleep=no_sleep,
-        max_concurrency=1,
+    return {
+        "address": token,
+        "topics": [TRANSFER, "0x" + "0" * 24 + src[2:], "0x" + "0" * 24 + dst[2:]],
+        "data": "0x" + "00" * 32,
+    }
+
+
+def _scenario(rows: list[tuple[str, int, str, str, int, list[dict] | None]]):  # type: ignore[no-untyped-def,type-arg]
+    """Build a table from (hash, block, sender, to, label, logs) rows and split it."""
+    records = {h: _rec(h, b, s, t, logs) for h, b, s, t, _, logs in rows}
+    labels = pd.DataFrame(
+        [
+            {
+                "tx_hash": h,
+                "family": "ice_phishing" if y else "benign",
+                "subtype": "approve" if y else "benign_kol",
+                "label": y,
+            }
+            for h, _, _, _, y, _ in rows
+        ]
     )
+    table = build_table(labels, records)[0]
+    split, _ = make_splits(table, records)
+    return dict(zip(table["tx_hash"], split, strict=True))
 
 
-def test_collector_respects_the_request_cap_and_resumes(tmp_path: Path) -> None:
-    labels, records = make_records(n=40)
-    sample = pd.DataFrame(labels)
-    out = tmp_path / "chain.jsonl"
-    fake = FakeRpc(records)
-    stats = asyncio.run(
-        collect_mod.collect(
-            sample, out, rpc_url="unused", max_requests=60, concurrency=1, client=_client(fake)
-        )
-    )
-    assert len(fake.calls) <= 60
-    assert collect_mod.requests_used(out) == len(fake.calls)  # recorded as it went
-    assert stats["skipped_budget"] > 0
-    first = len(collect_mod.load_collected(out))
-    fake2 = FakeRpc(records)
-    asyncio.run(
-        collect_mod.collect(
-            sample, out, rpc_url="unused", max_requests=10_000, concurrency=1, client=_client(fake2)
-        )
-    )
-    assert len(collect_mod.load_collected(out)) == 40
-    assert len(fake2.calls) == (40 - first) * collect_mod.REQUESTS_PER_TX  # no refetching
+def _h(i: int) -> str:
+    return "0x" + f"{i:064x}"
 
 
-def test_collector_records_failures_and_retries_them_later(tmp_path: Path) -> None:
-    labels, records = make_records(n=3)
-    out = tmp_path / "chain.jsonl"
-    asyncio.run(
-        collect_mod.collect(
-            pd.DataFrame(labels),
-            out,
-            rpc_url="unused",
-            max_requests=1_000,
-            concurrency=1,
-            client=_client(FakeRpc(records, fail={"eth_getCode"})),
-        )
-    )
-    rows = [json.loads(line) for line in out.read_text().splitlines()]
-    assert {r["status"] for r in rows} == {"error"}
-    assert collect_mod.load_collected(out) == {}
+def _a(i: int) -> str:
+    return "0x" + f"{i:040x}"
 
+
+USDT = "0xdac17f958d2ee523a2206206994597c13d831ec7"  # in the public-infrastructure registry
+
+
+def _background(n: int = 40, start: int = 1_000) -> list[tuple[str, int, str, str, int, None]]:
+    """Unrelated rows of both classes spread over time, so every split has both labels."""
+    return [
+        (_h(10_000 + i), 15_000_000 + start + i * 100, _a(50_000 + i), _a(60_000 + i), i % 2, None)
+        for i in range(n)
+    ]
+
+
+# Row 1 sits early inside the study window (both classes occur before it); row 2 late but
+# still inside (the background's benign rows end at block 15_004_800, which closes the window).
+EARLY, LATE = 15_001_150, 15_004_750
+PURGED = "excluded:shares_account_with_earlier_split"
+
+
+def test_shared_attacker_signer_never_spans_splits() -> None:
+    signer = _a(1)
+    rows = [
+        *_background(),
+        (_h(1), EARLY, signer, _a(2), 1, None),
+        (_h(2), LATE, signer, _a(3), 1, None),
+    ]
+    split = _scenario(rows)
+    assert split[_h(1)] == "train"
+    assert split[_h(2)].startswith(PURGED)
+
+
+def test_shared_lookalike_recipient_never_spans_splits() -> None:
+    lookalike = _a(7)
+    rows = [
+        *_background(),
+        (_h(1), EARLY, _a(5), USDT, 1, [_transfer_log(USDT, _a(8), lookalike)]),
+        (_h(2), LATE, _a(6), USDT, 1, [_transfer_log(USDT, _a(9), lookalike)]),
+    ]
+    split = _scenario(rows)
+    assert split[_h(1)] == "train"
+    assert split[_h(2)].startswith(PURGED)
+
+
+def test_public_token_alone_does_not_link_unrelated_wallets() -> None:
+    rows = [
+        *_background(),
+        (_h(1), EARLY, _a(5), USDT, 0, None),
+        (_h(2), LATE, _a(6), USDT, 0, None),
+    ]
+    split = _scenario(rows)
+    assert split[_h(1)] == "train"
+    assert split[_h(2)] == "test"  # USDT is registry infrastructure; nothing else is shared
+
+
+def test_mixed_case_addresses_are_the_same_entity() -> None:
+    signer = "0x" + "ab" * 20
+    rows = [
+        *_background(),
+        (_h(1), EARLY, signer, _a(2), 1, None),
+        (_h(2), LATE, signer.upper().replace("0X", "0x"), _a(3), 1, None),
+    ]
+    split = _scenario(rows)
+    assert split[_h(1)] == "train"
+    assert split[_h(2)].startswith(PURGED)
+
+
+# Collector and request-budget tests: tests/unit/test_ml_collector.py.
 
 # --- training, gate, registry, monitoring --------------------------------------------------
 
@@ -283,26 +358,111 @@ def test_training_is_deterministic(trained: dict) -> None:  # type: ignore[type-
     assert first == second
 
 
-def test_registry_refuses_ungated_and_tampered_models(trained: dict, tmp_path: Path) -> None:  # type: ignore[type-arg]
+RUN_A = "20261101T000000Z-aaaaaaaa"
+RUN_B = "20261101T000001Z-bbbbbbbb"
+
+
+def _saved(trained: dict, runs: Path, run_id: str, gate_ok: bool) -> Path:  # type: ignore[type-arg]
     out = trained["out"]
-    gate = promotion_gate(out["results"], out["selected"])
+    gate = {**promotion_gate(out["results"], out["selected"]), "validated_for_shadow": gate_ok}
     entry = {
-        "run_id": "r1",
+        "run_id": run_id,
         "config": {},
-        "gate": {**gate, "validated_for_shadow": False},
+        "gate": gate,
         "selected": {"threshold": out["selected"].threshold},
     }
-    run_dir = save_run(tmp_path / "r1", entry, out)
+    return save_run(runs / run_id, entry, out)
+
+
+def test_registry_refuses_ungated_and_tampered_models(trained: dict, tmp_path: Path) -> None:  # type: ignore[type-arg]
+    runs, registry = tmp_path / "runs", tmp_path / "registry.json"
     with pytest.raises(ModelRegistryError, match="did not pass"):
-        promote(run_dir, tmp_path / "registry.json")
-    entry["gate"]["validated_for_shadow"] = True
-    run_dir = save_run(tmp_path / "r2", {**entry, "run_id": "r2"}, out)
-    registry = tmp_path / "registry.json"
+        promote(_saved(trained, runs, RUN_A, gate_ok=False), registry)
+    run_dir = _saved(trained, runs, RUN_B, gate_ok=True)
     promote(run_dir, registry)
-    assert load_shadow_model(registry).run_id == "r2"
-    (run_dir / "model.joblib").write_bytes(b"not the trained model")
+    loaded = load_registered_model(registry)
+    assert loaded.run_id == RUN_B
+    assert loaded.approval == "research_only"  # the default: a development benchmark only
+    model_file = next(run_dir.glob("model.*"))
+    model_file.write_bytes(model_file.read_bytes() + b"\n")
     with pytest.raises(ModelRegistryError, match="hash mismatch"):
-        load_shadow_model(registry)
+        load_registered_model(registry)
+
+
+def test_shadow_approval_needs_an_untouched_holdout(trained: dict, tmp_path: Path) -> None:  # type: ignore[type-arg]
+    run_dir = _saved(trained, tmp_path / "runs", RUN_A, gate_ok=True)
+    with pytest.raises(ModelRegistryError, match="untouched"):
+        promote(run_dir, tmp_path / "registry.json", approval="shadow_approved")
+
+
+def test_lightgbm_is_stored_as_text_and_scores_identically(trained: dict, tmp_path: Path) -> None:  # type: ignore[type-arg]
+    """No pickle for LightGBM: the text model must reproduce the trained classifier's scores."""
+    import numpy as np
+
+    from cryptoguard.ml.registry import _verified_model
+    from cryptoguard.ml.train import make_model
+
+    table, split = trained["table"], trained["split"]
+    train = table[split == "train"]
+    cols = list(trained["out"]["feature_columns"])
+    model = make_model("lightgbm", {"num_leaves": 7, "min_child_samples": 5})
+    model.fit(train[cols], train["label"])
+    out = {**trained["out"], "model": model, "feature_columns": cols}
+    entry = {
+        "run_id": RUN_A,
+        "config": {},
+        "gate": {"validated_for_shadow": True},
+        "selected": {"threshold": 0.5},
+    }
+    run_dir = save_run(tmp_path / "runs" / RUN_A, entry, out)
+    assert (run_dir / "model.txt").exists()
+    assert not (run_dir / "model.joblib").exists()
+    _, loaded = _verified_model(run_dir)
+    rows = table[split == "test"][cols]
+    assert np.allclose(loaded.predict_proba(rows), model.predict_proba(rows), atol=1e-12)
+
+
+def test_registry_rejects_paths_and_malformed_entries(trained: dict, tmp_path: Path) -> None:  # type: ignore[type-arg]
+    from cryptoguard.ml.registry import run_dir_for
+
+    runs = tmp_path / "runs"
+    for bad in ("../outside", "20261101T000000Z-aaaaaaaa/../x", "r1", ""):
+        with pytest.raises(ModelRegistryError, match="invalid run id"):
+            run_dir_for(bad, runs)
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"shadow": {"run_dir": "C:/anything"}}))  # Phase 11 format
+    with pytest.raises(ModelRegistryError, match="malformed"):
+        load_registered_model(registry)
+    registry.write_text(json.dumps({"model": {"run_id": "../../etc", "approval": "research_only"}}))
+    with pytest.raises(ModelRegistryError, match="invalid run id"):
+        load_registered_model(registry, runs)
+
+
+def test_registry_refuses_cards_that_do_not_match_this_code(trained: dict, tmp_path: Path) -> None:  # type: ignore[type-arg]
+    from cryptoguard.ml.registry import _verified_model
+
+    run_dir = _saved(trained, tmp_path / "runs", RUN_A, gate_ok=True)
+    card_path = run_dir / "model_card.json"
+    card = json.loads(card_path.read_text())
+    for change, message in (
+        ({"feature_set_version": "ptx-features/0"}, "features"),
+        ({"feature_columns": ["not_a_feature"]}, "feature columns"),
+        ({"threshold": 7}, "threshold"),
+        ({"versions": {**card["versions"], "lightgbm": "1.0.0"}}, "lightgbm"),
+    ):
+        card_path.write_text(json.dumps({**card, **change}))
+        with pytest.raises(ModelRegistryError, match=message):
+            _verified_model(run_dir)
+    card_path.write_text("{not json")
+    with pytest.raises(ModelRegistryError, match="unreadable"):
+        _verified_model(run_dir)
+
+
+def test_training_records_predictions_for_every_model(trained: dict) -> None:  # type: ignore[type-arg]
+    preds = trained["out"]["predictions"]
+    assert set(preds["split"]) == {"validation", "test"}
+    assert {"lightgbm/full", "rule_phishing_shape"} <= set(preds.columns)
+    assert len(preds) == int(trained["split"].isin(["validation", "test"]).sum())
 
 
 def test_fast_average_precision_matches_sklearn_including_ties() -> None:
@@ -334,13 +494,32 @@ def test_psi_is_small_for_training_like_data_and_large_for_shifted_data() -> Non
 def test_drift_report_needs_enough_rows(tmp_path: Path) -> None:
     card = {
         "run_id": "r",
+        "threshold": 0.5,
         "feature_columns": ["x"],
         "reference_bins": {"x": reference_bins([0.0, 1.0] * 50)},
     }
     log = tmp_path / "scores.jsonl"
     assert drift_report(card, log)["status"] == "insufficient_data"
     for i in range(40):
-        log_score({"run_id": "r", "features": {"x": 5.0 + i}}, log)
+        log_score(
+            {
+                "run_id": "r",
+                "status": "scored",
+                "score": i / 40,
+                "latency_ms": 10 + i,
+                "features": {"x": 5.0 + i},
+            },
+            log,
+        )
+    log_score({"run_id": "r", "status": "incomplete", "latency_ms": 3}, log)
+    log_score({"run_id": "r", "status": "scored", "score": 0.1, "features": {"y": 1.0}}, log)
+    with log.open("a") as fh:
+        fh.write("{cut off\n")
     report = drift_report(card, log)
     assert report["status"] == "ok"
     assert report["shifted"] == ["x"]
+    assert report["status_counts"] == {"scored": 41, "incomplete": 1}
+    assert report["schema_mismatches"] == 1  # a vector for other features is not compared
+    assert report["unreadable_lines"] == 1
+    assert report["share_above_threshold"] == 0.5
+    assert report["latency_ms"] is not None

@@ -32,8 +32,18 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     b.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     t = ml.add_parser("train", help="train, select on validation, test once, record the run")
     t.add_argument("--report", type=Path, default=Path("ML_EVALUATION.md"))
-    pr = ml.add_parser("promote", help="make a run the shadow model (only if its gate passed)")
+    pr = ml.add_parser("promote", help="register a run at an approval level it has evidence for")
     pr.add_argument("run_dir", type=Path)
+    pr.add_argument(
+        "--approval",
+        choices=("research_only", "shadow_approved"),
+        default="research_only",
+        help="shadow_approved needs a pass on an untouched holdout recorded in the model card",
+    )
+    au = ml.add_parser("audit", help="offline generalization audit of a run (no RPC)")
+    au.add_argument("run_dir", type=Path)
+    au.add_argument("--out", type=Path, default=ML_DIR / "audit")
+    au.add_argument("--tables", type=Path, default=Path("ML_AUDIT_TABLES.md"))
     sc = ml.add_parser("score", help="shadow-mode score for one transaction (not a finding)")
     sc.add_argument("tx_hash")
     sc.add_argument("--rpc-url", required=True)
@@ -66,19 +76,23 @@ def run(args: argparse.Namespace) -> int:
     if args.ml_command == "collect":
         import pandas as pd
 
-        from cryptoguard.ml.collect import collect, requests_used
+        from cryptoguard.ml.collect import RequestLedger, budget_path, collect
 
         sample = pd.read_csv(args.sample, dtype={"tx_hash": str})
         if args.limit is not None:
             sample = sample.head(args.limit)
-        remaining = min(args.max_requests, TOTAL_REQUEST_CAP) - requests_used(args.out)
-        if remaining <= 0:
-            print(f"Request budget exhausted ({requests_used(args.out)} used).")
+        # The cap is a total over all runs: this run may use what is left, or less.
+        probe = RequestLedger(budget_path(args.out), cap=TOTAL_REQUEST_CAP)
+        cap = min(TOTAL_REQUEST_CAP, probe.used() + args.max_requests)
+        ledger = RequestLedger(budget_path(args.out), cap=cap)
+        if ledger.used() >= cap:
+            print(f"Request budget exhausted ({ledger.used()} of {cap} used).")
             return 1
-        stats = asyncio.run(collect(sample, args.out, rpc_url=args.rpc_url, max_requests=remaining))
-        # The collector records its attempts in the ledger itself, after every transaction.
-        print({**stats, "requests_total": requests_used(args.out), "cap": TOTAL_REQUEST_CAP})
+        stats = asyncio.run(collect(sample, args.out, ledger=ledger, rpc_url=args.rpc_url))
+        print({**stats, "requests_total": ledger.used(), "cap": cap})
         return 0
+    if args.ml_command == "audit":
+        return _audit(args)
     if args.ml_command == "build":
         return _build(args)
     if args.ml_command == "train":
@@ -87,7 +101,7 @@ def run(args: argparse.Namespace) -> int:
         from cryptoguard.ml.registry import ModelRegistryError, promote
 
         try:
-            print(promote(args.run_dir))
+            print(promote(args.run_dir, approval=args.approval))
         except ModelRegistryError as exc:
             print(f"error [not_promoted]: {exc}")
             return 1
@@ -107,16 +121,21 @@ def _shadow(args: argparse.Namespace) -> int:
 
     settings = Settings(ml_shadow="shadow")  # the command itself is the opt-in
     if args.ml_command == "monitor":
-        model = loaded_model(settings)
+        model = loaded_model(settings, require_shadow_approval=False)
         print(json.dumps(drift_report(model.card, Path(settings.ml_score_log_path)), indent=1))
         return 0
 
     async def run() -> str:
+        from cryptoguard.core.hexutil import parse_quantity
+
         client = JsonRpcClient(args.rpc_url, timeout=20)
         try:
-            return (await score_transaction(client, args.tx_hash, settings)).model_dump_json(
-                indent=1
+            chain_id = parse_quantity(await client.call("eth_chainId", []))
+            # Explicit CLI use may score with a research-only model; the output says so.
+            result = await score_transaction(
+                client, args.tx_hash, settings, chain_id=chain_id, require_shadow_approval=False
             )
+            return result.model_dump_json(indent=1)
         finally:
             await client.aclose()
 
@@ -127,6 +146,42 @@ def _shadow(args: argparse.Namespace) -> int:
 TABLE = ML_DIR / "dataset.csv"
 SPLITS = ML_DIR / "splits.csv"
 RUNS = ML_DIR / "runs"
+
+
+def _load_table_and_splits() -> tuple[object, object]:
+    import pandas as pd
+
+    table = pd.read_csv(TABLE, dtype={"tx_hash": str, "group": str})
+    split = pd.read_csv(SPLITS, dtype=str).set_index("tx_hash").loc[table["tx_hash"], "split"]
+    split.index = table.index
+    return table, split
+
+
+def _audit(args: argparse.Namespace) -> int:
+    import hashlib
+    import json
+    import time
+
+    from cryptoguard.ml.audit import audit_id, render_tables, run_audit
+    from cryptoguard.ml.collect import load_collected
+
+    started = time.perf_counter()
+    table, split = _load_table_and_splits()
+    result = run_audit(table, split, load_collected(CHAIN), args.run_dir)  # type: ignore[arg-type]
+    result["inputs"] = {
+        "table_sha256": hashlib.sha256(TABLE.read_bytes()).hexdigest(),
+        "splits_sha256": hashlib.sha256(SPLITS.read_bytes()).hexdigest(),
+        "chain_sha256": hashlib.sha256(CHAIN.read_bytes()).hexdigest(),
+        "run": args.run_dir.name,
+    }
+    result["seconds"] = round(time.perf_counter() - started, 1)
+    ident = audit_id({k: v for k, v in result.items() if k != "seconds"})
+    args.out.mkdir(parents=True, exist_ok=True)
+    path = args.out / f"audit-{ident}.json"
+    path.write_text(json.dumps(result, indent=1, default=str), encoding="utf-8", newline="\n")
+    args.tables.write_text(render_tables(result, ident), encoding="utf-8", newline="\n")
+    print(f"audit {ident} in {result['seconds']} s -> {path}; wrote {args.tables}")
+    return 0
 
 
 def _build(args: argparse.Namespace) -> int:
@@ -178,11 +233,17 @@ def _train(args: argparse.Namespace) -> int:
     split.index = table.index
     manifest_path = TABLE.with_suffix(".manifest.json")
     manifest_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    # Dataset identity = the table and split bytes (the manifest also holds bookkeeping such
+    # as the cumulative RPC count, which changes without the data changing).
+    table_sha = hashlib.sha256(TABLE.read_bytes()).hexdigest()
+    splits_sha = hashlib.sha256(SPLITS.read_bytes()).hexdigest()
+    data_id = hashlib.sha256(f"{table_sha}:{splits_sha}".encode()).hexdigest()
     out = run_training(table, split)
     gate = promotion_gate(out["results"], out["selected"])
-    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + manifest_sha[:8]
+    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + data_id[:8]
     config = {
-        "table_sha256": json.loads(manifest_path.read_text())["table"]["sha256"],
+        "table_sha256": table_sha,
+        "splits_sha256": splits_sha,
         "splits": json.loads(manifest_path.read_text())["splits"],
     }
     entry = ledger_entry(run_id, config, out, gate, manifest_sha)
