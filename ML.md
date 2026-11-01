@@ -1,13 +1,23 @@
-# Machine learning (experimental, shadow mode only)
+# Machine learning (experimental, research-only)
+
+> **Status after the Phase 11.1 audit ([ML_GENERALIZATION_AUDIT.md](ML_GENERALIZATION_AUDIT.md)):
+> research-only; independent data required.** The Phase 11 test split was examined while the
+> method was still changing, so it is a *development benchmark*, not an untouched holdout. Its
+> 43 benign rows come from 12 senders (false-positive rate 7/43, cluster-bootstrap interval
+> 0.04 to 0.36), and the benign class is about 60 prominent accounts, not ordinary users. The
+> model is registered `research_only`: the API refuses to score with it; explicit CLI scoring
+> remains for research. The sections below describe Phase 11 as it was; corrections are
+> marked.
 
 CryptoGuard has an optional ML subsystem (`src/cryptoguard/ml/`, the `ml` extra). It
 classifies an Ethereum **transaction** as part of a phishing operation or not, using
-features that were knowable when the transaction executed. It is trained and evaluated on
-independently labelled public data, compared with trivial and rule baselines on identical
-held-out rows, and integrated **only in shadow mode**: scores are returned for review and
-monitored for drift, and they never create, change or resolve findings.
+features that were knowable when the transaction executed (**post-inclusion**: the receipt is
+an input). It is trained and evaluated on independently labelled public data and compared
+with trivial and rule baselines on identical held-out rows. Scores never create, change or
+resolve findings.
 
-Generated results: [ML_EVALUATION.md](ML_EVALUATION.md). This page is the data card,
+Generated results: [ML_EVALUATION.md](ML_EVALUATION.md) (Phase 11, historical) and
+[ML_AUDIT_TABLES.md](ML_AUDIT_TABLES.md) (Phase 11.1 audit). This page is the data card,
 method and decision log.
 
 ## Data card
@@ -103,6 +113,11 @@ baseline's test AP. Only a gated run can be promoted (`ml promote`).
 
 Full table, intervals, per-family recall, importance and errors: [ML_EVALUATION.md](ML_EVALUATION.md).
 
+> **Correction (Phase 11.1):** the intervals above resampled rows as independent. Rows cluster
+> by account (12 benign senders on test); resampling account clusters gives a false-positive
+> interval of 0.043 to 0.364 and an AP interval of 0.994 to 1.000 ([ML_AUDIT_TABLES.md](ML_AUDIT_TABLES.md)).
+> "Held-out" below means the development benchmark described in the audit.
+
 **What this does and does not show.** On held-out, later, account-disjoint transactions the
 learned models rank phishing-operation transactions far better than any rule. The result
 holds without the identity-like features. The model relies mostly on transaction *shape*:
@@ -116,7 +131,8 @@ wallet history that this dataset lacks, so they could not be run on it.
 
 - The false-positive rate is about 16% on prominent accounts' transactions, measured on
   only 43 benign rows. On ordinary traffic, where phishing is far rarer than the 75% of this
-  test set, most alerts would be false. This is why the model stays in shadow mode.
+  test set, most alerts would be false. This is why the model was kept to shadow mode (and,
+  after the Phase 11.1 audit, to research only).
 - **Plain token transfers are the blind spot.** 5 of the 7 test false positives and 2 of the 3
   missed phishing transactions (address poisoning) have the same shape: one `transfer()`
   call, one Transfer log, no ETH value. By transaction shape alone, a poisoning transfer and
@@ -127,32 +143,41 @@ wallet history that this dataset lacks, so they could not be run on it.
   zero nibbles), a property the model learned from phishing contracts.
 - The third miss is a fake-token transfer whose receipt holds no logs at all.
 
-## Shadow mode
+## Commands and shadow scoring
 
 ```powershell
 uv sync --extra ml
 uv run cryptoguard ml fetch-sources                         # labels (hash-verified)
 uv run cryptoguard ml sample                                # deterministic sample
-uv run cryptoguard ml collect --rpc-url <archive-capable RPC>  # budgeted, resumable
+uv run cryptoguard ml collect --rpc-url <archive-capable RPC>  # reserved, capped, resumable
 uv run cryptoguard ml build                                 # validated table, splits, manifest
-uv run cryptoguard ml train                                 # ledger, model card, ML_EVALUATION.md
-uv run cryptoguard ml promote data/ml/runs/<run-id>         # refused unless the gate passed
-uv run cryptoguard ml score <tx-hash> --rpc-url <RPC>       # one shadow score (4 RPC calls)
-uv run cryptoguard ml monitor                               # feature drift (PSI) of scored txs
+uv run cryptoguard ml train                                 # ledger, model card, predictions
+uv run cryptoguard ml audit data/ml/runs/<run-id>           # offline audit, ML_AUDIT_TABLES.md
+uv run cryptoguard ml promote data/ml/runs/<run-id>         # research_only (gate must pass)
+uv run cryptoguard ml score <tx-hash> --rpc-url <RPC>       # explicit research score (5 RPC calls)
+uv run cryptoguard ml monitor                               # drift of logged scores
 ```
 
-With `CRYPTOGUARD_ML_SHADOW=shadow`, the API offers `POST /api/v1/ml/transactions/score`
-(`{"tx_hash"}`; the RPC endpoint is the operator's, never the request's) and
-`GET /api/v1/ml/status` (promoted run, gate, drift). With the default `off` both answer 409
-`feature_disabled`; without the extra or a promoted model, 503 `ml_unavailable`. Scores are
-logged to `data/ml/shadow_scores.jsonl` for drift monitoring and are never stored as
-findings. The promoted model is a pickle; it is loaded only from the local registry and only
-if its SHA-256 matches its model card.
+Approval levels: `research_only` (the gate passed on a development benchmark) and
+`shadow_approved` (additionally passed an untouched holdout evaluated once, recorded in the
+model card; `--approval shadow_approved` refuses otherwise). With
+`CRYPTOGUARD_ML_SHADOW=shadow`, `POST /api/v1/ml/transactions/score` (`{"tx_hash"}` only)
+scores with a `shadow_approved` model and answers 503 `ml_unavailable` for a research-only
+one; `GET /api/v1/ml/status` shows the registered run, its approval, gate and drift. With the
+default `off` both answer 409 `feature_disabled`. Scoring verifies the provider's chain
+(mainnet only), refuses a mined transaction without a receipt (`incomplete`), runs one at a
+time with a 30 s limit, and returns an **uncalibrated ranking score**, never a probability.
+Scores are logged to `data/ml/shadow_scores.jsonl` for drift monitoring and are never stored
+as findings. Models load only from the local runs directory, by validated run id, after hash,
+schema, size and library-version checks; LightGBM models are stored as LightGBM text (no
+pickle) since Phase 11.1.
 
 A full training run (10 model configurations after a 36-candidate search, bootstrap
 intervals, permutation importance) took 34–44 s on a 4-core CPU with a peak of 197 MiB
 (`scripts/peak_memory.py ml train`). It is deterministic: a repeated run gave identical
-metrics for every model and a byte-identical model file. No GPU and no graph neural
+metrics for every model and a byte-identical model file (same machine and library versions;
+byte identity across platforms or versions is not claimed, see the audit). Under heavy load
+from other workloads, the same computation once took 700 s of wall time. No GPU and no graph neural
 network: gradient boosting on tabular features already ranks near the ceiling here, and the
 data has no graph beyond each transaction's own parties.
 
@@ -171,6 +196,11 @@ and is kept in the run ledger.
 4. **Selection metric.** AP saturates near 1.0 here, so model selection and permutation
    importance use log loss.
 
+**Correction (Phase 11.1):** "made before the final run" is true but incomplete. Revisions 2 to
+4 were made *after* runs whose test results had been displayed (a partial-data dry run and a
+full-data run), so the test split is a previously examined development benchmark. Timeline:
+ML_GENERALIZATION_AUDIT.md §4.
+
 ## Limitations
 
 - One labelled source, with a benign class of prominent accounts; precision on real traffic
@@ -178,5 +208,8 @@ and is kept in the run ledger.
 - Small evaluation splits after the window and purge; intervals are wide.
 - Receipt-based features describe executed transactions; warning before signing would need
   transaction simulation (not implemented).
-- Live scoring costs 4 RPC requests per transaction and needs historical state.
+- Live scoring costs 5 RPC requests per transaction (chain check, transaction, receipt, nonce,
+  code) and needs historical state.
+- No untouched holdout; the benign class is about 60 prominent accounts. Next dataset and
+  experiment: ML_GENERALIZATION_AUDIT.md §16 to 17.
 - Not independently reviewed.

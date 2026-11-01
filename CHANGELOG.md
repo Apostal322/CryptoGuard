@@ -14,6 +14,18 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   hash-pinned model registry; shadow scoring API and CLI; PSI drift monitoring
   (`e9b49f1`). Results in ML_EVALUATION.md, data card and decision log in ML.md.
 
+### ML generalization audit (Phase 11.1)
+- Baseline reproduced exactly (metrics, model bytes) and frozen in
+  `docs/ml/baseline-phase11.json`; its test split reclassified as a development benchmark.
+  The model is now research-only: the API refuses to score with it (`c11e5fb`).
+- Fixed: scoring skipped chain verification; a missing receipt was scored; the request
+  budget could be lost on a crash or overspent by concurrent collectors; the registry
+  trusted a path from its JSON file; intervals resampled rows despite account clustering.
+- Added: `cryptoguard ml audit` (recomputed metrics, cluster intervals, prevalence arithmetic,
+  shortcut experiments, hub-policy sensitivity, calibration, errors), approval levels,
+  LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
+  Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
+
 ## 0.1.0 — 2026-10-28 (first release candidate, not independently audited)
 
 ### Detection and monitoring
