@@ -77,3 +77,18 @@ def test_check_refuses(kit_mod: ModuleType, tmp_path: Path, mutate: object, need
     mutate(kit)  # type: ignore[operator]
     problems = kit_mod.check(kit, "A", expected)
     assert any(needle in p for p in problems), problems
+
+
+def test_expected_hashes_are_the_registered_ones(kit_mod: ModuleType) -> None:
+    from cryptoguard.ml import review_sample as rs
+    from cryptoguard.ml import training
+
+    want = kit_mod.expected_hashes()
+    assert want["training"] == {
+        "sheet": training.sheet_sha256(),
+        "evidence": training.packets_sha256(),
+    }
+    for folder, cohort in kit_mod.FOLDERS.items():
+        reg = rs.COHORTS[cohort]
+        assert want[folder] == {"sheet": reg[rs.SHEET], "evidence": reg["evidence"]}
+    assert kit_mod.FOLDERS == {"set-1": rs.SAMPLE_VERSION, "set-2": "hard-negative-candidates/1"}

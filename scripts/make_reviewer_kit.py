@@ -55,7 +55,7 @@ def expected_hashes() -> dict[str, dict[str, str]]:
     out = {"training": {"sheet": training.sheet_sha256(), "evidence": training.packets_sha256()}}
     for folder, cohort in FOLDERS.items():
         reg = rs.COHORTS[cohort]
-        out[folder] = {"sheet": reg["sheet"], "evidence": reg["evidence"]}
+        out[folder] = {"sheet": reg[rs.SHEET], "evidence": reg["evidence"]}
     return out
 
 
