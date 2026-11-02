@@ -43,6 +43,10 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   (Phase 11.2 reported 41). Payoffs now carry a stable identity and provenance.
 - Fixed: a killed scan's stale SQLite journal is removed before a rescan.
 - Review packets (v2) carry competing lookalikes and payment evidence.
+- Added `ml freeze-review-sample`. Before any review, it draws a stratified sample of 60 of
+  the 1,469 payoff-linked packets, one per campaign group. It writes a blinded reviewer
+  sheet, a separate unblinding key and a hash-committed manifest, and refuses to draw
+  again. The protocol and analysis plan are in docs/ml/review-protocol.md.
 - Docs: ML_CROSS_DATASET_VALIDATION.md, ML_CROSS_DATASET_TABLES.md.
 
 ### Wallet-centric poisoning research platform (Phase 11.2)

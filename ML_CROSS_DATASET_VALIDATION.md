@@ -401,6 +401,7 @@ cryptoguard ml scan-archive          # verifies size/MD5/SHA-256, one pass, cach
 cryptoguard ml cross-dataset-report  # reconciliation; writes ML_CROSS_DATASET_TABLES.md
 cryptoguard ml poisoning-report      # Phase 11.2 tables, including the payoff cross-check
 cryptoguard ml bench-archive 1000 10000 100000
+cryptoguard ml freeze-review-sample  # draws once (§26); later runs only verify
 ```
 
 Each run records the git commit (Phase 11.2 report), source SHA-256, parser and
@@ -468,8 +469,8 @@ matched legitimate look-alike interactions as negatives.**
   - by year;
   - by whether a rival lookalike existed;
   - with one packet per victim and campaign group.
-  About 60 packets give the 30 needed per class with margin. Reviewers would confirm each
-  planting on a block explorer from the packet's evidence, with no model score shown.
+  Reviewers confirm each planting on a block explorer, with no model score shown. **The
+  sample of 60 is frozen (§26).**
 - **Negatives.** For the same victims, take transfers from addresses that share 3+4 or more
   characters with a real counterparty but are legitimate, for example a counterparty's own
   second wallet. Finding and verifying them needs the victims' wallet histories.
@@ -481,3 +482,73 @@ matched legitimate look-alike interactions as negatives.**
   - for negatives, the victims' full transfer histories over the review window;
   - a frozen sampling manifest, written before any review.
 - **What not to do:** no broad crawl, no paid service, no labels inferred from overlap.
+
+## 26. Frozen review sample (2026-11-02, 0 RPC requests)
+
+The positive half of §25 is ready for review. The sample was drawn once, before any review,
+by `cryptoguard ml freeze-review-sample` (`ml/review_sample.py`, `review-sample/1`) at
+commit `a273f8a` on a clean tree. Reviewer instructions and the analysis plan, fixed at the
+same time: [docs/ml/review-protocol.md](docs/ml/review-protocol.md).
+
+- **Design.**
+  - **Campaign groups.** Packets that share a victim, lookalike, planting transaction or
+    imitated address form one group: 1,469 packets in 1,395 groups, 62 of them with more
+    than one packet (at most 6). Each group contributes one representative, so no two
+    sampled packets share a victim or campaign.
+  - **Strata.** Subtype × year (by block height) × whether a rival lookalike existed.
+  - **Allocation.** Quotas per subtype: fake token 24, spoofed `transferFrom` 24, dust 9,
+    zero-value 3 (all of them). Within a subtype, the quota is split in proportion to
+    stratum size, with at least one per non-empty stratum.
+  - **Selection.** A keyed SHA-256 ranking with a fixed seed, so it is reproducible by hand
+    and independent of input order. The other 1,335 representatives are ordered reserves.
+  - **Weights.** Each item's design weight is its stratum's group count divided by its
+    selected count.
+- **Result.** 60 items:
+  - by rival lookalike: 38 with, 22 without;
+  - by year: 6 from 2022, 46 from 2023, 8 from 2024.
+
+| Stratum (subtype, year, rival) | Groups | Selected |
+|---|---|---|
+| dust, 2023, no rival | 8 | 1 |
+| dust, 2023, rival | 25 | 5 |
+| dust, 2024, no rival | 8 | 1 |
+| dust, 2024, rival | 9 | 2 |
+| fake token, 2023, no rival | 293 | 10 |
+| fake token, 2023, rival | 339 | 11 |
+| fake token, 2024, no rival | 39 | 1 |
+| fake token, 2024, rival | 59 | 2 |
+| spoofed transferFrom, 2022, no rival | 103 | 4 |
+| spoofed transferFrom, 2022, rival | 58 | 2 |
+| spoofed transferFrom, 2023, no rival | 103 | 4 |
+| spoofed transferFrom, 2023, rival | 330 | 12 |
+| spoofed transferFrom, 2024, no rival | 1 | 1 |
+| spoofed transferFrom, 2024, rival | 17 | 1 |
+| zero-value, 2023, rival | 3 | 3 |
+
+- **Blinding.** The reviewer sheet lists only:
+  - the wallet;
+  - the address under review;
+  - the transaction and block.
+
+  It leaves out the subtype, source labels, imitated address, payoff and rival lookalikes,
+  and its order is unrelated to the strata. The unblinding key is a separate file. An
+  explorer still shows the later payment, so the blinding is partial (protocol §6).
+- **Commitments.** The files are local and git-ignored. Their hashes, recorded here before
+  any review, make later changes detectable:
+
+| Item | SHA-256 |
+|---|---|
+| review queue `review_packets_payoff_linked.jsonl` (input) | `84f8268e7328b320d49b06808811bb27f821dcedb1319a9d090b1c3b27f42e83` |
+| selection (design, queue hash, items, reserves) | `e368beb4c179f02bf916ef3dcbb89c4a8260d17956fa897264959477b5b85a62` |
+| `reviewer_sheet.jsonl` | `a0ec4b6e5620cf001e8e048f37cfca5553c24296318a67b86dddd87772814027` |
+| `unblinding_key.jsonl` | `407b412f9e97e2aac269af0f0be565223dcfe851412458cee639396b8503bb2d` |
+| `sample_manifest.json` | `c38ae31d598bb58c33fcd2d6553823fc1880b25a4b49b8764d32a290bc7dbdc3` |
+
+- **Safeguards.**
+  - Rerunning the command only verifies the frozen sample.
+  - A changed queue or a different draw is refused (`SampleFrozenError`), and the frozen
+    files are left untouched.
+- **Still open.**
+  - The review itself: two independent reviewers, per the protocol.
+  - The matched negatives from §25, which need a separately approved RPC cap.
+  - No label exists until reviewed decisions are imported.

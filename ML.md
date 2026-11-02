@@ -41,7 +41,10 @@ method and decision log.
   - Phase 11.3: `ml/fetch.py` (verified, resumable download of one approved file),
     `ml/tsuchiya.py` and `ml/tsuchiya_archive.py` (payoff list and streaming attempt-archive
     parser, never executes SQL), `ml/reconcile.py` and `ml/cross_dataset.py`
-    (`cryptoguard ml scan-archive`, `cryptoguard ml cross-dataset-report`).
+    (`cryptoguard ml scan-archive`, `cryptoguard ml cross-dataset-report`),
+    `ml/review_sample.py` (frozen, blinded review sample:
+    `cryptoguard ml freeze-review-sample`; protocol in
+    [docs/ml/review-protocol.md](docs/ml/review-protocol.md)).
 - **Further reading:** [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md) covers the pilot
   reconstruction and the data-loss fix. [ML_RESEARCH_PLAN.md](ML_RESEARCH_PLAN.md) has the
   issue register, the collection design and the next experiment.
