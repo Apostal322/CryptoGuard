@@ -1,12 +1,20 @@
 # Reviewer guide: CryptoGuard poisoning review
 
-Thank you for reviewing. You will judge 60 Ethereum transactions, independently. Please do
-not discuss items with the other reviewer until you have both submitted.
+Thank you for reviewing. You will judge Ethereum transactions independently: two folders,
+60 and 35 items. Please do not discuss items with the other reviewer until you have both
+submitted.
 
-## Setup (once)
+## Before the real items: training (about an hour)
 
-1. Get your personal review folder from the maintainer. It contains `reviewer_sheet.jsonl`
-   and `reviewer.json`, and nothing else is needed.
+Start with the training folder. It holds ten invented cases with the same panels as the
+real items. Read `training_notes.md` in that folder *after* trying them. Training answers
+are never used as data, and the real items are never used for practice.
+
+## Setup (once per folder)
+
+1. Get your personal review folders from the maintainer. Each contains
+   `reviewer_sheet.jsonl`, `reviewer.json` and usually `evidence_packets.jsonl`, and
+   nothing else is needed.
 2. From the CryptoGuard repository, with Python 3.12 and `uv`, run:
 
    ```bash
@@ -63,6 +71,31 @@ Judge them exactly like any other item. Any of the five decisions may be right, 
 "Confirmed poisoning attempt". The table is a convenience: it shows only what was
 recorded, so check an explorer when the note says history is missing.
 
+## The offline evidence panel
+
+Most items show an **Offline evidence** panel. It lists what this computer's recorded data
+show *before the cutoff block*:
+- the candidate transfer;
+- who signed it (when known);
+- the token;
+- the wallet's earlier transfers;
+- for some items, how often the address appeared with other wallets.
+
+Read the coloured notes:
+- **"Only rows a research dataset kept"**: ordinary activity is missing. Absence of a
+  payment there does not mean the wallet never paid anyone.
+- **"No earlier rows of this wallet are available locally"**: use a block explorer, up to
+  the cutoff block.
+- **"Token not on the reviewed list"**: unknown, not necessarily fake.
+
+The panel never tells you the answer and computes no similarity. Find the earlier
+counterparty yourself and paste it into the form.
+
+## Reasons and citations
+
+For a confirmed decision, tick at least one reason. Paste the transaction hashes or
+addresses you relied on into **Evidence cited**, one per line.
+
 ## Be honest about what you saw
 
 Block explorers show later activity and sometimes labels such as "Phishing". That is fine.
@@ -72,7 +105,12 @@ Just record it:
 - whether you saw a third-party label;
 - whether you saw any source label, payoff record or model output.
 
-These answers are not judged.
+You will also be asked:
+- whether you saw a later payment from the wallet to this address;
+- whether a third-party label influenced you;
+- whether you used the offline panel.
+
+These answers are not judged, and an item is never removed because of them.
 
 ## Keyboard
 

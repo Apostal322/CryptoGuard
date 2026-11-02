@@ -148,3 +148,18 @@ blocked by missing evidence, not yet evaluated. Infrastructure alone never passe
 | H Baseline comparability | blocked by missing evidence | the detector needs wallet histories; only the recorded-window frame has them, and it has no labels |
 | I Operational relevance | not yet evaluated | unlabeled candidate volume only (8 on 27 wallet-days); no reviewed false alerts |
 | J Deployment safety | **pass** | research modules load neither database nor API (tested); no production finding changes |
+
+## 9. Phase 11.6 gates
+
+[ML_HUMAN_VALIDATION_READINESS.md](ML_HUMAN_VALIDATION_READINESS.md) re-evaluates readiness
+as gates A-K.
+
+| Gate | Status |
+|---|---|
+| A frozen integrity, G temporal correctness, K production isolation | pass |
+| B evidence, C independence, F source bias, H splits | pass with limitations |
+| D positive labels, E negative labels, J ML readiness | blocked by missing human evidence |
+| I statistical adequacy | fail |
+
+The pre-registered experiment (`ml/experiment_spec.py`) stays inactive until at least 30
+reviewed labels per class exist, from at least 5 campaign groups each.

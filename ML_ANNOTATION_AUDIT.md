@@ -334,3 +334,14 @@ No P0 finding: every hash, uniqueness, separation, allocation and reserve-order 
   - items carry the neutral title "Candidate for independent security review".
 - **The Phase 11.4 sample is unchanged** (re-verified).
 - Design and hashes: [ML_HARD_NEGATIVE_STUDY.md](ML_HARD_NEGATIVE_STUDY.md) §12.
+
+## 21. Amendment 2 and evidence packets (Phase 11.6)
+
+- **Evidence packets.** Both cohorts now carry offline, pre-cutoff evidence packets
+  (`evidence-packets/1`, hashes registered). The packets never contain source flags, the
+  intended address, payoffs or similarity scores.
+- **New decision fields.** Each decision records later-payment exposure, third-party-label
+  influence, offline-panel use, reason codes and evidence citations.
+- **Calibration.** A synthetic training cohort precedes real review.
+- **Sensitivity analyses** are pre-specified in protocol B4.
+- **Status:** [ML_HUMAN_VALIDATION_READINESS.md](ML_HUMAN_VALIDATION_READINESS.md).

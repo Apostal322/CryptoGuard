@@ -26,6 +26,35 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Human validation readiness (Phase 11.6)
+- Both frozen cohorts re-verified byte for byte, and the history of Cohort B's superseded
+  first draw audited. No reviewer, package or submission exists: state REVIEW_READY.
+- Added offline pre-cutoff evidence packets (`ml review build-evidence`).
+  - They are deterministic, read no key and contain no source flags, payoffs or
+    similarity scores.
+  - They are tested so that future rows and labels never change them.
+  - They are registered by hash and shown in the review page.
+- Protocol amendment 2, before any review:
+  - later-payment and third-party-label exposure, offline-panel use, reason codes and
+    evidence citations;
+  - pre-specified exposure sensitivity analyses;
+  - a synthetic training cohort (`ml review training-package`) that can never be
+    unblinded;
+  - review sessions that expire.
+- Added submission checks and a key-free agreement report (`ml review check-submission`,
+  `ml review agreement`).
+- Added a label policy with seven statuses and strict binary eligibility.
+- Added an inactive, pre-registered experiment spec; it needs 30 reviewed labels per class
+  from 5 campaign groups each.
+- Added FPR power planning; the contract now also refuses source and dataset identifiers
+  as features.
+- Fixed: a locked lease table raised a raw database error. It now raises the retryable
+  `LeaseBusyError`, and the contention test reports each child's outcome.
+- Faster: `candidates/2` buckets counterparties by suffix (exact). 10,000 transfers take
+  0.13 s instead of 13 s.
+- Docs: ML_HUMAN_VALIDATION_READINESS.md, docs/ml/reviewer-handoff.md, and an updated
+  reviewer guide and protocol.
+
 ### Hard-negative discovery and benchmark contract (Phase 11.5)
 - `candidates/2`: a counterparty counts as chosen only with a verified wallet signature,
   and generation is a single pass. The output is identical on all 13 recorded windows and

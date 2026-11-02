@@ -193,3 +193,94 @@ Background: [ML_ANNOTATION_AUDIT.md](../../ML_ANNOTATION_AUDIT.md) §19.
 7. `cryptoguard ml review unblind --submission A.json --submission B.json`.
 8. Report from `unblinded_report.json` (aggregate). Keep `unblinded_items.jsonl` and the
    submissions local.
+
+---
+
+# Amendment 2 (2026-11-02, before any review; applies to both cohorts)
+
+**Status when written:**
+- No reviewer had been recruited, no package issued and no decision made, in either
+  cohort.
+- No unblinding key was opened. Packets are built from the reviewer sheet and local
+  recorded data only.
+- The frozen sheets, keys and manifests of `review-sample/1` and
+  `hard-negative-candidates/1` are unchanged. Amendment 2 only *adds* a separate,
+  hash-registered file.
+
+## B1. Defect
+
+Reviewers of the first cohort saw only four facts:
+- the wallet;
+- the address under review;
+- the transaction;
+- the block.
+
+To judge impersonation they had to rebuild the wallet's earlier counterparties on a block
+explorer. An explorer also shows the later payment that put every item in this cohort
+(hindsight). Where no explorer was used, the protocol gave reviewers too little to work
+with.
+
+## B2. Correction: offline pre-cutoff evidence packets (`evidence-packets/1`)
+
+**What a packet holds.** For each item (`ml/evidence.py`, built by
+`cryptoguard ml review build-evidence`):
+- the candidate transfer(s);
+- transaction semantics;
+- the token and whether it is on CryptoGuard's reviewed list;
+- the number of earlier rows between the wallet and the address;
+- up to 50 of the wallet's rows *strictly before* the cutoff block;
+- for archive data, how often the address appears with other wallets before the cutoff;
+- explicit coverage statuses.
+
+**What it never holds:**
+- the source's category flags, its `intended` (imitated) address or its payoff markings;
+- any row at or after the cutoff block;
+- any model output;
+- any similarity score. Reviewers still find the imitated counterparty themselves.
+
+**Coverage.** Archive packets contain only the rows the research dataset kept, so the
+imitated counterparty will usually be visible among the earlier rows, but ordinary activity
+is missing. The packet says this (`source_selected_rows_only`). It is observable pre-cutoff
+information, not the source's conclusion.
+
+**Registered hashes:**
+
+| Cohort | Packets SHA-256 | Items |
+|---|---|---|
+| `review-sample/1` | `68f11afba87266ee393dcf33a84c913c55fca9c01656f7a1b1d6dfc5122d46ae` | 60 |
+| `hard-negative-candidates/1` | `1c7f32c64c9c2beb0342baf8762d5381a5923f0c04389e83dd5da4919cdc01bf` | 35 |
+
+Built at commit `240ba9b` on a clean tree. The review app refuses a packet file whose hash
+is not registered.
+
+## B3. Correction: recorded exposure, reasons and citations
+
+Each amendment-2 decision also records:
+- `saw_later_victim_payment`: no / yes / unsure;
+- `third_party_label_influenced`: no / yes / unsure;
+- `used_offline_evidence`: whether the reviewer used the offline panel;
+- `reason_codes`: at least one for any confirmed decision;
+- `evidence_refs`: transaction hashes or addresses, validated.
+
+Amendment-1 records stay loadable. New submissions must be amendment 2, or the unblinding
+gate refuses them.
+
+## B4. Pre-specified sensitivity analyses
+
+1. **Primary results** use every item, whatever the exposure. No item is dropped because
+   it was exposed.
+2. **Exposure sensitivity.** Repeat the primary analysis excluding items where *either*
+   reviewer answered `yes` to `saw_later_victim_payment` or `third_party_label_influenced`.
+   Report it beside the primary.
+3. **Offline-only sensitivity.** Restrict to items both reviewers judged with
+   `used_explorer = false`, where available.
+
+These comparisons are descriptive. Any difference is reported, not "corrected".
+
+## B5. Training before review
+
+Each reviewer first works through the synthetic training package
+(`cryptoguard ml review training-package`). It has ten invented cases with evidence
+packets and separate teaching notes, read afterwards. Training decisions stay in the
+training folder and can never be unblinded. The real items are never used for
+calibration.

@@ -9,8 +9,10 @@ annotation workflow; it now waits for two human reviewers
 ([ML_ANNOTATION_AUDIT.md](ML_ANNOTATION_AUDIT.md),
 [ML_BENCHMARK_READINESS.md](ML_BENCHMARK_READINESS.md)). Phase 11.5 added a screened
 pool of 8,877 unlabeled hard-negative candidates and a second frozen cohort of 35
-([ML_HARD_NEGATIVE_STUDY.md](ML_HARD_NEGATIVE_STUDY.md)). Both cohorts wait for the same
-two reviewers. Data model and labels:
+([ML_HARD_NEGATIVE_STUDY.md](ML_HARD_NEGATIVE_STUDY.md)). Phase 11.6 made both cohorts
+review-ready (evidence packets, protocol amendment 2, training cohort, handoff): status
+REVIEW_READY: HUMAN ANNOTATION PENDING
+([ML_HUMAN_VALIDATION_READINESS.md](ML_HUMAN_VALIDATION_READINESS.md)). Data model and labels:
 [ML_POISONING_DATASET.md](ML_POISONING_DATASET.md).
 Pilot: [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md). Generated numbers:
 [ML_POISONING_TABLES.md](ML_POISONING_TABLES.md).

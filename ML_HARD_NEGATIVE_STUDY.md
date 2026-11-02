@@ -440,3 +440,15 @@ requests, no download.
 legitimate examples come back, the next step is a negative-only cohort drawn from the
 4,940 unscreened archive candidates, using the same frozen procedure. That also needs no
 RPC.
+
+## 26. Phase 11.6 follow-up
+
+- **Cohort history audited.** The first, superseded draw of Cohort B was compared with the
+  final one: same items, reserves, strata and sheet bytes, with only 3 screening statuses
+  changed. No package had been issued.
+  - Details: [ML_HUMAN_VALIDATION_READINESS.md](ML_HUMAN_VALIDATION_READINESS.md) §3.
+- **Evidence packets.** Cohort B's 35 items now have offline evidence packets: 19 archive
+  items have no local wallet history, and 11 recorded-wallet items have their full window.
+- **Generator speed.** `candidates/2` buckets chosen counterparties by their last 3
+  characters (an exact shortcut, since the rule requires them). 10,000 transfers take
+  0.13 s instead of 13 s, and the output is unchanged.

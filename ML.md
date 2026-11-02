@@ -56,6 +56,13 @@ method and decision log.
     matching), `ml/cohort.py` (generic frozen cohorts), `ml/evaluation.py` (benchmark
     contract and metrics that refuse unverified negatives), `ml/hn_study.py` and
     `ml/inventory.py` ([ML_HARD_NEGATIVE_STUDY.md](ML_HARD_NEGATIVE_STUDY.md)).
+  - Phase 11.6:
+    - `ml/evidence.py`: offline pre-cutoff evidence packets;
+    - `ml/training.py`: a synthetic training cohort;
+    - `ml/submissions.py`: submission checks and the key-free agreement report;
+    - `ml/label_policy.py`, `ml/experiment_spec.py` (inactive) and `ml/power.py`.
+
+    See [ML_HUMAN_VALIDATION_READINESS.md](ML_HUMAN_VALIDATION_READINESS.md).
 - **Further reading:** [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md) covers the pilot
   reconstruction and the data-loss fix. [ML_RESEARCH_PLAN.md](ML_RESEARCH_PLAN.md) has the
   issue register, the collection design and the next experiment.
