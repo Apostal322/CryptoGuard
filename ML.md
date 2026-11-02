@@ -63,6 +63,9 @@ method and decision log.
     - `ml/label_policy.py`, `ml/experiment_spec.py` (inactive) and `ml/power.py`.
 
     See [ML_HUMAN_VALIDATION_READINESS.md](ML_HUMAN_VALIDATION_READINESS.md).
+  - Phase 11.7: `ml/diagnostics.py` (label-free diagnostics) and `ml/verify_research.py`
+    (offline reproducibility report: `cryptoguard ml verify-research`).
+    [ML_EVIDENCE_COMPLETION.md](ML_EVIDENCE_COMPLETION.md)
 - **Further reading:** [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md) covers the pilot
   reconstruction and the data-loss fix. [ML_RESEARCH_PLAN.md](ML_RESEARCH_PLAN.md) has the
   issue register, the collection design and the next experiment.

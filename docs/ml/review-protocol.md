@@ -284,3 +284,41 @@ Each reviewer first works through the synthetic training package
 packets and separate teaching notes, read afterwards. Training decisions stay in the
 training folder and can never be unblinded. The real items are never used for
 calibration.
+
+---
+
+# Amendment 3 (Phase 11.7, before any review or package)
+
+**Status when written:**
+- No reviewer had been recruited, no package issued, no decision made.
+- No key was opened. The frozen sheets, keys and manifests are unchanged.
+
+## C1. Changes
+
+The evidence packets become `evidence-packets/2`:
+1. **Same-block rows of unknown order** relative to the item are counted and flagged
+   (`same_block_order_unknown`). Before, they were dropped silently. They are still not
+   shown.
+2. **The address relationship** carries a coverage-specific interpretation. "None" under
+   source-selected or absent coverage is stated not to mean novelty.
+3. **Inputs** now include the Phase 11.7 recovery pass: every archive row touching a
+   review wallet, address or planting transaction. All 19 Cohort B archive items that had
+   no local wallet rows now have pre-cutoff rows. These rows are still source-selected.
+
+## C2. Registered hashes
+
+Built at commit `3ee994f` on a clean tree:
+
+| Cohort | Packets SHA-256 |
+|---|---|
+| `review-sample/1` | `7f75f5936c7b6e3f96eea7921e9bf2097f114ce65123f7a4db4c46a4c7295747` |
+| `hard-negative-candidates/1` | `fcb4765e4a2ef870c003bd1abc4ddf1bf40e69dc1c0747748dd4ce75e51ad567` |
+
+They replace the amendment-2 hashes. Packages made earlier would be refused, but none
+existed.
+
+## C3. Leak checks on the built packets
+
+- No payoff transaction and no source label term appear.
+- Every history row is before the cutoff block, or a same-block row whose recorded order
+  proves it came earlier.

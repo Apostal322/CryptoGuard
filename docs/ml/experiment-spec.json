@@ -1,0 +1,147 @@
+{
+ "baselines": [
+  "detectors.poisoning (production rule)",
+  "similarity heuristic (candidates.similar)",
+  "transaction-shape heuristic (subtype)",
+  "wallet-history heuristic (no prior payment to the recipient)",
+  "logistic regression",
+  "LightGBM"
+ ],
+ "calibration": "reliability curve and Brier score only with >= 100 reviewed items per class",
+ "candidate_population": "defined by candidates/2 before any model exists; never by a model score",
+ "cutoff": "after the candidate's transaction executes, before anything later in its block",
+ "eligibility": "candidates/2 outputs with complete or partial recorded history; known-positive overlaps never serve as negatives",
+ "fairness": [
+  "every method (rules, heuristics, models) scores the same eligible events",
+  "every method sees only information available at the same cutoff",
+  "every method is judged against the same label policy and the same split",
+  "the production rule is replayed on the same recorded histories, never with more context than the models"
+ ],
+ "feature_groups": {
+  "combined": [
+   "prefix_to_imitated",
+   "suffix_to_imitated",
+   "plausible_impersonated",
+   "recipient_lookalike_of_known",
+   "recipient_max_affix_to_known",
+   "value_is_zero",
+   "token_trusted",
+   "subtype_dust",
+   "subtype_fake_token",
+   "subtype_other",
+   "subtype_spoofed_transfer_from",
+   "subtype_zero_value",
+   "prior_payments_to_recipient",
+   "prior_interactions_with_recipient",
+   "distinct_prior_recipients",
+   "recent_new_recipient_share",
+   "unsolicited_events_with_recipient",
+   "history_available",
+   "history_partial",
+   "observed_blocks",
+   "blocks_since_first_interaction",
+   "blocks_since_last_interaction",
+   "blocks_since_imitated_chosen",
+   "recent_unsolicited_in",
+   "lookalike_victims_before",
+   "signer_victims_before",
+   "lookalike_plantings_observed"
+  ],
+  "combined_without_source_proxies": [
+   "prefix_to_imitated",
+   "suffix_to_imitated",
+   "plausible_impersonated",
+   "recipient_lookalike_of_known",
+   "recipient_max_affix_to_known",
+   "prior_payments_to_recipient",
+   "prior_interactions_with_recipient",
+   "distinct_prior_recipients",
+   "recent_new_recipient_share",
+   "unsolicited_events_with_recipient",
+   "history_available",
+   "history_partial",
+   "observed_blocks",
+   "blocks_since_first_interaction",
+   "blocks_since_last_interaction",
+   "blocks_since_imitated_chosen",
+   "recent_unsolicited_in",
+   "lookalike_victims_before",
+   "signer_victims_before",
+   "lookalike_plantings_observed"
+  ],
+  "graph_context_only": [
+   "lookalike_victims_before",
+   "signer_victims_before",
+   "lookalike_plantings_observed"
+  ],
+  "similarity_only": [
+   "prefix_to_imitated",
+   "suffix_to_imitated",
+   "plausible_impersonated",
+   "recipient_lookalike_of_known",
+   "recipient_max_affix_to_known"
+  ],
+  "temporal_only": [
+   "blocks_since_first_interaction",
+   "blocks_since_last_interaction",
+   "blocks_since_imitated_chosen",
+   "recent_unsolicited_in"
+  ],
+  "transaction_only": [
+   "value_is_zero",
+   "token_trusted",
+   "subtype_dust",
+   "subtype_fake_token",
+   "subtype_other",
+   "subtype_spoofed_transfer_from",
+   "subtype_zero_value"
+  ],
+  "wallet_history_only": [
+   "prior_payments_to_recipient",
+   "prior_interactions_with_recipient",
+   "distinct_prior_recipients",
+   "recent_new_recipient_share",
+   "unsolicited_events_with_recipient",
+   "history_available",
+   "history_partial",
+   "observed_blocks"
+  ]
+ },
+ "label_count_stages": {
+  "feature_exploration": ">= 30 per class from >= 5 campaign groups (activation gate)",
+  "generalization": "several time periods and many campaigns; not reachable with the current cohorts",
+  "hyperparameter_selection": "a validation split disjoint by campaign and later in time; >= 30 per class in validation itself",
+  "low_fpr_claim": "FPR <= 1% needs about 300+ effectively independent negatives with 0 false positives (one-sided 95%)",
+  "performance_estimate": "an untouched test split; see ml/power.bound_table for what its negatives can bound",
+  "smoke_test": "any labels; software correctness only, never a reported metric"
+ },
+ "label_provenance": {
+  "negative": "label-policy/1 reviewed_legitimate (two independent humans, confirmed, positive evidence of a legitimate interpretation)",
+  "positive": "label-policy/1 reviewed_attack (two independent humans, confirmed)",
+  "unknown": "excluded from the strict benchmark and counted"
+ },
+ "no_gnn": "graph context enters as tabular features; no GNN without a new hypothesis",
+ "populations": {
+  "test": "a later, untouched set; the frozen cohorts count only if never used in development (benchmark.Holdout)",
+  "train": "reviewed items outside both frozen review cohorts",
+  "validation": "grouped-temporal split of the training population"
+ },
+ "prediction_unit": "victim-event: one candidate transfer to or from one wallet",
+ "primary_metric": "average precision on test, reported with recall at FPR <= 5%",
+ "resource_budget": "CPU only, < 2 GB RAM, < 2 minutes per fit (larger needs approval)",
+ "secondary_metrics": [
+  "precision",
+  "recall",
+  "FPR",
+  "ROC-AUC",
+  "precision at review capacity 50",
+  "candidate recall (separately)",
+  "latency"
+ ],
+ "split": "grouped-temporal/1 with typed-groups/1 entities (victim, lookalike, planting tx, signer, imitated, counterfeit token); public tokens and routers never link",
+ "status": "inactive",
+ "target": "label-policy/1 strict binary: reviewed_attack=1, reviewed_legitimate=0",
+ "test_set": "untouched until the model, features, threshold rule and metrics are frozen",
+ "threshold": "chosen on validation only: the highest recall with FPR <= 5%",
+ "version": "poisoning-attempt-supervised/1"
+}

@@ -163,3 +163,18 @@ as gates A-K.
 
 The pre-registered experiment (`ml/experiment_spec.py`) stays inactive until at least 30
 reviewed labels per class exist, from at least 5 campaign groups each.
+
+## 10. Phase 11.7
+
+[ML_EVIDENCE_COMPLETION.md](ML_EVIDENCE_COMPLETION.md) evaluates gates A-L.
+
+- **Pass:** A, C, K, L.
+- **Pass with limitations:** B, D, G, H.
+- **Blocked by human review:** E, F, J.
+- **Fail:** I.
+
+Two new findings:
+- **Rule replay on archive items** needs signer data no local source has. `candidates/2`
+  re-emits only 0.4% of source positives on signer-less data.
+- **Sample size:** 35 reviewed negatives cannot bound FPR below about 8%. A 1% claim needs
+  about 300 effectively independent negatives.

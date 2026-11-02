@@ -327,3 +327,13 @@ measured review time, which replaces the 5-minute assumption.
 | I Statistical adequacy | **FAIL** (0 labels; 35 candidates bound FPR at about 10% at best) |
 | J ML readiness | BLOCKED BY MISSING HUMAN EVIDENCE (spec inactive) |
 | K Production isolation | **PASS** (research modules load neither database nor API; findings unchanged) |
+
+## Phase 11.7 update
+
+[ML_EVIDENCE_COMPLETION.md](ML_EVIDENCE_COMPLETION.md) supersedes the evidence numbers in
+§4 and the gate statuses above. Changes:
+- all 24 Cohort B archive items now have pre-cutoff wallet rows (19 recovered offline);
+- the packets are now `evidence-packets/2` (amendment 3);
+- the gates are re-evaluated as A-L.
+
+The state is unchanged: REVIEW_READY: HUMAN ANNOTATION PENDING.

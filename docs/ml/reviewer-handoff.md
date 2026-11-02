@@ -84,3 +84,11 @@ training cases once a reviewer has done them.
    [--cohort …]`. It needs no key.
 7. Only then: `cryptoguard ml review unblind …` per cohort. Report aggregates. Keep the
    per-item files local.
+
+## 7. Optional, needs your approval: closing the signer gap
+
+The packets lack signers for 85 items, receipts for all 95 and metadata for 28 tokens.
+No local source has them. A request of about 292 calls (cap 365) to a provider with
+historical state would close these gaps (ML_EVIDENCE_COMPLETION.md §19). It is not needed
+to start the review, and nothing is collected without your explicit approval of a cap and
+a provider.

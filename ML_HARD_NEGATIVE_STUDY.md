@@ -452,3 +452,12 @@ RPC.
 - **Generator speed.** `candidates/2` buckets chosen counterparties by their last 3
   characters (an exact shortcut, since the rule requires them). 10,000 transfers take
   0.13 s instead of 13 s, and the output is unchanged.
+
+## 27. Phase 11.7 follow-up
+
+- **Recovered history.** The 19 Cohort B archive items without local wallet history now
+  have pre-cutoff rows, from one more offline pass over the archive.
+- **Generator on signer-less data.** On archive-style data, `candidates/2` re-emits only 6
+  of 1,409 source positives. The rule for the dominant planting shape needs signer data
+  the archive lacks.
+- **Details:** [ML_EVIDENCE_COMPLETION.md](ML_EVIDENCE_COMPLETION.md) §12.

@@ -26,6 +26,31 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Evidence completion and review hardening (Phase 11.7)
+- An offline recovery pass over the local archive gives all 19 Cohort B archive items
+  that had no local wallet history some pre-cutoff rows (still source-selected).
+- Evidence packets v2, registered as amendment 3 before any review:
+  - same-block rows of unknown order are counted, never dropped silently;
+  - coverage-specific wording, so missing history never reads as novelty.
+- The review server refuses negative or non-numeric `Content-Length` and foreign browser
+  `Origin`s.
+- Added `ml verify-research`: an offline PASS/FAIL/MISSING/BLOCKED report on sources,
+  derived files, frozen cohorts, evidence and reviews.
+- Added `ml diagnostics`:
+  - source-positive candidate coverage, 0.4% strict, because the archive has no signer;
+  - evidence availability;
+  - generator invariance;
+  - scalability.
+- Added `ml experiment-spec`: a JSON export with fairness, label provenance,
+  label-count stages and a source-proxy-free ablation.
+- Added exact FPR bounds by sample size: 35 negatives cannot show FPR below about 8%.
+- Cross-check: 207 of 214 PTXPhish poisoning transactions are Tsuchiya payoffs, and the
+  attack methods agree on 81.5% of those linked to an attempt.
+- Tests: an independent reference implementation of `candidates/2`, an end-to-end
+  synthetic review workflow with failure injection, and a corrupt lease database.
+- Docs: ML_EVIDENCE_COMPLETION.md, amendment 3, and reviewer-guide wording and problem
+  procedure.
+
 ### Human validation readiness (Phase 11.6)
 - Both frozen cohorts re-verified byte for byte, and the history of Cohort B's superseded
   first draw audited. No reviewer, package or submission exists: state REVIEW_READY.

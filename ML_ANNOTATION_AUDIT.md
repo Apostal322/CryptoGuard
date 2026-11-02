@@ -345,3 +345,15 @@ No P0 finding: every hash, uniqueness, separation, allocation and reserve-order 
 - **Calibration.** A synthetic training cohort precedes real review.
 - **Sensitivity analyses** are pre-specified in protocol B4.
 - **Status:** [ML_HUMAN_VALIDATION_READINESS.md](ML_HUMAN_VALIDATION_READINESS.md).
+
+## 22. Amendment 3 (Phase 11.7)
+
+- **New packets.** The evidence packets are now `evidence-packets/2`: same-block rows of
+  unknown order are counted, and the coverage wording is explicit. Recovered archive rows
+  give every Cohort B archive item pre-cutoff history. The hashes are registered before
+  any review.
+- **Server fixes.** The review server refuses malformed `Content-Length` and foreign
+  `Origin`s.
+- **Workflow test.** A full synthetic review workflow, with failure injection, is tested
+  end to end.
+- **Details:** [ML_EVIDENCE_COMPLETION.md](ML_EVIDENCE_COMPLETION.md).
