@@ -504,7 +504,8 @@ def _review(args: argparse.Namespace) -> int:
             from cryptoguard.ml.evidence import build_cohort
 
             dbs = [ML_DIR / "poisoning" / "archive_subset.sqlite",
-                   HN_DIR / "context_subset.sqlite"]  # fmt: skip
+                   HN_DIR / "context_subset.sqlite",
+                   REVIEW_WORK / "review_context.sqlite"]  # fmt: skip
             m = build_cohort(args.sample, args.work / "evidence", archive_dbs=dbs, cohort=cohort)
             print(f"{m['items']} packets for {cohort}; sha256 {m['packets_sha256']} "
                   f"(0 RPC requests).")  # fmt: skip

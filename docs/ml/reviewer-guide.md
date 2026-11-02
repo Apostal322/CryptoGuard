@@ -129,6 +129,22 @@ The numbered buttons show which items are saved.
   "Insufficient evidence" instead.
 - **Save fails:** your input is kept as a draft in the browser. Fix the message shown, or
   restart the command, and save again.
+- **"Session expired" or the page stops loading:** stop the command (Ctrl+C) and run it
+  again. Use the new address it prints, because the old one stops working. Saved
+  decisions are kept.
+- **Anything else technical:** contact the maintainer, and describe the problem without
+  pasting item addresses into public channels. Never edit files in your folder by hand:
+  the files are hash-protected, and an edited file is rejected.
+
+## Reading the evidence panel's wording
+
+- **"none in the complete recorded window"**: the wallet really had no such transfer in
+  that window. Earlier history was not recorded.
+- **"none among the rows a research dataset kept"**: this says nothing about ordinary
+  activity, which is missing. Check an explorer before concluding the address was new to
+  the wallet.
+- **"Other transfers in the same block; their order is unknown"**: those transfers are
+  not shown, because they may have happened after the item.
 
 ## Finishing
 
