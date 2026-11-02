@@ -84,6 +84,14 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     cr.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     cr.add_argument("--out", type=Path, default=ML_DIR / "poisoning")
     cr.add_argument("--tables", type=Path, default=Path("ML_CROSS_DATASET_TABLES.md"))
+    fr = ml.add_parser(
+        "freeze-review-sample",
+        help="draw the stratified review sample once, before any review (offline, no RPC)",
+    )
+    fr.add_argument(
+        "--queue", type=Path, default=ML_DIR / "poisoning" / "review_packets_payoff_linked.jsonl"
+    )
+    fr.add_argument("--out", type=Path, default=ML_DIR / "poisoning" / "review_sample")
     bz = ml.add_parser("bench-archive", help="archive-scanner scaling on synthetic dumps")
     bz.add_argument("sizes", type=int, nargs="+")
     bz.add_argument("--work", type=Path, default=ML_DIR / "bench")
@@ -125,6 +133,8 @@ def run(args: argparse.Namespace) -> int:
         return _scan_archive(args)
     if args.ml_command == "cross-dataset-report":
         return _cross_dataset_report(args)
+    if args.ml_command == "freeze-review-sample":
+        return _freeze_review_sample(args)
     if args.ml_command == "bench-archive":
         import json
 
@@ -258,6 +268,27 @@ def _cross_dataset_report(args: argparse.Namespace) -> int:
         return 1
     written = write_report(report, args.out, args.tables)
     print(f"Wrote {written} and {args.tables} (0 RPC requests).")
+    return 0
+
+
+def _freeze_review_sample(args: argparse.Namespace) -> int:
+    from cryptoguard.ml.review_sample import ReviewSampleError, freeze
+
+    try:
+        manifest, written = freeze(args.queue, args.out)
+    except FileNotFoundError as exc:
+        print(f"error [FileNotFoundError]: {exc} (run `cryptoguard ml cross-dataset-report`)")
+        return 1
+    except ReviewSampleError as exc:
+        print(f"error [{type(exc).__name__}]: {exc}")
+        return 1
+    for row in manifest["strata_table"]:
+        print(f"{row['stratum']:36} {row['groups']:5} groups  {row['selected']:3} selected")
+    state = "Froze" if written else "Already frozen (unchanged):"
+    print(
+        f"{state} {len(manifest['selected'])} of {manifest['queue_packets']} packets in "
+        f"{args.out}; selection sha256 {manifest['selection_sha256']} (0 RPC requests)."
+    )
     return 0
 
 
