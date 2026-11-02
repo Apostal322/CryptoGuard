@@ -78,10 +78,12 @@ class Design:
 
 
 def parse_stratum(name: str) -> tuple[str, int, bool]:
-    subtype, year, rival = name.split("|")
-    if rival not in ("rival", "no_rival"):
+    # The flag is rival/no_rival (Phase 11.4 sample) or yes/no (later cohorts; its meaning
+    # is in the manifest's design["strata"]).
+    subtype, year, flag = name.split("|")
+    if flag not in ("rival", "no_rival", "yes", "no"):
         raise ValueError(f"bad stratum name {name!r}")
-    return subtype, int(year), rival == "rival"
+    return subtype, int(year), flag in ("rival", "yes")
 
 
 def design(manifest: Mapping[str, Any]) -> Design:

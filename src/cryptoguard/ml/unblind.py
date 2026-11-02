@@ -56,12 +56,24 @@ def _log_access(work: Path, purpose: str, detail: Mapping[str, Any]) -> None:
         fh.write(line)
 
 
+def record_of(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    """The source record in a key line: a review packet (Phase 11.4 sample) or a candidate
+    record (later cohorts)."""
+    rec: Mapping[str, Any] = row.get("packet") or row["candidate"]
+    return rec
+
+
+def _id(row: Mapping[str, Any]) -> str:
+    rec = record_of(row)
+    return str(rec.get("victim_event_id") or rec["event_id"])
+
+
 def _key_rows(sample_dir: Path, wanted: set[str]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for line in (sample_dir / rs.KEY).read_text(encoding="utf-8").splitlines():
         row = json.loads(line)
-        if row["packet"]["victim_event_id"] in wanted:
-            out[row["packet"]["victim_event_id"]] = row
+        if _id(row) in wanted:
+            out[_id(row)] = row
     return out
 
 
@@ -73,14 +85,16 @@ def replacements(work: Path) -> list[ReplacementRecord]:
 # --- reviewer packages -------------------------------------------------------------------
 
 
-def make_package(sample_dir: Path, work: Path, reviewer: str, out: Path) -> Path:
+def make_package(
+    sample_dir: Path, work: Path, reviewer: str, out: Path, *, cohort: str = rs.SAMPLE_VERSION
+) -> Path:
     """Copy what one reviewer needs and nothing else: the blinded sheet (byte for byte), any
     blinded replacement lines and a small info file. Never the key or the manifest."""
     from cryptoguard.ml.annotation import REVIEWER_ID
 
     if not REVIEWER_ID.match(reviewer):
         raise AnnotationError(f"invalid reviewer pseudonym {reviewer!r}")
-    manifest = rs.verify_frozen(sample_dir)
+    manifest = rs.verify_frozen(sample_dir, cohort=cohort)
     info_path = out / PACKAGE_INFO
     if info_path.exists():
         existing = json.loads(info_path.read_text(encoding="utf-8"))
@@ -119,10 +133,11 @@ def record_replacement(
     evidence: str,
     exposed: Sequence[str],
     recorded_by: str,
+    cohort: str = rs.SAMPLE_VERSION,
 ) -> ReplacementRecord:
     """Append the next frozen reserve of the original's stratum. Only for technical
     inaccessibility; the log keeps every replacement with its reason."""
-    manifest = rs.verify_frozen(sample_dir)
+    manifest = rs.verify_frozen(sample_dir, cohort=cohort)
     recs = replacements(work)
     active = {r["victim_event_id"]: r["stratum"] for r in manifest["selected"]}
     items = {r["victim_event_id"]: r["item"] for r in rs.read_sheet(sample_dir / rs.SHEET)}
@@ -141,16 +156,20 @@ def record_replacement(
         raise AnnotationError(f"{stratum}: no reserve left (nonresponse; see protocol §5)")
     new_id = reserves[pos]
     _log_access(work, "replacement sheet line", {"event": new_id})
-    packet = _key_rows(sample_dir, {new_id})[new_id]["packet"]
-    from cryptoguard.ml.review import ReviewPacket
-
+    row = _key_rows(sample_dir, {new_id})[new_id]
     item = max(items.values()) + 1
+    if "packet" in row:
+        from cryptoguard.ml.review import ReviewPacket
+
+        line = rs.blind(ReviewPacket.model_validate(row["packet"]), item)
+    else:  # later cohorts keep the blinded line in the frozen key's sheet copy
+        line = {**row["sheet"], "item": item}
     rec = ReplacementRecord(
         original_event_id=original_event_id,
         original_item=items[original_event_id],
         replacement_event_id=new_id,
         replacement_item=item,
-        sheet_line=rs.blind(ReviewPacket.model_validate(packet), item),
+        sheet_line=line,
         stratum=stratum,
         reserve_position=pos,
         reason=reason,
@@ -176,13 +195,15 @@ def preflight(
     work: Path,
     submission_paths: Sequence[Path],
     adjudication_path: Path | None = None,
+    *,
+    cohort: str = rs.SAMPLE_VERSION,
 ) -> dict[str, Any]:
     """Every check that must pass before the key may be opened. Raises
     ``UnblindingRefused`` listing all failures. Never reads the key's contents (only its
     hash)."""
     problems: list[str] = []
     try:
-        manifest = rs.verify_frozen(sample_dir)
+        manifest = rs.verify_frozen(sample_dir, cohort=cohort)
     except rs.ReviewSampleError as exc:
         raise UnblindingRefused(f"frozen sample: {exc}") from None
     recs = replacements(work)
@@ -205,7 +226,7 @@ def preflight(
     for s in subs:
         if s.selection_sha256 != manifest["selection_sha256"]:
             problems.append(f"{s.reviewer}: submission is for another sample")
-        if s.sheet_sha256 != rs.FROZEN_V1[rs.SHEET]:
+        if s.sheet_sha256 != rs.COHORTS[cohort][rs.SHEET]:
             problems.append(f"{s.reviewer}: submission is for another reviewer sheet")
         if s.protocol != PROTOCOL:
             problems.append(f"{s.reviewer}: protocol {s.protocol}")
@@ -248,10 +269,12 @@ def unblind(
     work: Path,
     submission_paths: Sequence[Path],
     adjudication_path: Path | None = None,
+    *,
+    cohort: str = rs.SAMPLE_VERSION,
 ) -> dict[str, Any]:
     """Run the gate, open the key, write the local item table and return the aggregate
     report. Reviewer decisions are never overwritten by source labels."""
-    pre = preflight(sample_dir, work, submission_paths, adjudication_path)
+    pre = preflight(sample_dir, work, submission_paths, adjudication_path, cohort=cohort)
     active: set[str] = pre["active"]
     subs: list[Submission] = pre["submissions"]
     _log_access(
@@ -288,7 +311,7 @@ def item_table(
     adj = {a.victim_event_id: a for a in adjudications}
     rows = []
     for e in sorted(key):
-        packet = key[e]["packet"]
+        packet = record_of(key[e])
         reviews = {s.reviewer: next(a for a in s.decisions if a.victim_event_id == e) for s in subs}
         found = {
             r: a.prior_counterparty_address.lower()
@@ -300,9 +323,12 @@ def item_table(
             {
                 "victim_event_id": e,
                 "stratum": key[e]["stratum"],
-                "source_subtype": packet["subtype"],
-                "source_labels": packet["source_labels"],
-                "rival_lookalikes": len(packet["competing_lookalikes"]),
+                "source_subtype": packet.get("subtype"),
+                "source_labels": packet.get("source_labels"),
+                "frame": packet.get("frame"),
+                "categories": packet.get("categories"),
+                "screen_status": packet.get("screen_status"),
+                "rival_lookalikes": len(packet.get("competing_lookalikes", ())),
                 "reviewer_decisions": {r: a.decision for r, a in reviews.items()},
                 "reviewer_counterparty_matches_source_imitated": {
                     r: addr == imitated for r, addr in found.items()
@@ -351,15 +377,16 @@ def analyse(
     reviewers = sorted(decisions)
     items = sorted(set.intersection(*(set(v) for v in decisions.values())))
 
-    def outcome(rule: str) -> dict[str, bool | None]:
+    def outcome(rule: str, positive: frozenset[str] = ATTEMPT) -> dict[str, bool | None]:
         out: dict[str, bool | None] = dict.fromkeys(d.item_cell)
         for e in items:
             labels = [decisions[r][e] for r in reviewers]
-            flags = [x in ATTEMPT for x in labels]
+            flags = [x in positive for x in labels]
             out[slot.get(e, e)] = all(flags) if rule == "all" else any(flags)
         return out
 
     primary, lenient = outcome("all"), outcome("any")
+    legitimate = outcome("all", frozenset({"confirmed_legitimate_interaction"}))
     adjudicated = dict(primary)
     for a in adjudications:
         adjudicated[slot.get(a.victim_event_id, a.victim_event_id)] = a.final_decision in ATTEMPT
@@ -388,7 +415,7 @@ def analyse(
         ),
         "by_subgroup": {},
     }
-    for name, member in _subgroups(stratum_of).items():
+    for name, member in _subgroups(stratum_of, manifest["design"].get("strata")).items():
         ids = [e for e in items if e in member]
         if len(ids) < MIN_CELL:
             agree["by_subgroup"][name] = {"items": len(ids), "note": f"fewer than {MIN_CELL}"}
@@ -435,6 +462,9 @@ def analyse(
         "primary_all_reviewers_attempt": block(primary),
         "sensitivity_any_reviewer_attempt": block(lenient),
         "secondary_adjudicated": block(adjudicated) if adjudications else None,
+        # Share every reviewer judged a confirmed legitimate interaction (the hard-negative
+        # cohort's primary quantity; reported for every cohort).
+        "all_reviewers_legitimate": block(legitimate),
         "replacement_sensitivity": block(
             {
                 **primary,
@@ -454,7 +484,7 @@ def analyse(
         cats = Counter(_source_category([decisions[r][e] for r in reviewers]) for e in items)
         matched: Counter[str] = Counter()
         for e in items:
-            imitated = (key[e]["packet"].get("imitated") or "").lower()
+            imitated = (record_of(key[e]).get("imitated") or "").lower()
             for s in subs:
                 ann = next(x for x in s.decisions if x.victim_event_id == e)
                 if ann.prior_counterparty_address:
@@ -464,16 +494,26 @@ def analyse(
         report["source_comparison"] = {
             "categories": dict(cats),
             "reviewer_counterparty_vs_source_imitated": dict(matched),
-            "note": "the source labels every item a poisoning attempt; reviewer decisions are "
-            "never overwritten by it",
+            "note": (
+                "the source labels every item a poisoning attempt"
+                if manifest["sample_version"] == rs.SAMPLE_VERSION
+                else "items are unlabeled candidates; no source label exists"
+            )
+            + "; reviewer decisions are never overwritten by source information",
         }
     return report
 
 
-def _subgroups(stratum_of: Mapping[str, str]) -> dict[str, set[str]]:
+def _subgroups(
+    stratum_of: Mapping[str, str], names: Sequence[str] | None = None
+) -> dict[str, set[str]]:
+    first, _, third = names if names and len(names) == 3 else ("subtype", "year", "rival")
+    third = "rival" if third == "rival_lookalike" else third
+    first = first.split("_")[0] if first != "frame" else "frame"
     groups: dict[str, set[str]] = {}
     for e, name in stratum_of.items():
-        subtype, year, rival = sd.parse_stratum(name)
-        for g in (f"subtype={subtype}", f"year={year}", f"rival={'yes' if rival else 'no'}"):
+        head, year, flag = sd.parse_stratum(name)
+        head = head.split(":")[0]  # one recorded wallet per stratum: report by frame
+        for g in (f"{first}={head}", f"year={year}", f"{third}={'yes' if flag else 'no'}"):
             groups.setdefault(g, set()).add(e)
     return dict(sorted(groups.items()))

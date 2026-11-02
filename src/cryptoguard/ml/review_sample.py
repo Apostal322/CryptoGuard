@@ -316,6 +316,13 @@ FROZEN_V1: dict[str, str] = {
     MANIFEST: "c38ae31d598bb58c33fcd2d6553823fc1880b25a4b49b8764d32a290bc7dbdc3",
 }
 SELECTION_FIELDS = ("sample_version", "queue_sha256", "design", "selected", "reserves")
+# Every frozen cohort and its committed hashes. A reviewer package names no cohort: the
+# server finds it by the sheet's hash, so a cohort's purpose is never shown to reviewers.
+COHORTS: dict[str, dict[str, str]] = {SAMPLE_VERSION: FROZEN_V1}
+
+
+def cohort_for_sheet(sheet_sha256: str) -> str | None:
+    return next((c for c, h in COHORTS.items() if h[SHEET] == sheet_sha256), None)
 
 
 def file_sha256(path: Path) -> str:
@@ -330,12 +337,15 @@ def verify_frozen(
     sample_dir: Path,
     *,
     queue: Path | None = None,
-    expected: dict[str, str] = FROZEN_V1,
+    expected: dict[str, str] | None = None,
     with_key: bool = True,
+    cohort: str = SAMPLE_VERSION,
 ) -> dict[str, Any]:
     """Check every frozen file against ``expected`` and the manifest's own records; return
     the manifest. Raises ``FrozenIntegrityError`` naming every mismatch. ``with_key=False``
-    skips the unblinding key (for a reviewer package, which does not contain it)."""
+    skips the unblinding key (for a reviewer package, which does not contain it).
+    ``cohort`` selects the committed hashes (``COHORTS``) and the expected version."""
+    expected = expected if expected is not None else COHORTS[cohort]
     problems: list[str] = []
     names = [MANIFEST, SHEET] + ([KEY] if with_key else [])
     got: dict[str, str] = {}
@@ -350,7 +360,7 @@ def verify_frozen(
     if problems:
         raise FrozenIntegrityError("; ".join(problems))
     manifest: dict[str, Any] = json.loads((sample_dir / MANIFEST).read_text(encoding="utf-8"))
-    if manifest.get("sample_version") != SAMPLE_VERSION:
+    if manifest.get("sample_version") != cohort:
         problems.append(f"sample_version {manifest.get('sample_version')!r}")
     if selection_sha256(manifest) != expected["selection"]:
         problems.append("selection hash does not match the committed value")
@@ -375,6 +385,6 @@ def verify_frozen(
 def read_sheet(path: Path) -> list[dict[str, Any]]:
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
     for r in rows:
-        if r.get("schema_version") != SHEET_SCHEMA:
+        if r.get("schema_version") not in (SHEET_SCHEMA, "review-sheet/2"):
             raise ReviewSampleError(f"{path}: unexpected sheet schema {r.get('schema_version')!r}")
     return rows

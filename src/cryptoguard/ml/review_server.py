@@ -47,20 +47,28 @@ CSP = (
 )
 SHEET_FIELDS = ("item", "victim_event_id", "chain_id", "wallet", "address_under_review",
                 "transaction", "block")  # fmt: skip
+OPTIONAL_FIELDS = ("description", "coverage_note", "context")  # sheet v2 (later cohorts)
+
+
+def _view(r: dict[str, Any]) -> dict[str, Any]:
+    """The reviewer's view of one sheet line: required fields plus whitelisted extras."""
+    return {k: r[k] for k in SHEET_FIELDS} | {k: r[k] for k in OPTIONAL_FIELDS if k in r}
 
 
 class PackageError(ValueError):
     pass
 
 
-def load_package(package: Path, expected_sheet_sha256: str) -> dict[str, Any]:
-    """Verify the package and return its reviewer, sample hashes and active items."""
+def load_package(package: Path, expected_sheet_sha256: str | None = None) -> dict[str, Any]:
+    """Verify the package and return its reviewer, sample hashes and active items. The
+    cohort is found by the sheet's hash among the committed cohorts (``rs.COHORTS``)."""
     info = json.loads((package / PACKAGE_INFO).read_text(encoding="utf-8"))
     sheet_path = package / rs.SHEET
     got = rs.file_sha256(sheet_path)
-    if got != info["sheet_sha256"] or got != expected_sheet_sha256:
-        raise PackageError(f"{sheet_path}: sha256 {got} is not the frozen sheet")
-    items = {r["item"]: {k: r[k] for k in SHEET_FIELDS} for r in rs.read_sheet(sheet_path)}
+    known = expected_sheet_sha256 == got if expected_sheet_sha256 else rs.cohort_for_sheet(got)
+    if got != info["sheet_sha256"] or not known:
+        raise PackageError(f"{sheet_path}: sha256 {got} is not a frozen sheet")
+    items = {r["item"]: _view(r) for r in rs.read_sheet(sheet_path)}
     replaced: list[int] = []
     rep_path = package / REPLACEMENT_SHEET
     if rep_path.exists():
@@ -72,7 +80,7 @@ def load_package(package: Path, expected_sheet_sha256: str) -> dict[str, Any]:
                 raise PackageError(f"{rep_path}: bad replacement for item {r['replaces_item']}")
             del items[r["replaces_item"]]
             replaced.append(r["replaces_item"])
-            items[r["item"]] = {k: r[k] for k in SHEET_FIELDS}
+            items[r["item"]] = _view(r)
     return {
         "reviewer": info["reviewer"],
         "selection_sha256": info["selection_sha256"],
@@ -84,8 +92,7 @@ def load_package(package: Path, expected_sheet_sha256: str) -> dict[str, Any]:
 
 class ReviewApp:
     def __init__(self, package: Path, expected_sheet_sha256: str | None = None) -> None:
-        expected = expected_sheet_sha256 or rs.FROZEN_V1[rs.SHEET]
-        self.pkg = load_package(package, expected)
+        self.pkg = load_package(package, expected_sheet_sha256)
         ids = {i: v["victim_event_id"] for i, v in self.pkg["items"].items()}
         self.store = ReviewerStore(package / STORE_DIR, self.pkg["reviewer"], ids)
         self.token = secrets.token_urlsafe(24)

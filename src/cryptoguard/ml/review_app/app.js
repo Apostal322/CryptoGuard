@@ -193,12 +193,32 @@ function render() {
   $(".cutoff", frag).textContent =
     `Judge the planting with evidence up to block ${it.block}. If you look at later activity ` +
     "(an explorer shows it), record that below; it is not hidden from you, only from this sheet.";
+  if (it.description) $(".item-title", frag).textContent = `${it.description}: item ${it.item} of ${state.items.length}`;
   const dl = $(".facts", frag);
   for (const [k, label] of FACTS) {
     const dd = el("dd");
     dd.append(el("code", it[k]));
     dd.append(copyButton(it[k]));
     dl.append(el("dt", label), dd);
+  }
+  const card = $(".card", frag);
+  if (it.coverage_note) card.append(el("p", it.coverage_note, "coverage"));
+  if (Array.isArray(it.context) && it.context.length) {
+    const details = el("details", undefined, "context");
+    details.append(el("summary", `Recorded wallet activity before the cutoff (last ${it.context.length})`));
+    const table = el("table");
+    const head = el("tr");
+    for (const h of ["Block", "Direction", "Counterparty", "Value (base units)"]) head.append(el("th", h));
+    table.append(head);
+    for (const row of it.context) {
+      const tr = el("tr");
+      tr.append(el("td", row.block), el("td", row.direction));
+      const td = el("td"); td.append(el("code", row.counterparty)); tr.append(td);
+      tr.append(el("td", row.value));
+      table.append(tr);
+    }
+    details.append(table);
+    card.append(details);
   }
   const form = $("form", frag);
   const fs = $(".decision", form);

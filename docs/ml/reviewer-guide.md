@@ -54,6 +54,15 @@ For each check, say what you found: observed / looked for and absent / data not 
 / not looked at / not applicable / contradictory. "Not available" is not evidence against
 an attempt.
 
+Some folders show items titled **"Candidate for independent security review"**. They may
+also show:
+- a coverage note: how much of the wallet's history was recorded;
+- an expandable table of the wallet's recorded activity before the cutoff.
+
+Judge them exactly like any other item. Any of the five decisions may be right, including
+"Confirmed poisoning attempt". The table is a convenience: it shows only what was
+recorded, so check an explorer when the note says history is missing.
+
 ## Be honest about what you saw
 
 Block explorers show later activity and sometimes labels such as "Phishing". That is fine.

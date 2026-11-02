@@ -53,3 +53,7 @@ button.copy { font-size: 12px; padding: 1px 6px; }
   main { grid-template-columns: 1fr; padding: 10px 16px; }
   .facts { grid-template-columns: 1fr; }
 }
+.coverage { color: var(--muted); margin: 10px 0 0; }
+details.context { margin-top: 10px; }
+details.context table { border-collapse: collapse; width: 100%; font-size: 13px; display: block; overflow-x: auto; }
+details.context th, details.context td { border-bottom: 1px solid var(--line); padding: 3px 8px; text-align: left; }
