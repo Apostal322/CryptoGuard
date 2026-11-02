@@ -328,13 +328,15 @@ COHORTS["hard-negative-candidates/1"] = {
     KEY: "f333386d20ce327df27c2747aef317e96e030c61650f3f20b60d06f038802ad9",
     MANIFEST: "05dc1b1679f9fdce7560ff5da1f9a869fd84c8617646410e56aa3cbce59e3868",
 }
-# Protocol amendment 2: offline pre-cutoff evidence packets (evidence-packets/1), built at
-# 240ba9b on a clean tree before any review. Separate files; the frozen sheets are untouched.
+# Offline pre-cutoff evidence packets, separate files; the frozen sheets are untouched.
+# Amendment 2 registered evidence-packets/1 (240ba9b: A 68f11afb..., B 1c7f32c6...).
+# Amendment 3 (Phase 11.7, before any review or package) replaces them with
+# evidence-packets/2 built at 3ee994f (clean tree) from the same sheets plus recovered rows.
 COHORTS[SAMPLE_VERSION]["evidence"] = (
-    "68f11afba87266ee393dcf33a84c913c55fca9c01656f7a1b1d6dfc5122d46ae"
+    "7f75f5936c7b6e3f96eea7921e9bf2097f114ce65123f7a4db4c46a4c7295747"
 )
 COHORTS["hard-negative-candidates/1"]["evidence"] = (
-    "1c7f32c64c9c2beb0342baf8762d5381a5923f0c04389e83dd5da4919cdc01bf"
+    "fcb4765e4a2ef870c003bd1abc4ddf1bf40e69dc1c0747748dd4ce75e51ad567"
 )
 
 
