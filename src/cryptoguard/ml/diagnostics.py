@@ -32,7 +32,9 @@ DIAG_VERSION = "diagnostics/1"
 WINDOW = 50_400  # about 7 days of blocks
 
 
-def _fixture(victim: str, rows: list[tuple[Any, ...]], block: int, optimistic: bool) -> Any:
+def _fixture(
+    victim: str, rows: list[tuple[Any, ...]], block: int, optimistic: bool, window: int = WINDOW
+) -> Any:
     from cryptoguard.ml.tsuchiya_archive import POISONING
     from cryptoguard.replay.models import RecordedTransfer, ReplayFixture
 
@@ -60,7 +62,7 @@ def _fixture(victim: str, rows: list[tuple[Any, ...]], block: int, optimistic: b
         case_id="diagnostic",
         chain_id=1,
         wallet=victim,
-        from_block=block - WINDOW,
+        from_block=block - window,
         to_block=block,
         recorded_at=datetime(2026, 1, 1, tzinfo=UTC),
         recorded_with="tsuchiya-archive rows (source-selected)",

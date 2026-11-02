@@ -102,6 +102,14 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     dg = ml.add_parser("diagnostics", help="label-free offline diagnostics (aggregate output)")
     dg.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     dg.add_argument("--out", type=Path, default=ML_DIR / "diagnostics.json")
+    ls = ml.add_parser(
+        "lookalike-study", help="Phase 12.1 lookalike prioritization study (aggregate output)"
+    )
+    ls.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    ls.add_argument("--out", type=Path, default=ML_DIR / "research" / "lookalike-study.json")
+    ls.add_argument(
+        "--graph-scan", action="store_true", help="first run the graph-context archive pass"
+    )
     iv = ml.add_parser("inventory", help="hash and describe every local research data file")
     iv.add_argument("--root", type=Path, default=Path("."))
     iv.add_argument("--out", type=Path, default=ML_DIR / "inventory.json")
@@ -191,6 +199,20 @@ def run(args: argparse.Namespace) -> int:
         report = run_diagnostics(args.data_dir, ML_DIR / "poisoning")
         args.out.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
         print(json.dumps({k: v for k, v in report.items() if k != "notes"}, indent=1)[:4000])
+        return 0
+    if args.ml_command == "lookalike-study":
+        import json
+
+        from cryptoguard.ml import lookalike_ranking, lookalike_study
+
+        poisoning = ML_DIR / "poisoning"
+        if args.graph_scan:
+            lookalike_ranking.graph_context_scan(args.data_dir, poisoning)
+        report = lookalike_study.run(poisoning)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(report, indent=1, default=str) + "\n", encoding="utf-8")
+        print(json.dumps(report["primary"], indent=1))
+        print(f"Wrote {args.out} (aggregate only; 0 RPC requests).")
         return 0
     if args.ml_command == "inventory":
         import json

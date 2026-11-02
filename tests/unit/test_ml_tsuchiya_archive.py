@@ -376,6 +376,11 @@ def test_scan_reproduces_counts_and_stores_only_targets(tmp_path: Path) -> None:
     assert [r.tx for r in rows] == [h(1), h(2), h(3), h(4), h(1)]
     assert summary["target_manifest_sha256"] == s["target_manifest_sha256"]
     assert not (tmp_path / "w" / "victims").exists()  # spill files cleaned up
+    # The lookup indexes are built after the load, but they must exist in the result.
+    con = sqlite3.connect(out)
+    indexes = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    con.close()
+    assert {"transfers_sender", "transfers_receiver", "transfers_tx"} <= indexes
 
 
 def test_rule_coverage_is_measured_per_subtype(tmp_path: Path) -> None:

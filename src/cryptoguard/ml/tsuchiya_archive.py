@@ -669,7 +669,7 @@ def scan(
     for leftover in (tmp, *(tmp.with_name(tmp.name + s) for s in ("-journal", "-wal", "-shm"))):
         leftover.unlink(missing_ok=True)
     db = sqlite3.connect(tmp)
-    db.executescript(_DDL)
+    db.executescript(_DDL_TABLES)
     db.executemany(
         "INSERT INTO meta(key, value) VALUES (?, ?)",
         [("schema_version", str(SCHEMA_VERSION)), ("parser_version", PARSER_VERSION)],
@@ -747,7 +747,8 @@ def scan(
             if progress is not None and reader.stats.data_rows % progress_every == 0:
                 progress(reader.stats)
         stored += _insert(db, pending)
-        distinct = {name: c.count() for name, c in counters.items()}
+        db.executescript(_DDL_INDEXES)
+        distinct ={name: c.count() for name, c in counters.items()}
         # Spill files only grow until cleanup, so the total written after the final flush
         # in ``count`` is the peak temporary disk use.
         peak_spill = sum(c.bytes_written for c in counters.values())
@@ -813,7 +814,7 @@ def scan(
     return summary
 
 
-_DDL = """
+_DDL_TABLES = """
 PRAGMA journal_mode = DELETE;
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE transfers (
@@ -831,10 +832,16 @@ CREATE TABLE transfers (
     first_digits INTEGER,
     last_digits INTEGER
 );
+"""
+# Built once after the load: maintaining three random-key indexes during the insert
+# rewrites most index pages on every batch commit (gigabytes of journal for a
+# million-row subset on a contended disk). The finished schema is the same.
+_DDL_INDEXES = """
 CREATE INDEX transfers_sender ON transfers(sender);
 CREATE INDEX transfers_receiver ON transfers(receiver);
 CREATE INDEX transfers_tx ON transfers(tx);
 """
+_DDL = _DDL_TABLES + _DDL_INDEXES
 
 
 def _insert(db: sqlite3.Connection, rows: list[tuple[Any, ...]]) -> int:
