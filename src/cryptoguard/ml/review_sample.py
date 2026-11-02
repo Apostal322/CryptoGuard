@@ -319,6 +319,15 @@ SELECTION_FIELDS = ("sample_version", "queue_sha256", "design", "selected", "res
 # Every frozen cohort and its committed hashes. A reviewer package names no cohort: the
 # server finds it by the sheet's hash, so a cohort's purpose is never shown to reviewers.
 COHORTS: dict[str, dict[str, str]] = {SAMPLE_VERSION: FROZEN_V1}
+# Phase 11.5 hard-negative candidate cohort, frozen at c68d3a4 before any review
+# (ML_HARD_NEGATIVE_STUDY.md section 12).
+COHORTS["hard-negative-candidates/1"] = {
+    "queue": "881f2faebdf3669d659cfb2a3fbbd87f27a50cd71e92c6889e34427c2ef3feea",
+    "selection": "ae9df36ab99750a35e884bf487e117e1f5c99f555a2beaf5ab2f30c11f6ddb57",
+    SHEET: "121c112d291e5397c378cddd2a27b2e081404aa8a57b5d73325556b7d94ca108",
+    KEY: "f333386d20ce327df27c2747aef317e96e030c61650f3f20b60d06f038802ad9",
+    MANIFEST: "05dc1b1679f9fdce7560ff5da1f9a869fd84c8617646410e56aa3cbce59e3868",
+}
 
 
 def cohort_for_sheet(sheet_sha256: str) -> str | None:
