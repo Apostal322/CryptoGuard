@@ -26,6 +26,32 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Independent annotation and benchmark validation (Phase 11.4)
+- Verified the frozen review sample against its committed hashes (`ml review verify`) and
+  audited its design (`ml review audit`). Every uniqueness, separation, allocation, weight
+  and reserve check passes; nothing was regenerated. The 1,401 versus 1,395 group count is
+  explained: an exploratory count without the imitated-address link.
+- Protocol amendment 1, written before any review:
+  - campaign-level primary estimand; attempt level as bounds only;
+  - design-based intervals (the earlier 0.94 and 0.86 assumed simple random sampling; the
+    all-confirmed design bound is 0.929);
+  - a pre-specified collapse rule for single-item strata;
+  - structured evidence and exposure fields.
+- Added the review workflow:
+  - per-reviewer packages holding only the blinded sheet;
+  - a local review app (loopback only, session token, Host check, strict CSP, no data in
+    static files);
+  - a hash-chained, atomically written reviewer store with finalization;
+  - replacements in frozen reserve order;
+  - agreement statistics (kappa undefined rather than 0; Gwet's AC1);
+  - an unblinding gate with no override, and a key-access log.
+- Added benchmark readiness (`ml/benchmark.py`): versioned benchmark manifest, a guard that
+  refuses training data touching the review holdout, and the ten criteria. Not a benchmark
+  yet: no human decisions and no verified negatives. The negative-data collection plan
+  needs a separately approved RPC cap.
+- Docs: ML_ANNOTATION_AUDIT.md, ML_BENCHMARK_READINESS.md, docs/ml/reviewer-guide.md, and
+  protocol amendment 1.
+
 ### Cross-dataset validation of poisoning research data (Phase 11.3)
 - Added a verified, resumable downloader for one approved file at a time
   (`ml fetch-file`). Resume needs a matching `206`, the file is renamed only after size,

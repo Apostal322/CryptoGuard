@@ -4,7 +4,10 @@ Status: infrastructure done, gates B and D fail (no verified labels), and no mod
 for this task. The Tsuchiya et al. payoff cross-check (§6) and the attempt-archive
 reconciliation (§7, Phase 11.3) are done. The next experiment is in
 [ML_CROSS_DATASET_VALIDATION.md](ML_CROSS_DATASET_VALIDATION.md) §25; its review sample of
-60 is frozen and waiting for reviewers (§26). Data model and labels:
+60 is frozen (§26). Phase 11.4 verified it, audited its design and built the independent
+annotation workflow; it now waits for two human reviewers
+([ML_ANNOTATION_AUDIT.md](ML_ANNOTATION_AUDIT.md),
+[ML_BENCHMARK_READINESS.md](ML_BENCHMARK_READINESS.md)). Data model and labels:
 [ML_POISONING_DATASET.md](ML_POISONING_DATASET.md).
 Pilot: [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md). Generated numbers:
 [ML_POISONING_TABLES.md](ML_POISONING_TABLES.md).

@@ -99,3 +99,97 @@ Each reviewer returns one line per item in `poisoning-review/1` format
   descriptive only.
 - **Not concluded from this review:** detector precision or recall, theft probability, or
   any population rate.
+
+---
+
+# Amendment 1 (2026-11-02, before any review)
+
+**Status when written:**
+- No reviewer had been recruited.
+- No decision existed.
+- No reviewer package had been issued.
+- The unblinding key was not opened. Its bytes were hashed only.
+- No outcome data was inspected. The only data examined were the frozen manifest's
+  aggregate design counts and the review queue (the sampling frame), both seen earlier by
+  the maintainer while building the sample.
+- The frozen sample and the hashes in §2 are unchanged and remain usable.
+- No new data is needed.
+
+The text above stays as written. This amendment replaces the clauses it names.
+Background: [ML_ANNOTATION_AUDIT.md](../../ML_ANNOTATION_AUDIT.md) §19.
+
+## A1. Defects in the original protocol
+
+1. **§7 asked for a design-weighted estimate "for the queue"** (1,469 attempts). The design
+   samples campaign groups through one fixed representative each, so 74 attempts could
+   never be selected.
+2. **The §7 scale figures (0.94 and 0.86)** are unweighted two-sided Wilson bounds. They
+   assume simple random sampling.
+3. **No rule existed for variance in strata with one item.**
+4. **§6 named the exposure problem but recorded nothing.**
+5. **Decisions carried only free text**, so strong labels could not be checked.
+6. **Finalization, unblinding and replacement had no mechanics.**
+
+## A2. Corrections
+
+- **Decision format.** Decisions use `poisoning-annotation/1` (`ml/annotation.py`):
+  - the §4 decision and a confidence level;
+  - the §3 checks as structured evidence states, including the earlier counterparty
+    address the reviewer found and the matched characters;
+  - exposure: explorer use, viewing after the cutoff block, external labels, source or
+    model output;
+  - a rationale, and optional notes.
+
+  Every record converts to `poisoning-review/1` for `review.import_reviews`.
+- **Evidence rules:**
+  - `confirmed_poisoning_attempt` requires the planting observed, the imitated earlier
+    counterparty observed and recorded with its matched characters, a legitimate
+    explanation looked for and absent, and a rationale of at least five words;
+  - `likely` requires the planting observed;
+  - `confirmed_legitimate_interaction` requires the legitimate explanation observed;
+  - `conflicting_evidence` requires one check marked contradictory.
+
+  Missing evidence is never negative evidence.
+- **Estimands.** The primary estimand is the campaign-level share (ML_ANNOTATION_AUDIT.md
+  §7). Attempt-level results are bounds only. Victim level is not estimated.
+- **Primary statistic.** It is unchanged: an item counts only if both reviewers mark it
+  confirmed or likely.
+  - The estimate is stratified (weights `N_c/n_c`).
+  - Its interval is a two-sided Wilson 95% on the effective sample size, with variance from
+    pre-specified collapsed strata (`sample_design.collapse_partners`).
+  - Unweighted Wilson intervals are reported, labelled illustrative.
+  - For dust and zero-value, raw counts are primary.
+- **Sensitivity and secondary results:**
+  - counting an item if either reviewer says attempt;
+  - an adjudicated result (secondary);
+  - replaced originals treated as missing, with bounds.
+- **Agreement.** Cohen's kappa (undefined, never 0, when only one category is used) and
+  Gwet's AC1, on the five decisions and on attempt versus not. Subgroups are reported only
+  with 10 or more items.
+- **Exploratory only.** Attempt decisions with and without after-cutoff viewing.
+- **Mechanics:**
+  - one package and store per reviewer;
+  - append-only hash-chained log;
+  - finalization with a content hash, after which no edits are possible;
+  - replacements only for technical inaccessibility, the next reserve in frozen order,
+    logged separately;
+  - unblinding only after two distinct finalized submissions pass every check, with each
+    key access logged.
+
+## A3. Maintainer checklist
+
+1. `cryptoguard ml review verify`: all five hashes match.
+2. Recruit two people with Ethereum explorer experience who did not build the sample. Give
+   each a pseudonym (`A`, `B`). Keep any identifying details outside the repository.
+3. `cryptoguard ml review package --reviewer A --out <dir>`, and the same for B. Hand each
+   reviewer only their own directory and [reviewer-guide.md](reviewer-guide.md). Never
+   hand over the key, the manifest, this protocol's analysis sections or the other
+   reviewer's directory.
+4. If an item cannot be shown at all, run `cryptoguard ml review replace`, then remake the
+   packages. Never replace for difficulty.
+5. Collect both `annotations/submission.json` files, and record their content hashes in
+   the run notes.
+6. Optional: adjudication by a third person, recorded as `poisoning-adjudication/1`.
+7. `cryptoguard ml review unblind --submission A.json --submission B.json`.
+8. Report from `unblinded_report.json` (aggregate). Keep `unblinded_items.jsonl` and the
+   submissions local.

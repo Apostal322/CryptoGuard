@@ -44,7 +44,12 @@ method and decision log.
     (`cryptoguard ml scan-archive`, `cryptoguard ml cross-dataset-report`),
     `ml/review_sample.py` (frozen, blinded review sample:
     `cryptoguard ml freeze-review-sample`; protocol in
-    [docs/ml/review-protocol.md](docs/ml/review-protocol.md)).
+    [docs/ml/review-protocol.md](docs/ml/review-protocol.md));
+  - Phase 11.4: `ml/sample_design.py` (design audit and estimators), `ml/annotation.py`
+    (decision schema, hash-chained reviewer store, finalization), `ml/review_server.py`
+    (local, blinded review app), `ml/agreement.py`, `ml/unblind.py` (gated unblinding and
+    analysis), `ml/benchmark.py` (readiness and holdout guard); commands under
+    `cryptoguard ml review` ([ML_ANNOTATION_AUDIT.md](ML_ANNOTATION_AUDIT.md)).
 - **Further reading:** [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md) covers the pilot
   reconstruction and the data-loss fix. [ML_RESEARCH_PLAN.md](ML_RESEARCH_PLAN.md) has the
   issue register, the collection design and the next experiment.

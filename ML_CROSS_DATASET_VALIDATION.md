@@ -552,3 +552,16 @@ same time: [docs/ml/review-protocol.md](docs/ml/review-protocol.md).
   - The review itself: two independent reviewers, per the protocol.
   - The matched negatives from §25, which need a separately approved RPC cap.
   - No label exists until reviewed decisions are imported.
+
+## 27. Phase 11.4: verification and annotation workflow (0 RPC requests)
+
+- **Hashes.** All five §26 hashes were re-verified from the raw bytes; no file changed. The
+  selection was recomputed and redrawn identically.
+- **Design audit.** It passes every check.
+- **Grouping count.** The 1,401 group count mentioned during Phase 11.3 came from an
+  exploratory script without the imitated-address link; the frozen design has 1,395.
+- **Protocol amendment 1** was made before any review. It fixes the estimand and the
+  interval method; the earlier bounds assumed simple random sampling.
+- **Reviews.** No review has taken place. Details:
+  [ML_ANNOTATION_AUDIT.md](ML_ANNOTATION_AUDIT.md) and
+  [ML_BENCHMARK_READINESS.md](ML_BENCHMARK_READINESS.md).
