@@ -32,7 +32,23 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CONTRACT_VERSION = "benchmark-example/1"
 TRUTH = {"verified_attempt": 1, "verified_legitimate": 0}
-FORBIDDEN_FEATURE_WORDS = ("label", "outcome", "payoff", "loss", "score", "prediction", "paid")
+FORBIDDEN_FEATURE_WORDS = (
+    "label",
+    "outcome",
+    "payoff",
+    "loss",
+    "score",
+    "prediction",
+    "paid",
+    # source construction, not behaviour (Phase 11.5 separability findings)
+    "source",
+    "dataset",
+    "cohort",
+    "frame",
+    "row_index",
+    "line_number",
+    "file",
+)
 Split = Literal["train", "validation", "test"]
 
 

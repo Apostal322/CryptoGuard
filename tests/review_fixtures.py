@@ -98,6 +98,11 @@ ATTEMPT_FIELDS: dict[str, Any] = {
     "saw_external_label": "no",
     "saw_source_or_model_output": False,
     "rationale": "Lookalike of the earlier recipient, imitation token, no relationship found.",
+    "used_offline_evidence": True,
+    "saw_later_victim_payment": "no",
+    "third_party_label_influenced": "no",
+    "reason_codes": ["lookalike_of_earlier_counterparty", "imitation_token_contract"],
+    "evidence_refs": [],
 }
 INSUFFICIENT_FIELDS: dict[str, Any] = {
     **ATTEMPT_FIELDS,

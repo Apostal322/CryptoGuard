@@ -128,7 +128,9 @@ def generate(fixture: ReplayFixture, *, chain_id: int = 1) -> list[Candidate]:
     choices = sorted((e for e in events if _chose(e)), key=lambda e: e.position)
     status = "complete" if coverage.complete else "partial"
     out: list[Candidate] = []
-    chosen: dict[str, int] = {}  # grows as the pass moves forward: strictly earlier choices
+    # Strictly earlier choices, bucketed by their last MIN_SUFFIX characters: ``similar``
+    # needs at least that suffix in common, so no other bucket can ever match (exact).
+    chosen: dict[str, dict[str, int]] = defaultdict(dict)
     next_choice = 0
     for t in sorted(
         fixture.transfers, key=lambda t: (t.block_number, t.transaction_index, t.log_index)
@@ -136,7 +138,8 @@ def generate(fixture: ReplayFixture, *, chain_id: int = 1) -> list[Candidate]:
         position = (t.block_number, t.transaction_index, t.log_index)
         while next_choice < len(choices) and choices[next_choice].position < position:
             e = choices[next_choice]
-            chosen[e.counterparty.lower()] = e.block
+            k = e.counterparty.lower()
+            chosen[k[-MIN_SUFFIX:]][k] = e.block
             next_choice += 1
         incoming = t.recipient.lower() == wallet
         outgoing = t.sender.lower() == wallet
@@ -146,7 +149,7 @@ def generate(fixture: ReplayFixture, *, chain_id: int = 1) -> list[Candidate]:
         value = int(t.value)
         party = (t.sender if incoming else t.recipient).lower()
         match = max(
-            ((k, m) for k in chosen if (m := similar(party, k)) is not None),
+            ((k, m) for k in chosen.get(party[-MIN_SUFFIX:], {}) if (m := similar(party, k))),
             key=lambda km: (sum(km[1]), km[1][1], km[0]),
             default=None,
         )

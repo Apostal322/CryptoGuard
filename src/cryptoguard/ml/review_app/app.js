@@ -23,6 +23,32 @@ const CHOICES = {
   initiator: [["unknown", "unknown"], ["wallet", "the wallet"],
     ["third_party", "a third party"]],
 };
+const REASONS = [
+  ["lookalike_of_earlier_counterparty", "Look-alike of an earlier counterparty"],
+  ["imitation_token_contract", "Imitation token contract"],
+  ["zero_value_transfer", "Zero-value transfer"],
+  ["dust_value", "Dust value"],
+  ["third_party_initiated_transfer", "Initiated by a third party"],
+  ["wallet_initiated_transfer", "Initiated by the wallet"],
+  ["known_relationship", "Known relationship"],
+  ["same_owner_evidence", "Same-owner evidence"],
+  ["ordinary_payment_pattern", "Ordinary payment pattern"],
+  ["no_earlier_counterparty_found", "No earlier counterparty found"],
+  ["history_unavailable", "History unavailable"],
+  ["contradictory_observations", "Contradictory observations"],
+  ["other", "Other (explain)"],
+];
+const STATUS_TEXT = {
+  complete_for_declared_scope: ["ok", "Complete for the recorded window"],
+  partial_history: ["warn", "No earlier rows of this wallet are available locally"],
+  source_selected_rows_only: ["warn", "Only rows a research dataset kept: ordinary activity is missing"],
+  missing_transaction_details: ["warn", "The listed transaction is not in the local data"],
+  missing_receipt: ["warn", "Receipt not recorded"],
+  unknown_signer: ["warn", "Signer not recorded"],
+  unknown_token_legitimacy: ["warn", "Token not on the reviewed list (unknown, not necessarily fake)"],
+  unsupported_contract_execution: ["warn", "Contract execution not interpretable offline"],
+  insufficient_evidence: ["warn", "No local evidence"],
+};
 const FACTS = [
   ["wallet", "Wallet"],
   ["address_under_review", "Address under review"],
@@ -156,11 +182,24 @@ function formFields(form) {
     saw_source_or_model_output: f.get("saw_source_or_model_output") === "on",
     rationale: (f.get("rationale") || "").trim(),
     notes: (f.get("notes") || "").trim(),
+    used_offline_evidence: f.get("used_offline_evidence") === "on",
+    saw_later_victim_payment: f.get("saw_later_victim_payment"),
+    third_party_label_influenced: f.get("third_party_label_influenced"),
+    reason_codes: f.getAll("reason_codes"),
+    evidence_refs: (f.get("evidence_refs") || "").split(/\s+/).filter(Boolean),
   };
 }
 
 function setFields(form, v) {
+  for (const box of form.querySelectorAll('input[name="reason_codes"]')) {
+    box.checked = (v.reason_codes || []).includes(box.value);
+  }
   for (const [k, val] of Object.entries(v)) {
+    if (k === "reason_codes") continue;
+    if (k === "evidence_refs") {
+      form.elements.namedItem("evidence_refs").value = (val || []).join("\n");
+      continue;
+    }
     const input = form.elements.namedItem(k);
     if (!input || k === "decision") continue;
     if (input.type === "checkbox") input.checked = Boolean(val);
@@ -175,6 +214,65 @@ function matchCounts(a, b) {
   while (lead < 40 && x[lead] === y[lead]) lead++;
   while (trail < 40 && x[39 - trail] === y[39 - trail]) trail++;
   return [lead, trail];
+}
+
+function table(headers, rows) {
+  const t = el("table");
+  const head = el("tr");
+  for (const h of headers) head.append(el("th", h));
+  t.append(head);
+  for (const r of rows) {
+    const tr = el("tr");
+    for (const cell of r) {
+      const td = el("td");
+      if (typeof cell === "string" && cell.startsWith("0x")) td.append(el("code", cell));
+      else td.textContent = cell === null || cell === undefined ? "unknown" : String(cell);
+      tr.append(td);
+    }
+    t.append(tr);
+  }
+  return t;
+}
+
+function renderEvidence(box, ev) {
+  if (!ev) return;
+  box.hidden = false;
+  box.append(el("h3", `Offline evidence before block ${ev.cutoff.block}`));
+  box.append(el("p", ev.coverage.explanation, "muted"));
+  const chips = el("ul", undefined, "chips");
+  for (const s of ev.coverage.statuses) {
+    const [kind, text] = STATUS_TEXT[s] || ["warn", s];
+    chips.append(el("li", text, kind));
+  }
+  box.append(chips);
+  const row = (r) => [r.block, r.transaction, r.token, r.from, r.to, r.value_base_units];
+  const heads = ["Block", "Transaction", "Token", "From", "To", "Value (base units)"];
+  box.append(el("h4", "1. Candidate event"));
+  if (ev.candidate_event.length) {
+    box.append(table([...heads, "Direction"], ev.candidate_event.map((r) => [...row(r), r.direction])));
+  } else {
+    box.append(el("p", "Not in the local data.", "warn"));
+  }
+  const sem = ev.transaction_semantics;
+  const signer = Array.isArray(sem.signer) ? sem.signer.join(", ") : sem.signer;
+  box.append(el("h4", "2. Transaction semantics"));
+  box.append(table(["Execution", "Signer", "Zero value"], [[sem.execution, signer, sem.zero_value]]));
+  box.append(el("h4", "3. Token"));
+  box.append(table(["Token", "On the reviewed list"],
+    ev.token_provenance.map((t) => [t.token, t.on_reviewed_token_list ? "yes" : "unknown"])));
+  box.append(el("h4", "4. Address relationship"));
+  const rel = ev.address_relationship;
+  box.append(el("p", `${rel.earlier_rows_between_wallet_and_address} earlier row(s) between the wallet and this address. ${rel.note}.`));
+  const hist = ev.wallet_history;
+  const d = el("details");
+  d.append(el("summary", `5. Wallet history before the cutoff: ${hist.rows_before_cutoff} row(s), showing the last ${hist.shown.length}`));
+  if (hist.shown.length) d.append(table(heads, hist.shown.map(row)));
+  box.append(d);
+  if (ev.graph_context) {
+    const g = ev.graph_context;
+    box.append(el("h4", "6. This address with other wallets before the cutoff"));
+    box.append(el("p", `${g.earlier_rows_of_address_with_other_wallets} row(s) with ${g.distinct_other_wallets} other wallet(s) in the local data.`));
+  }
 }
 
 function go(i) {
@@ -201,6 +299,7 @@ function render() {
     dd.append(copyButton(it[k]));
     dl.append(el("dt", label), dd);
   }
+  renderEvidence($(".evidence", frag), it.evidence);
   const card = $(".card", frag);
   if (it.coverage_note) card.append(el("p", it.coverage_note, "coverage"));
   if (Array.isArray(it.context) && it.context.length) {
@@ -230,6 +329,14 @@ function render() {
     fs.append(l);
   });
   for (const s of form.querySelectorAll("select")) fill(s, s.dataset.kind || s.name);
+  const reasons = $(".reasons", form);
+  for (const [v, label] of REASONS) {
+    const l = el("label", undefined, "check");
+    const box = el("input");
+    box.type = "checkbox"; box.name = "reason_codes"; box.value = v;
+    l.append(box, el("span", label));
+    reasons.append(l);
+  }
   const current = saved(it.item);
   const draft = readDraft(it.item);
   if (current) setFields(form, current);

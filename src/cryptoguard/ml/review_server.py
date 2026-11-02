@@ -21,6 +21,7 @@ from __future__ import annotations
 import hmac
 import json
 import secrets
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -65,10 +66,29 @@ def load_package(package: Path, expected_sheet_sha256: str | None = None) -> dic
     info = json.loads((package / PACKAGE_INFO).read_text(encoding="utf-8"))
     sheet_path = package / rs.SHEET
     got = rs.file_sha256(sheet_path)
-    known = expected_sheet_sha256 == got if expected_sheet_sha256 else rs.cohort_for_sheet(got)
+    from cryptoguard.ml import evidence, training
+
+    cohort = rs.cohort_for_sheet(got)
+    if cohort is None and got == training.sheet_sha256():
+        cohort = training.TRAINING_VERSION
+    known = expected_sheet_sha256 == got if expected_sheet_sha256 else cohort
     if got != info["sheet_sha256"] or not known:
         raise PackageError(f"{sheet_path}: sha256 {got} is not a frozen sheet")
     items = {r["item"]: _view(r) for r in rs.read_sheet(sheet_path)}
+    packets_path = package / evidence.PACKETS
+    if packets_path.exists():
+        expected = (
+            training.packets_sha256()
+            if cohort == training.TRAINING_VERSION
+            else rs.COHORTS.get(cohort or "", {}).get("evidence")
+        )
+        if expected is None or rs.file_sha256(packets_path) != expected:
+            raise PackageError(f"{packets_path}: not the registered evidence for this sheet")
+        for line in packets_path.read_text(encoding="utf-8").splitlines():
+            pk = json.loads(line)
+            item = items.get(pk["item"])
+            if item is not None and pk["victim_event_id"] == item["victim_event_id"]:
+                item["evidence"] = pk
     replaced: list[int] = []
     rep_path = package / REPLACEMENT_SHEET
     if rep_path.exists():
@@ -90,9 +110,20 @@ def load_package(package: Path, expected_sheet_sha256: str | None = None) -> dic
     }
 
 
+SESSION_TTL_SECONDS = 12 * 3600  # one review sitting; restart the server for a new token
+
+
 class ReviewApp:
-    def __init__(self, package: Path, expected_sheet_sha256: str | None = None) -> None:
+    def __init__(
+        self,
+        package: Path,
+        expected_sheet_sha256: str | None = None,
+        *,
+        session_ttl_seconds: float = SESSION_TTL_SECONDS,
+    ) -> None:
         self.pkg = load_package(package, expected_sheet_sha256)
+        self.started = time.monotonic()
+        self.session_ttl_seconds = session_ttl_seconds
         ids = {i: v["victim_event_id"] for i, v in self.pkg["items"].items()}
         self.store = ReviewerStore(package / STORE_DIR, self.pkg["reviewer"], ids)
         self.token = secrets.token_urlsafe(24)
@@ -158,7 +189,8 @@ def make_handler(app: ReviewApp, port_ref: list[int]) -> type[BaseHTTPRequestHan
 
         def _authorized(self) -> bool:
             token = self.headers.get("X-Review-Token", "")
-            return hmac.compare_digest(token.encode(), app.token.encode())
+            fresh = time.monotonic() - app.started < app.session_ttl_seconds
+            return fresh and hmac.compare_digest(token.encode(), app.token.encode())
 
         def do_GET(self) -> None:
             if not self._host_ok():

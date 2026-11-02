@@ -57,3 +57,13 @@ button.copy { font-size: 12px; padding: 1px 6px; }
 details.context { margin-top: 10px; }
 details.context table { border-collapse: collapse; width: 100%; font-size: 13px; display: block; overflow-x: auto; }
 details.context th, details.context td { border-bottom: 1px solid var(--line); padding: 3px 8px; text-align: left; }
+.evidence h3 { margin: 0 0 4px; font-size: 16px; }
+.evidence h4 { margin: 12px 0 4px; font-size: 14px; }
+.evidence table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; max-width: 100%; }
+.evidence th, .evidence td { border-bottom: 1px solid var(--line); padding: 3px 8px; text-align: left; white-space: nowrap; }
+ul.chips { list-style: none; padding: 0; margin: 6px 0; display: flex; flex-wrap: wrap; gap: 6px; }
+ul.chips li { border-radius: 10px; padding: 2px 10px; font-size: 12px; }
+ul.chips li.ok { background: var(--okbg); color: var(--ok); }
+ul.chips li.warn, p.warn { background: var(--errbg); color: var(--err); }
+fieldset.reasons { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 2px 12px; }
+details.checklist { margin-top: 10px; }

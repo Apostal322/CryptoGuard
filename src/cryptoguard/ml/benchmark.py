@@ -153,3 +153,16 @@ def readiness(
         {"criterion": "10 stable evaluation protocol", "passed": EVALUATION_PROTOCOL is not None,
          "detail": "not defined until 3 and 4 pass"},
     ]  # fmt: skip
+
+
+def holdout_from_sheets(sheets: list[Path], state: Path | None = None) -> Holdout:
+    """Both frozen review cohorts (or any set of sheets) as one protected holdout."""
+    parts = [holdout_from_sheet(s) for s in sheets]
+    h = Holdout(
+        frozenset().union(*(p.event_ids for p in parts)),
+        frozenset().union(*(p.entities for p in parts)),
+    )
+    if state is not None and state.exists():
+        saved = json.loads(state.read_text(encoding="utf-8"))
+        h.status, h.history = saved["status"], saved["history"]
+    return h

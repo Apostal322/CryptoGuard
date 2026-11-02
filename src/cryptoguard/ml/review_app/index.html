@@ -26,7 +26,19 @@
     <h2 class="item-title"></h2>
     <p class="cutoff"></p>
     <dl class="facts"></dl>
+    <details class="checklist">
+      <summary>Evidence checklist (protocol section 3)</summary>
+      <ol>
+        <li>Did the transaction move a token, or record a zero-value transfer, between the wallet and the address under review?</li>
+        <li>Before the cutoff, did the wallet deal with a different address sharing the first and last characters? Which one?</li>
+        <li>Is the token a widely used one or an imitation? Is the value zero, dust or ordinary?</li>
+        <li>Who initiated it: the wallet, or a third party?</li>
+        <li>Is there a legitimate explanation (the wallet's own address, a known partner)?</li>
+      </ol>
+      <p>A later theft is not required for an attempt, and shared look-alike shapes alone do not prove a common owner.</p>
+    </details>
   </div>
+  <div class="card evidence" hidden></div>
   <form class="card" novalidate>
     <fieldset class="decision">
       <legend>Decision <span class="kbd">1–5</span></legend>
@@ -51,7 +63,16 @@
       <label>Viewed activity after the cutoff block <select name="viewed_after_cutoff" data-kind="exposure"></select></label>
       <label>Saw an explorer or third-party label on an address <select name="saw_external_label" data-kind="exposure"></select></label>
       <label class="check"><input type="checkbox" name="saw_source_or_model_output"> I saw a source label, payoff record or model output</label>
+      <label>Saw a later payment from the wallet to this address <select name="saw_later_victim_payment" data-kind="exposure"></select></label>
+      <label>A third-party label influenced my decision <select name="third_party_label_influenced" data-kind="exposure"></select></label>
+      <label class="check"><input type="checkbox" name="used_offline_evidence"> I used the offline evidence panel above</label>
     </fieldset>
+    <fieldset class="reasons">
+      <legend>Reasons (at least one for a confirmed decision)</legend>
+    </fieldset>
+    <label class="wide">Evidence cited (transaction hashes or addresses, one per line)
+      <textarea name="evidence_refs" rows="2" spellcheck="false" placeholder="0x..."></textarea>
+    </label>
     <label class="wide">Rationale (name the evidence)
       <textarea name="rationale" rows="4"></textarea>
     </label>

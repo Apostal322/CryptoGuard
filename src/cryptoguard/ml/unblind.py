@@ -104,6 +104,17 @@ def make_package(
         raise AnnotationError(f"{out} is not empty")
     out.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(sample_dir / rs.SHEET, out / rs.SHEET)
+    expected_evidence = rs.COHORTS[cohort].get("evidence")
+    if expected_evidence:  # amendment 2: the registered pre-cutoff evidence packets
+        from cryptoguard.ml.evidence import PACKETS
+
+        src = work / "evidence" / PACKETS
+        if not src.exists() or rs.file_sha256(src) != expected_evidence:
+            raise AnnotationError(
+                f"{src}: registered evidence packets missing or changed; rebuild with "
+                "`cryptoguard ml review build-evidence`"
+            )
+        shutil.copyfile(src, out / PACKETS)
     recs = replacements(work)
     problems = validate_replacements(manifest, recs)
     if problems:

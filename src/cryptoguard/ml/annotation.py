@@ -32,7 +32,8 @@ from cryptoguard.ml.review import Decision, ReviewDecision
 
 ANNOTATION_SCHEMA = "poisoning-annotation/1"
 SUBMISSION_SCHEMA = "poisoning-submission/1"
-PROTOCOL = "review-protocol/1+amendment-1"
+PROTOCOL = "review-protocol/1+amendment-2"
+Protocol = Literal["review-protocol/1+amendment-1", "review-protocol/1+amendment-2"]
 LOG = "annotations.log.jsonl"
 SUBMISSION = "submission.json"
 LOCK = ".lock"
@@ -51,6 +52,22 @@ ValueClass = Literal["zero", "dust", "ordinary", "unknown"]
 Initiator = Literal["wallet", "third_party", "unknown"]
 Exposure = Literal["no", "yes", "unsure"]
 Confidence = Literal["high", "medium", "low"]
+ReasonCode = Literal[
+    "lookalike_of_earlier_counterparty",
+    "imitation_token_contract",
+    "zero_value_transfer",
+    "dust_value",
+    "third_party_initiated_transfer",
+    "wallet_initiated_transfer",
+    "known_relationship",
+    "same_owner_evidence",
+    "ordinary_payment_pattern",
+    "no_earlier_counterparty_found",
+    "history_unavailable",
+    "contradictory_observations",
+    "other",
+]
+REF = re.compile(r"^0x([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
 REVIEWER_ID = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
@@ -73,7 +90,7 @@ class Annotation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["poisoning-annotation/1"] = "poisoning-annotation/1"
-    protocol: Literal["review-protocol/1+amendment-1"] = "review-protocol/1+amendment-1"
+    protocol: Protocol = "review-protocol/1+amendment-2"
     item: int = Field(ge=1)
     victim_event_id: str = Field(pattern=r"^[0-9a-f]{16}$")
     reviewer: str
@@ -96,6 +113,12 @@ class Annotation(BaseModel):
     viewed_after_cutoff: Exposure
     saw_external_label: Exposure
     saw_source_or_model_output: bool
+    # Amendment 2: required from then on (None only in amendment-1 records).
+    used_offline_evidence: bool | None = None
+    saw_later_victim_payment: Exposure | None = None
+    third_party_label_influenced: Exposure | None = None
+    reason_codes: tuple[ReasonCode, ...] = ()
+    evidence_refs: tuple[str, ...] = Field(default=(), max_length=20)  # tx hashes, addresses
     rationale: str = Field(min_length=1, max_length=4000)
     notes: str = Field(default="", max_length=4000)
 
@@ -129,6 +152,25 @@ def evidence_problems(a: Annotation) -> list[str]:
         out.append(
             "a prior counterparty address needs prior_counterparty observed or contradictory"
         )
+    if a.protocol == "review-protocol/1+amendment-2":
+        missing = [
+            name
+            for name in (
+                "used_offline_evidence",
+                "saw_later_victim_payment",
+                "third_party_label_influenced",
+            )
+            if getattr(a, name) is None
+        ]
+        if missing:
+            out.append(f"amendment 2 requires: {', '.join(missing)}")
+        if a.decision in ("confirmed_poisoning_attempt", "confirmed_legitimate_interaction") and (
+            not a.reason_codes
+        ):
+            out.append("a confirmed decision needs at least one reason code")
+        bad = [r for r in a.evidence_refs if not REF.match(r)]
+        if bad:
+            out.append(f"evidence references must be 0x addresses or tx hashes: {bad[:3]}")
     words = len(a.rationale.split())
     d = a.decision
     if d == "confirmed_poisoning_attempt":
@@ -354,7 +396,7 @@ class Submission(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["poisoning-submission/1"]
-    protocol: Literal["review-protocol/1+amendment-1"]
+    protocol: Protocol
     reviewer: str
     selection_sha256: str
     sheet_sha256: str
@@ -410,7 +452,7 @@ class ReplacementRecord(BaseModel):
     reviewers_exposed_to_original: tuple[str, ...]
     recorded_by: str
     recorded_at: str
-    protocol: Literal["review-protocol/1+amendment-1"] = "review-protocol/1+amendment-1"
+    protocol: Protocol = "review-protocol/1+amendment-2"
 
 
 def validate_replacements(

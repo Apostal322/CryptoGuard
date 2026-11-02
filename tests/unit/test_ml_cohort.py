@@ -29,6 +29,7 @@ LEGIT = {
     "matched_trailing": None,
     "legitimate_explanation": "observed",
     "rationale": "The address is the wallet owner's own exchange deposit address.",
+    "reason_codes": ["same_owner_evidence"],
 }
 
 

@@ -404,7 +404,19 @@ def _add_review_parser(ml: argparse._SubParsersAction[argparse.ArgumentParser]) 
     ub.add_argument("--adjudication", type=Path)
     ub.add_argument("--sample", type=Path, default=None)
     ub.add_argument("--work", type=Path, default=None)
-    for p in (sub.choices["verify"], pk, rp, ub):
+    be = sub.add_parser("build-evidence", help="offline pre-cutoff evidence packets (maintainer)")
+    be.add_argument("--sample", type=Path, default=None)
+    be.add_argument("--work", type=Path, default=None)
+    tp = sub.add_parser("training-package", help="synthetic training items for a reviewer")
+    tp.add_argument("--reviewer", required=True)
+    tp.add_argument("--out", type=Path, required=True)
+    ag = sub.add_parser("agreement", help="agreement between finalized submissions (no key)")
+    ag.add_argument("--submission", type=Path, action="append", required=True)
+    ag.add_argument("--sample", type=Path, default=None)
+    ck = sub.add_parser("check-submission", help="validate one submission file (no key)")
+    ck.add_argument("submission", type=Path)
+    ck.add_argument("--sample", type=Path, default=None)
+    for p in (sub.choices["verify"], pk, rp, ub, be, ag, ck):
         p.add_argument(
             "--cohort",
             default="review-sample/1",
@@ -451,6 +463,33 @@ def _review(args: argparse.Namespace) -> int:
             return 0
         if cmd == "serve":
             return _review_serve(args)
+        if cmd == "build-evidence":
+            from cryptoguard.ml.evidence import build_cohort
+
+            dbs = [ML_DIR / "poisoning" / "archive_subset.sqlite",
+                   HN_DIR / "context_subset.sqlite"]  # fmt: skip
+            m = build_cohort(args.sample, args.work / "evidence", archive_dbs=dbs, cohort=cohort)
+            print(f"{m['items']} packets for {cohort}; sha256 {m['packets_sha256']} "
+                  f"(0 RPC requests).")  # fmt: skip
+            return 0
+        if cmd == "training-package":
+            from cryptoguard.ml.training import make_package as training_package
+
+            out = training_package(args.reviewer, args.out)
+            print(f"Training package for {args.reviewer} in {out} (synthetic items only).")
+            return 0
+        if cmd == "agreement":
+            from cryptoguard.ml.submissions import agreement_report
+
+            report = agreement_report(args.submission, args.sample, cohort=cohort)
+            print(json.dumps(report, indent=1))
+            return 0
+        if cmd == "check-submission":
+            from cryptoguard.ml.submissions import check_submission
+
+            problems = check_submission(args.submission, args.sample, cohort=cohort)
+            print("valid" if not problems else "\n".join(problems))
+            return 0 if not problems else 1
         if cmd == "status":
             from cryptoguard.ml.review_server import ReviewApp
 
