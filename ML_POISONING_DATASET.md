@@ -143,14 +143,52 @@ positive-case reproduction, candidate recall and feature testing, not for binary
 
 Training for this task is blocked until gates B and D pass.
 
-## 7. External sources reviewed (no data downloaded)
+## 7. External sources reviewed
 
 These were checked from the source pages on 2026-11-02 by a research agent; details are in
 ML_RESEARCH_PLAN.md §5.
 
 | Source | What it offers | Blocker |
 |---|---|---|
-| Tsuchiya et al., USENIX Security 2025 (KiltHub DOI 10.1184/R1/29212703.v1) | Ethereum attempts (2.3 GB SQL dump) plus payoff-transfer CSVs (under 2 MB) | Licence CC BY-NC-ND 4.0; download needs your approval |
+| Tsuchiya et al., USENIX Security 2025 (KiltHub DOI 10.1184/R1/29212703.v1) | Ethereum attempts (2.3 GB SQL dump) plus payoff-transfer CSVs (under 2 MB) | Licence CC BY-NC-ND 4.0. The Ethereum payoff CSV is downloaded (§8); every other file needs your approval |
 | Poison-Hunter full data | Withheld; "contact us", with no address published | Request needed |
 | Forta labelled datasets | MIT, Etherscan-derived address labels | No poisoning category, no loss transactions |
 | Etherscan labels | Underlie Forta and Poison-Hunter ground truth | Terms require written permission for ML or dataset use |
+
+## 8. Tsuchiya et al. payoff transfers (`ml/tsuchiya.py`, `tsuchiya-payoff/1`)
+
+**Source.**
+- `payoff_transfers_ethereum.csv` from KiltHub DOI 10.1184/R1/29212703.v1, CC BY-NC-ND 4.0.
+- Downloaded once with your approval on 2026-11-02 into the git-ignored
+  `data/external/tsuchiya2025/`. 482,397 bytes; the MD5 matches KiltHub's; the SHA-256 is
+  pinned in the module.
+- Not listed in `ml/sources.py`, because `fetch-sources` would download it unasked.
+- The licence permits local non-commercial research use but no redistributed adaptations.
+  Only aggregate counts and Poison-Hunter line numbers leave the module.
+
+**Columns.** 11 named columns, each identified on all 1,738 rows:
+- block and transaction;
+- token contract (`addr`);
+- payer, the victim (`topics_from_addr`);
+- recipient, the lookalike (`topics_to_addr`);
+- amount (float-encoded base units, plus USD);
+- `is_sender_victim` (always `True`);
+- leading and trailing matched digits;
+- the intended address.
+
+**Validation.**
+- 1,738 rows are valid and 0 are quarantined.
+- Every row's declared affix counts equal `affix_match` on its addresses.
+- One row per transaction: 1,502 payers and 1,551 lookalikes.
+- Blocks 16,060,625–20,207,365.
+- Tokens: USDT 1,154, USDC 543, DAI 36, other 5. None are native ETH.
+- 41 amounts cannot be represented exactly as stored, so only `value_usd` is used.
+
+**How it is used.**
+- **As outcome evidence only: a victim paid a lookalike.** It contains no planting
+  transactions, so it creates no `PoisoningEvent` and no label.
+- **Absence is not a negative.** A victim missing from the file has not been shown to
+  have avoided a loss. The file has no ETH, covers only lookalikes the study detected with
+  at least 3 leading and 4 trailing matches, and ends in mid-2024.
+- **Per-event attribution.** A payoff to a different lookalike of the same address (one
+  case, line 74) is a loss for the victim, not an outcome of that Poison-Hunter event.

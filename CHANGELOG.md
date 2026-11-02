@@ -49,6 +49,10 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   - a task identifier on model cards.
 - Docs: ML_POISONING_DATASET.md, ML_PILOT_AUDIT.md, ML_RESEARCH_PLAN.md,
   ML_POISONING_TABLES.md.
+- Added: an offline cross-check with Tsuchiya et al.'s payoff transfers
+  (`ml/tsuchiya.py`; the file stays local under CC BY-NC-ND). No complete-coverage pilot
+  row is contradicted. One victim the pilot did not evaluate paid a competing lookalike
+  (ML_PILOT_AUDIT.md §7).
 
 ## 0.1.0 — 2026-10-28 (first release candidate, not independently audited)
 

@@ -288,15 +288,14 @@ def wilson_upper(k: int, n: int, z: float = 1.959964) -> float | None:
     return (centre + spread) / (1 + z * z / n)
 
 
-def reconstruct(
+def load_yield(
     pilot_dir: Path, candidates: list[tuple[int, str, str]] | None = None
-) -> dict[str, Any]:
-    """Recompute the pilot report from its raw outputs.
+) -> tuple[list[YieldRecord], bool]:
+    """Typed yield records (and whether a truncated tail was skipped).
 
     ``candidates``: ``(source_line, victim, lookalike)`` of the parser's valid rows in file
     order; the yield file is checked against it row by row."""
-    yield_raw, y_trunc = read_jsonl(pilot_dir / "yield.jsonl")
-    cost_raw, c_trunc = read_jsonl(pilot_dir / "cost.jsonl")
+    yield_raw, truncated = read_jsonl(pilot_dir / "yield.jsonl")
     if candidates is not None:
         if len(candidates) != len(yield_raw):
             raise PilotRecordError(
@@ -309,7 +308,15 @@ def reconstruct(
             ):
                 raise PilotRecordError("yield lines are not in candidate order")
     lines = [c[0] for c in candidates] if candidates else [None] * len(yield_raw)
-    ys = [yield_record(o, line) for o, line in zip(yield_raw, lines, strict=True)]
+    return [yield_record(o, line) for o, line in zip(yield_raw, lines, strict=True)], truncated
+
+
+def reconstruct(
+    pilot_dir: Path, candidates: list[tuple[int, str, str]] | None = None
+) -> dict[str, Any]:
+    """Recompute the pilot report from its raw outputs (``candidates`` as in ``load_yield``)."""
+    ys, y_trunc = load_yield(pilot_dir, candidates)
+    cost_raw, c_trunc = read_jsonl(pilot_dir / "cost.jsonl")
     cs = [cost_record(o) for o in cost_raw]
     budget = json.loads((pilot_dir / "budget.json").read_text(encoding="utf-8"))
     summary = json.loads((pilot_dir / "summary.json").read_text(encoding="utf-8"))

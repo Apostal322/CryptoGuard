@@ -1,7 +1,7 @@
 # ML research plan: wallet-centric poisoning detection (Phase 11.2)
 
 Status: infrastructure done, gates B and D fail (no verified labels), and no model is trained
-for this task. Data model and labels: [ML_POISONING_DATASET.md](ML_POISONING_DATASET.md).
+for this task. The Tsuchiya et al. payoff cross-check is done (§6). Data model and labels: [ML_POISONING_DATASET.md](ML_POISONING_DATASET.md).
 Pilot: [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md). Generated numbers:
 [ML_POISONING_TABLES.md](ML_POISONING_TABLES.md).
 
@@ -20,6 +20,7 @@ Pilot: [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md). Generated numbers:
 | 9 | P2 | **Imprecise description of the CSV.** The Poison-Hunter header was described as "shifted"; it is aligned, with 2 unnamed trailing fields | Corrected in docs and the parser docstring |
 | 10 | P2 | **Rows counted as events.** The pilot treated duplicate victim-events as separate observations | Reported (149 rows, 143 events); the event model deduplicates |
 | 11 | P2 | **Phase 11 monitoring on sparse features** keeps the old binning until the model is retrained | Open (the model is research-only, so no live impact) |
+| 12 | P2 | **A victim's loss is not the event's outcome.** In the Tsuchiya cross-check, a Poison-Hunter victim paid a *competing* lookalike of the same address (line 74) | Documented: `OutcomeRecord` is per event, and a loss to another lookalike is never credited to this event (ML_PILOT_AUDIT.md §7) |
 
 ## 2. Task definition
 
@@ -89,36 +90,74 @@ at 26 requests each, 10% retries, 4 requests/s.
     archive indexer would provide, replaces bisection.
 - None of this has been run, and none is authorized.
 
-## 5. External data (checked on 2026-11-02; nothing downloaded)
+## 5. External data (checked on 2026-11-02; only the Ethereum payoff CSV downloaded)
 
 | Source | Verified facts | Fit | Blocker |
 |---|---|---|---|
-| Tsuchiya et al., "Blockchain Address Poisoning", USENIX Security 2025. KiltHub DOI 10.1184/R1/29212703.v1 | Files: `payoff_transfers_ethereum.csv` (482 KB), `payoff_transfers_bsc.csv` (1.33 MB), `address_poisoning_ethereum.sql.gz` (2.32 GB). Licence CC BY-NC-ND 4.0 | Payoffs give independent confirmed-loss transfers (stablecoin, Ethereum, 2022-07 to 2024-06) | Download needs your approval; NC-ND allows local research use only, with no redistributed derivatives; columns not yet inspected |
+| Tsuchiya et al., "Blockchain Address Poisoning", USENIX Security 2025. KiltHub DOI 10.1184/R1/29212703.v1 | Files: `payoff_transfers_ethereum.csv` (482 KB, **downloaded with approval, parsed**: 1,738 token payoffs, no ETH), `payoff_transfers_bsc.csv` (1.33 MB), `address_poisoning_ethereum.sql.gz` (2.32 GB, the attempt table). Licence CC BY-NC-ND 4.0 | Payoffs: independent confirmed losses. The dump: the attempts behind them | NC-ND allows local research use only, with no redistributed derivatives. Each further file needs your approval |
 | Poison-Hunter (Guan and Li, CCS 2024), `DS2L/Poison-Hunter` | 5 files in the repository, no licence; full data "available on request", with no contact address published | Weak attempt labels | A request is needed; a draft request exists, not sent |
 | RMIT arXiv 2609.23405 | Claims 4,209 victim transfers; its artifact link showed no files | — | Unverified |
 | Forta labelled datasets | MIT; Etherscan phish-hack/exploit/heist labels | Contamination checks only | No poisoning category |
 | Etherscan labels | Terms require written permission for ML or dataset creation | — | Affects Forta and Poison-Hunter ground truth |
 
-## 6. Next experiment (highest value, 0 RPC requests)
+## 6. Done: cross-check with Tsuchiya et al.'s payoff list (0 RPC requests)
 
-**Cross-check the Poison-Hunter rows against Tsuchiya et al.'s independent payoff list.**
+Details: ML_PILOT_AUDIT.md §7. Code: `ml/tsuchiya.py`, run by `cryptoguard ml poisoning-report`
+whenever the file is present.
 
-- **Needs:** your approval to download `payoff_transfers_ethereum.csv` (482 KB, CC BY-NC-ND
-  4.0, kept local under `data/external/`, never committed). It is a file download, so your
-  standing rule requires an explicit yes.
-- **Method.** Pin its hash in `ml/sources.py`, then parse it with a typed schema after
-  inspecting the columns. Join it on victim and lookalike with the 143 Poison-Hunter
-  victim-events and the 4 replay incidents.
+- **Deviation from the plan.** The hash is pinned in `ml/tsuchiya.py`, not `ml/sources.py`.
+  `fetch-sources` downloads every source in that registry unasked, and this file needs a
+  download decision each time.
+- **Results against the three expected outcomes.**
+  1. **Outcome evidence for the 97 unknown rows.**
+     - The file has no payoff to the row's own lookalike for any of them. 76 of the 97 lie
+       inside its definition and period.
+     - One victim (line 74) paid a competing lookalike of the same address within 1.6 days.
+     - None of the 52 complete-coverage rows is contradicted.
+     - These absences rest on the file's coverage; they are not proof of no payment.
+  2. **Label agreement on attempts: not measurable from the payoff file.** Attempts are in
+     the 2.3 GB dump. One Poison-Hunter lookalike (line 87) appears as a payoff recipient
+     from another victim, which independently corroborates that row.
+  3. **Confirmed losses: 1,738 payoffs** (1,502 payers, 1,551 lookalikes). The planting
+     transactions that preceded them are not in the CSV, so none is an event yet.
+- **Labels unchanged, as stated in advance.** Line 87 is a candidate for the review
+  workflow, not an automatic upgrade.
+- **Consistency checks.**
+  - The source's declared affix counts equal `affix_match` on all 1,738 rows.
+  - Both CryptoGuard predicates accept all 1,738 lookalikes. The study's 3+4 selection
+    implies this, so it is not recall.
+  - 41 amounts are float-encoded beyond exact precision. Only `value_usd` is used.
+- **Incidents.**
+  - Three of the four are after the file's last block.
+  - wbtc-1155 is inside the period but was paid in WBTC, and the file has no WBTC payoffs.
+  - None appears in the file.
+
+## 7. Next experiment (highest value, 0 RPC requests)
+
+**Turn confirmed payoffs into reviewable attempt events using Tsuchiya et al.'s attempt
+table.**
+
+- **Needs:**
+  - your approval to download `address_poisoning_ethereum.sql.gz` (2.32 GB, CC BY-NC-ND
+    4.0, kept local and never committed);
+  - about 2.4 GB of free disk.
+- **Method.**
+  - Stream-parse the dump (gzip, line by line, constant memory: no import into a database
+    and no full decompression).
+  - For each payoff, take the latest attempt by that lookalike against that victim before
+    the payoff block: the planting transaction, its subtype and its block.
+  - Build `PoisoningEvent`s for them, and for the Poison-Hunter rows that the dump also
+    lists.
 - **What it gives.**
-  1. Independent outcome evidence for the 97 rows the pilot could not resolve, at no RPC
-     cost.
-  2. Agreement between two independent pipelines on attempts, giving a first estimate of
-     label noise.
-  3. A list of confirmed-loss victims whose preceding attempts could become
-     `verified_attempt` positives after review.
-- **Success criterion, stated now.** Report the overlap counts and the disagreements as
-  they are. Do not change the Poison-Hunter labels on the basis of the overlap alone;
-  changes go through the review workflow.
+  1. Attempt-level agreement between Poison-Hunter and Tsuchiya et al.: the first measured
+     label-noise estimate.
+  2. A pool of attempt events with an independently confirmed loss, ready for the review
+     workflow (`verified_attempt` only after review).
+  3. Whether Tsuchiya et al.'s pipeline detected each Poison-Hunter lookalike, which turns
+     the absences above into evidence that rests on known coverage.
+- **The RPC alternative is far costlier.** Finding each planting transaction on the free
+  endpoint means scanning 7 days of logs per payoff: about 1,000 requests each at 100
+  blocks per query, so about 100,000 requests per 100 payoffs.
 - **Still missing afterwards:** verified negatives (gate B). They need a reviewed sample of
-  legitimate lookalike-shaped interactions, which no public source provides. That is the
-  real blocker for supervised learning on this task.
+  legitimate lookalike-shaped interactions, which no public source provides. That remains
+  the real blocker for supervised learning on this task.

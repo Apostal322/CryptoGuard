@@ -141,3 +141,35 @@ three wallet-days and biased low (busier wallets were excluded).
   - a truncated ledger file (fails closed).
 - **Guarantee:** the recorded count is never below the attempts sent by budgeted clients. It
   exceeds them only by attempts reserved but never sent, for example after a crash.
+
+## 7. Independent cross-check with Tsuchiya et al. (2026-11-02, 0 RPC requests)
+
+- **Source.** Tsuchiya et al.'s `payoff_transfers_ethereum.csv` was downloaded with your
+  approval: KiltHub DOI 10.1184/R1/29212703.v1, CC BY-NC-ND 4.0. It is kept local in
+  `data/external/tsuchiya2025/` and its MD5 matches KiltHub's.
+  - It lists 1,738 victim-to-lookalike token payoffs in blocks 16,060,625–20,207,365: 1,733
+    in USDT, USDC or DAI, 5 in other tokens, and none in native ETH.
+  - Parser and join: `ml/tsuchiya.py`. Tables: ML_POISONING_TABLES.md.
+- **No contradiction.** None of the 52 complete-coverage rows has a payoff in the file, to
+  any lookalike, at any time.
+- **The 97 rows the pilot could not check:**
+  - 76 of them fall inside the study period and its 3+4 lookalike definition (34
+    unresolved, 42 not evaluated). The file has no payoff to the row's own lookalike for any
+    of them.
+  - **Line 74** (not evaluated): 11,653 blocks (about 1.6 days) after the planting, the
+    victim paid about $5,032 to a *different* lookalike of the same address. That lookalike
+    matched 3+6 characters; the row's own lookalike matched 7+6.
+- **Line 87** (not evaluated): the row's lookalike had received about $5,973 from *another*
+  victim, who meant to pay the same address, 12,053 blocks *before* this planting. That is
+  independent evidence that this lookalike belongs to an attacker.
+- **What this does and does not show.**
+  - Missing from the file is weaker evidence than "no payment". The file lists only token
+    payoffs to lookalikes that Tsuchiya et al.'s own pipeline detected, and only up to block
+    20,207,365.
+  - Whether their pipeline detected each Poison-Hunter lookalike can't be checked from the
+    payoff file; that needs their attempt table (the 2.3 GB dump).
+  - The result is consistent with a low success rate for each event, but it isn't a rate
+    estimate: the rows are not a random sample, and 6 are duplicates.
+- **Effect on the pilot outcomes: none.** Pilot outcomes record only payments the pilot
+  observed itself. Line 74 shows that a *victim's* loss and a *given event's* outcome can
+  differ: the payment went to a competing lookalike.

@@ -33,8 +33,11 @@ from cryptoguard.ml.events import (
     resolve_labels,
 )
 from cryptoguard.ml.history import events_from_fixture
-from cryptoguard.ml.pilot import reconstruct, render_markdown
+from cryptoguard.ml.pilot import load_yield, reconstruct, render_markdown
 from cryptoguard.ml.poison_hunter import PoisonHunterRecord, parse_sample, profile
+from cryptoguard.ml.tsuchiya import SOURCE_FILE as PAYOFF_FILE
+from cryptoguard.ml.tsuchiya import cross_check, parse_payoffs
+from cryptoguard.ml.tsuchiya import profile as payoff_profile
 
 _SUBTYPE = {"dust": "dust", "zero": "zero_value", "fake": "fake_token"}
 
@@ -153,6 +156,36 @@ def candidate_evaluation() -> dict[str, Any]:
     }
 
 
+def payoff_cross_check(
+    path: Path,
+    rows: list[PoisonHunterRecord],
+    pilot_dir: Path,
+    candidates: list[tuple[int, str, str]],
+) -> dict[str, Any]:
+    """Tsuchiya et al.'s payoff transfers against Poison-Hunter rows, pilot outcomes and
+    the recorded incidents. Aggregates and Poison-Hunter line numbers only (CC BY-NC-ND)."""
+    from cryptoguard.replay.models import load_cases
+
+    parsed = parse_payoffs(path)
+    outcomes = None
+    if (pilot_dir / "yield.jsonl").exists():
+        outcomes = [y.outcome for y in load_yield(pilot_dir, candidates)[0]]
+    incidents = [
+        {
+            "case": m.case_id,
+            "victim": m.victim,
+            "block": m.harm.block_number,
+            "tx": m.harm.transaction_hash,
+            "token": m.harm.token,
+        }
+        for m in (case.manifest for case in load_cases())
+    ]
+    return {
+        "source": payoff_profile(parsed),
+        **cross_check(parsed.valid, rows, outcomes, incidents),
+    }
+
+
 def build(data_dir: Path, pilot_dir: Path) -> dict[str, Any]:
     t0 = time.perf_counter()
     sample = data_dir / "poison-hunter" / "phishing_transfers_sample.csv"
@@ -173,6 +206,12 @@ def build(data_dir: Path, pilot_dir: Path) -> dict[str, Any]:
     gates = quality_gates(events, resolved, license_ok=False)
     candidates = [(r.source_line, r.victim, r.lookalike) for r in parsed.valid]
     pilot = reconstruct(pilot_dir, candidates) if (pilot_dir / "yield.jsonl").exists() else None
+    payoff_path = data_dir / "tsuchiya2025" / PAYOFF_FILE
+    payoffs = (
+        payoff_cross_check(payoff_path, parsed.valid, pilot_dir, candidates)
+        if payoff_path.exists()
+        else None
+    )
     cand_eval = candidate_evaluation()
     runtime = time.perf_counter() - t0
     return {
@@ -195,10 +234,101 @@ def build(data_dir: Path, pilot_dir: Path) -> dict[str, Any]:
         },
         "gates": [g.model_dump() for g in gates],
         "pilot": pilot,
+        "payoff_cross_check": payoffs,
         "candidates": cand_eval,
         "runtime_seconds": round(runtime, 2),
         "rpc_requests": 0,
     }
+
+
+_OUTCOME_SHORT = {
+    "confirmed_direct_payment": "confirmed",
+    "no_direct_payment_observed_with_complete_declared_coverage": "complete, none seen",
+    "partial_coverage": "partial",
+    "unresolved": "unresolved",
+    "not_evaluated": "not evaluated",
+    "no_pilot_record": "no pilot record",
+}
+
+
+def render_payoffs(x: dict[str, Any]) -> list[str]:
+    src = x["source"]
+    lo, hi = x["payoff_block_range"]
+    sha = "matches" if src["source_sha256_matches_pinned"] else "**differs from**"
+    md5 = "matches" if src["source_md5_matches_published"] else "**differs from**"
+    lines = [
+        "## Cross-check with Tsuchiya et al. payoff transfers",
+        "",
+        "Source: KiltHub DOI 10.1184/R1/29212703.v1 (CC BY-NC-ND 4.0), kept local. "
+        f"SHA-256 `{src['source_sha256'][:16]}…` ({sha} the pinned hash); MD5 {md5} the "
+        "value KiltHub publishes.",
+        "",
+        "| Quantity | Value |",
+        "|---|---|",
+        f"| Rows / valid / quarantined | {src['rows']} / {src['valid']} / "
+        f"{len(src['quarantined'])} |",
+        f"| Payoff block range | {lo:,}-{hi:,} |",
+        f"| Tokens | {', '.join(f'{k} {v}' for k, v in src['tokens'].items())} |",
+        f"| Distinct payers / lookalikes | {src['distinct_payers']} / "
+        f"{src['distinct_lookalikes']} |",
+        f"| Amounts not exactly representable (float-encoded) | {src['inexact_values']} |",
+        f"| Accepted by the detector predicate / candidate rule | "
+        f"{src['detector_predicate_accepts']} / {src['candidate_rule_accepts']} (implied by "
+        "the study's 3+4 selection: a consistency check, not recall) |",
+        "",
+        f"Poison-Hunter rows by pilot outcome (window: {x['window_blocks']:,} blocks after "
+        "the planting):",
+        "",
+        "| Pilot outcome | Rows | In payoff period | In 3+4 definition | Paid this lookalike "
+        "(in window) | Paid another lookalike of the same address | Lookalike paid by "
+        "another victim |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for outcome, b in x["by_outcome"].items():
+        lines.append(
+            f"| {_OUTCOME_SHORT.get(outcome, outcome)} | {b['rows']} | {b['in_period']} | "
+            f"{b['in_definition']} | {b['victim_paid_this_lookalike']} "
+            f"({b['victim_paid_this_lookalike_in_window']}) | "
+            f"{b['victim_paid_other_lookalike_of_same_address']} | "
+            f"{b['lookalike_paid_by_another_victim']} |"
+        )
+    lines += [
+        "",
+        "Complete-coverage rows contradicted by a payoff to the same lookalike in the window: "
+        f"{len(x['contradicted_complete_rows'])}.",
+        "",
+    ]
+    for f in x["findings"]:
+        d = f["blocks_after_planting"]
+        when = (
+            "at an unknown block"
+            if d is None
+            else f"{abs(d):,} blocks {'after' if d > 0 else 'before'} the planting"
+        )
+        intended = "the same" if f["same_intended_address"] else "a different"
+        lines.append(
+            f"- Line {f['line']} ({_OUTCOME_SHORT.get(f['outcome'], f['outcome'])}): paid "
+            f"{f['paid']}, {when}, about ${f['value_usd']:,}, meaning to pay {intended} "
+            f"address; affix {f['paid_affix'][0]}+{f['paid_affix'][1]} (row lookalike "
+            f"{f['row_affix'][0]}+{f['row_affix'][1]})."
+        )
+    lines += [
+        "",
+        "| Incident | In payoff period | Token in file | Harmful tx listed | Victim listed |",
+        "|---|---|---|---|---|",
+        *(
+            f"| {i['case']} | {'yes' if i['in_period'] else 'no'} | "
+            f"{'yes' if i['token_in_file'] else 'no'} | {'yes' if i['harm_tx_listed'] else 'no'}"
+            f" | {'yes' if i['victim_listed'] else 'no'} |"
+            for i in x["incidents"]
+        ),
+        "",
+        "Absence from the payoff file is not evidence of no payment: it has no native-ETH "
+        "payoffs, covers only lookalikes the study itself detected (at least 3 leading and "
+        "4 trailing matching characters), and ends at the block above.",
+        "",
+    ]
+    return lines
 
 
 def render(report: dict[str, Any]) -> str:
@@ -252,6 +382,8 @@ def render(report: dict[str, Any]) -> str:
     ]
     if report["pilot"] is not None:
         lines += ["## Pilot reconstruction", "", render_markdown(report["pilot"])]
+    if report.get("payoff_cross_check") is not None:
+        lines += render_payoffs(report["payoff_cross_check"])
     lines += [
         "## Candidate generation (recorded replay fixtures)",
         "",
