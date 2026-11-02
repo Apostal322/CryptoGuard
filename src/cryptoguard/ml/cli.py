@@ -93,6 +93,23 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     )
     fr.add_argument("--out", type=Path, default=ML_DIR / "poisoning" / "review_sample")
     _add_review_parser(ml)
+    iv = ml.add_parser("inventory", help="hash and describe every local research data file")
+    iv.add_argument("--root", type=Path, default=Path("."))
+    iv.add_argument("--out", type=Path, default=ML_DIR / "inventory.json")
+    hx = ml.add_parser(
+        "hard-negative-extract",
+        help="two offline passes over the local archive for uncategorized lookalike transfers",
+    )
+    hx.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    hx.add_argument("--out", type=Path, default=ML_DIR / "poisoning" / "hard_negative")
+    hs = ml.add_parser(
+        "hard-negative-study",
+        help="candidate pool, contamination screen, matching, separability, cohort (offline)",
+    )
+    hs.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    hs.add_argument("--poisoning-dir", type=Path, default=ML_DIR / "poisoning")
+    hs.add_argument("--tables", type=Path, default=Path("ML_HARD_NEGATIVE_TABLES.md"))
+    hs.add_argument("--no-freeze", action="store_true", help="draw without freezing")
     bz = ml.add_parser("bench-archive", help="archive-scanner scaling on synthetic dumps")
     bz.add_argument("sizes", type=int, nargs="+")
     bz.add_argument("--work", type=Path, default=ML_DIR / "bench")
@@ -138,6 +155,51 @@ def run(args: argparse.Namespace) -> int:
         return _freeze_review_sample(args)
     if args.ml_command == "review":
         return _review(args)
+    if args.ml_command == "inventory":
+        import json
+
+        from cryptoguard.ml.inventory import inventory
+
+        inv = inventory(args.root)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(inv, indent=1) + "\n", encoding="utf-8")
+        unregistered = [f["path"] for f in inv["files"] if f["source"] == "unregistered"]
+        print(f"{len(inv['files'])} files described in {args.out}; unregistered: {unregistered}")
+        return 0
+    if args.ml_command == "hard-negative-extract":
+        import json
+
+        from cryptoguard.ml.hard_negative_archive import context_scan, extract_uncategorized
+
+        try:
+            first = extract_uncategorized(args.data_dir, args.out)
+            second = context_scan(args.data_dir, args.out)
+        except FileNotFoundError as exc:
+            print(f"error [FileNotFoundError]: {exc}")
+            return 1
+        print(json.dumps({"extract": first, "context_rows": second.get("stored_rows")}, indent=1))
+        return 0
+    if args.ml_command == "hard-negative-study":
+        from cryptoguard.ml.hn_study import run
+
+        try:
+            report = run(
+                args.data_dir,
+                args.poisoning_dir,
+                args.poisoning_dir / "hard_negative",
+                args.tables,
+                freeze_cohort=not args.no_freeze,
+            )
+        except FileNotFoundError as exc:
+            print(f"error [FileNotFoundError]: {exc} (run `cryptoguard ml hard-negative-extract`)")
+            return 1
+        c = report["cohort"]
+        print(
+            f"Pool: {sum(f['candidates'] for f in report['pool']['frames'].values()):,} "
+            f"unlabeled candidates; cohort {c['version']}: {c['selected']} items "
+            f"(selection {c['selection_sha256'][:12]}); wrote {args.tables} (0 RPC requests)."
+        )
+        return 0
     if args.ml_command == "bench-archive":
         import json
 
@@ -297,6 +359,9 @@ def _freeze_review_sample(args: argparse.Namespace) -> int:
 
 SAMPLE_DIR = ML_DIR / "poisoning" / "review_sample"
 REVIEW_WORK = ML_DIR / "poisoning" / "review"
+HN_DIR = ML_DIR / "poisoning" / "hard_negative"
+COHORT_DIRS = {"review-sample/1": SAMPLE_DIR, "hard-negative-candidates/1": HN_DIR / "cohort_v1"}
+COHORT_WORK = {"review-sample/1": REVIEW_WORK, "hard-negative-candidates/1": HN_DIR / "review"}
 QUEUE = ML_DIR / "poisoning" / "review_packets_payoff_linked.jsonl"
 
 
@@ -308,14 +373,14 @@ def _add_review_parser(ml: argparse._SubParsersAction[argparse.ArgumentParser]) 
         ("audit", "recompute and check the sampling design; aggregate JSON"),
     ):
         p = sub.add_parser(name, help=text)
-        p.add_argument("--sample", type=Path, default=SAMPLE_DIR)
+        p.add_argument("--sample", type=Path, default=None)
         p.add_argument("--queue", type=Path, default=QUEUE)
     sub.choices["audit"].add_argument("--out", type=Path, default=REVIEW_WORK / "design_audit.json")
     pk = sub.add_parser("package", help="make one reviewer's package (blinded sheet only)")
     pk.add_argument("--reviewer", required=True, help="pseudonym, e.g. A")
     pk.add_argument("--out", type=Path, required=True)
-    pk.add_argument("--sample", type=Path, default=SAMPLE_DIR)
-    pk.add_argument("--work", type=Path, default=REVIEW_WORK)
+    pk.add_argument("--sample", type=Path, default=None)
+    pk.add_argument("--work", type=Path, default=None)
     sv = sub.add_parser("serve", help="run the local review app for one reviewer package")
     sv.add_argument("--package", type=Path, required=True)
     sv.add_argument("--port", type=int, default=0)
@@ -332,13 +397,19 @@ def _add_review_parser(ml: argparse._SubParsersAction[argparse.ArgumentParser]) 
     rp.add_argument("--evidence", required=True)
     rp.add_argument("--exposed", default="", help="reviewers who already saw the original")
     rp.add_argument("--by", required=True)
-    rp.add_argument("--sample", type=Path, default=SAMPLE_DIR)
-    rp.add_argument("--work", type=Path, default=REVIEW_WORK)
+    rp.add_argument("--sample", type=Path, default=None)
+    rp.add_argument("--work", type=Path, default=None)
     ub = sub.add_parser("unblind", help="gate, then compare reviews with the source (maintainer)")
     ub.add_argument("--submission", type=Path, action="append", required=True)
     ub.add_argument("--adjudication", type=Path)
-    ub.add_argument("--sample", type=Path, default=SAMPLE_DIR)
-    ub.add_argument("--work", type=Path, default=REVIEW_WORK)
+    ub.add_argument("--sample", type=Path, default=None)
+    ub.add_argument("--work", type=Path, default=None)
+    for p in (sub.choices["verify"], pk, rp, ub):
+        p.add_argument(
+            "--cohort",
+            default="review-sample/1",
+            choices=["review-sample/1", "hard-negative-candidates/1"],
+        )
 
 
 def _review(args: argparse.Namespace) -> int:
@@ -348,9 +419,15 @@ def _review(args: argparse.Namespace) -> int:
     from cryptoguard.ml.annotation import AnnotationError
 
     cmd = args.review_command
+    cohort = getattr(args, "cohort", rs.SAMPLE_VERSION)
+    if getattr(args, "sample", "unset") is None:
+        args.sample = COHORT_DIRS[cohort]
+    if getattr(args, "work", "unset") is None:
+        args.work = COHORT_WORK[cohort]
     try:
         if cmd == "verify":
-            manifest = rs.verify_frozen(args.sample, queue=args.queue)
+            queue = args.queue if cohort == rs.SAMPLE_VERSION else None
+            manifest = rs.verify_frozen(args.sample, queue=queue, cohort=cohort)
             print(
                 f"Frozen sample verified: {len(manifest['selected'])} items, selection "
                 f"{manifest['selection_sha256']}; all five committed hashes match."
@@ -369,7 +446,7 @@ def _review(args: argparse.Namespace) -> int:
         if cmd == "package":
             from cryptoguard.ml.unblind import make_package
 
-            out = make_package(args.sample, args.work, args.reviewer, args.out)
+            out = make_package(args.sample, args.work, args.reviewer, args.out, cohort=cohort)
             print(f"Reviewer package for {args.reviewer} in {out} (blinded sheet only).")
             return 0
         if cmd == "serve":
@@ -394,6 +471,7 @@ def _review(args: argparse.Namespace) -> int:
                 evidence=args.evidence,
                 exposed=[x for x in args.exposed.split(",") if x],
                 recorded_by=args.by,
+                cohort=cohort,
             )
             print(
                 f"Item {rec.original_item} replaced by item {rec.replacement_item} (reserve "
@@ -403,7 +481,9 @@ def _review(args: argparse.Namespace) -> int:
         if cmd == "unblind":
             from cryptoguard.ml.unblind import unblind
 
-            report = unblind(args.sample, args.work, args.submission, args.adjudication)
+            report = unblind(
+                args.sample, args.work, args.submission, args.adjudication, cohort=cohort
+            )
             primary = report["primary_all_reviewers_attempt"]["overall"]
             keys = ("items", "positives", "estimate", "wilson95_design")
             print(json.dumps({k: primary.get(k) for k in keys}, indent=1))

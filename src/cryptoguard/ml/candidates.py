@@ -21,6 +21,18 @@ Cutoff: an event is scored after its own transaction executes and before anythin
 the same block (``history.Boundary`` ``pre_execution``, with the event's transaction
 excluded). Features see only strictly earlier positions; the cross-wallet index sees only
 earlier blocks.
+
+``candidates/2`` (Phase 11.5) counts a counterparty as *chosen* only when the wallet's
+signature is verified (``wallet_signed is True``). ``candidates/1`` also counted outgoing
+transfers whose signer was unknown, so under partial coverage a spoofed transfer to a
+lookalike could become the "imitated" counterparty. No recorded fixture has such a
+transfer, so no published number changes. The generator is now one pass instead of one
+history scan per transfer.
+
+Known breadth (documented, not a defect): ``spoofed_out`` also fires on legitimate
+transfers pulled by an approved spender (routers, settlement contracts, Permit2), and
+``dust_in`` on genuine small test payments. These are hard-negative candidates, never
+labels.
 """
 
 from __future__ import annotations
@@ -42,7 +54,7 @@ from cryptoguard.ml.history import (
 from cryptoguard.ml.payments import TRUSTED_TOKENS
 from cryptoguard.replay.models import ReplayFixture
 
-CANDIDATE_VERSION = "candidates/1"
+CANDIDATE_VERSION = "candidates/2"
 EVENT_FEATURE_VERSION = "event-features/1"
 MIN_AFFIX = 6
 MIN_SUFFIX = 3
@@ -96,34 +108,43 @@ class Candidate:
 
 
 def _chosen_before(events: list[WalletEvent], position: tuple[int, int, int]) -> dict[str, int]:
-    """Counterparties the wallet chose (signed outgoing events) strictly before ``position``,
-    with the block they were last chosen."""
+    """Counterparties the wallet chose (outgoing events it verifiably signed) strictly before
+    ``position``, with the block they were last chosen."""
     chosen: dict[str, int] = {}
-    for e in events:
-        if e.position < position and e.direction == "out" and e.wallet_signed is not False:
+    for e in sorted(events, key=lambda e: e.position):
+        if e.position < position and _chose(e):
             chosen[e.counterparty.lower()] = e.block
     return chosen
+
+
+def _chose(e: WalletEvent) -> bool:
+    return e.direction == "out" and e.wallet_signed is True
 
 
 def generate(fixture: ReplayFixture, *, chain_id: int = 1) -> list[Candidate]:
     """Candidate events from one recorded wallet window, in chain order."""
     wallet = fixture.wallet.lower()
     events, coverage = events_from_fixture(fixture)
-    events.sort(key=lambda e: e.position)
+    choices = sorted((e for e in events if _chose(e)), key=lambda e: e.position)
     status = "complete" if coverage.complete else "partial"
     out: list[Candidate] = []
+    chosen: dict[str, int] = {}  # grows as the pass moves forward: strictly earlier choices
+    next_choice = 0
     for t in sorted(
         fixture.transfers, key=lambda t: (t.block_number, t.transaction_index, t.log_index)
     ):
+        position = (t.block_number, t.transaction_index, t.log_index)
+        while next_choice < len(choices) and choices[next_choice].position < position:
+            e = choices[next_choice]
+            chosen[e.counterparty.lower()] = e.block
+            next_choice += 1
         incoming = t.recipient.lower() == wallet
         outgoing = t.sender.lower() == wallet
         if not (incoming or outgoing):
             continue
-        position = (t.block_number, t.transaction_index, t.log_index)
         token = t.token.lower()
         value = int(t.value)
         party = (t.sender if incoming else t.recipient).lower()
-        chosen = _chosen_before(events, position)
         match = max(
             ((k, m) for k in chosen if (m := similar(party, k)) is not None),
             key=lambda km: (sum(km[1]), km[1][1], km[0]),
