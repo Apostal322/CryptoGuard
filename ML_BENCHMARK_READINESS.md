@@ -130,3 +130,21 @@ Collection stops at the cap, whatever has been found by then.
 - **Never loaded by production.** The review and annotation modules are research-only, and
   `tests/unit/test_ml_reconcile.py` checks that they load neither the application database
   nor the API. Wallet scans and findings are unchanged.
+
+## 8. Phase 11.5 readiness gates
+
+Evidence: [ML_HARD_NEGATIVE_STUDY.md](ML_HARD_NEGATIVE_STUDY.md). Status values: pass, fail,
+blocked by missing evidence, not yet evaluated. Infrastructure alone never passes a gate.
+
+| Gate | Status | Why |
+|---|---|---|
+| A Candidate validity | **pass** | `candidates/2` is deterministic, versioned and audited. It equals its per-transfer definition on random fixtures and gives identical output to `candidates/1` on all 13 recorded windows |
+| B Historical correctness | **pass** (for implemented features) | features use only strictly earlier positions (tested: future events, input order, same-block, unknown vs empty history). The archive frame has no wallet history at all |
+| C Positive-label provenance | blocked by missing evidence | positives are source labels with known provenance tiers; the 60-item independent review has not happened |
+| D Negative-label validity | blocked by missing evidence | 0 candidates reviewed; 35 are frozen for review |
+| E Source independence | **pass** (identified, not resolved) | contamination and shortcuts measured: 42% of the archive frame overlaps known attacks; value alone separates frames perfectly |
+| F Leakage-safe splitting | blocked by missing evidence | typed grouping, holdout guard and split overlap report exist; nothing labelled to split |
+| G Statistical adequacy | **fail** | 0 independent labels; gate B in `events.quality_gates` needs 30 per class |
+| H Baseline comparability | blocked by missing evidence | the detector needs wallet histories; only the recorded-window frame has them, and it has no labels |
+| I Operational relevance | not yet evaluated | unlabeled candidate volume only (8 on 27 wallet-days); no reviewed false alerts |
+| J Deployment safety | **pass** | research modules load neither database nor API (tested); no production finding changes |

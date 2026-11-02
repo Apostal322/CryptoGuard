@@ -323,3 +323,14 @@ The frame is payoff-linked, so a reviewer may see the later payment.
 | 30 | P2 | **"Zero-value" naming** covers only zero-value transfers to the victim | Documented (§5) |
 
 No P0 finding: every hash, uniqueness, separation, allocation and reserve-order check passes.
+
+## 20. Second cohort (Phase 11.5)
+
+- **The cohort.** A separately frozen cohort, `hard-negative-candidates/1` (35 unlabeled
+  candidates), uses the same app, store, finalization and unblinding gate.
+- **How cohorts are kept apart:**
+  - each cohort has its own committed hashes in `review_sample.COHORTS`;
+  - a reviewer package names no cohort, so the server finds the cohort by the sheet's hash;
+  - items carry the neutral title "Candidate for independent security review".
+- **The Phase 11.4 sample is unchanged** (re-verified).
+- Design and hashes: [ML_HARD_NEGATIVE_STUDY.md](ML_HARD_NEGATIVE_STUDY.md) §12.

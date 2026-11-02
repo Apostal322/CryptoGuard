@@ -7,7 +7,10 @@ reconciliation (§7, Phase 11.3) are done. The next experiment is in
 60 is frozen (§26). Phase 11.4 verified it, audited its design and built the independent
 annotation workflow; it now waits for two human reviewers
 ([ML_ANNOTATION_AUDIT.md](ML_ANNOTATION_AUDIT.md),
-[ML_BENCHMARK_READINESS.md](ML_BENCHMARK_READINESS.md)). Data model and labels:
+[ML_BENCHMARK_READINESS.md](ML_BENCHMARK_READINESS.md)). Phase 11.5 added a screened
+pool of 8,877 unlabeled hard-negative candidates and a second frozen cohort of 35
+([ML_HARD_NEGATIVE_STUDY.md](ML_HARD_NEGATIVE_STUDY.md)). Both cohorts wait for the same
+two reviewers. Data model and labels:
 [ML_POISONING_DATASET.md](ML_POISONING_DATASET.md).
 Pilot: [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md). Generated numbers:
 [ML_POISONING_TABLES.md](ML_POISONING_TABLES.md).
@@ -39,7 +42,7 @@ See ML_POISONING_DATASET.md §2:
 - **Output:** an experimental ranking with coverage, not a theft probability, never a
   finding.
 
-## 3. Candidate generation (`ml/candidates.py`, `candidates/1`)
+## 3. Candidate generation (`ml/candidates.py`, `candidates/1`; now `candidates/2`)
 
 **Rules.** The rules are structural and independent of the production detector and of any
 model:

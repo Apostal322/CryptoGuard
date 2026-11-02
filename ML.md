@@ -50,6 +50,12 @@ method and decision log.
     (local, blinded review app), `ml/agreement.py`, `ml/unblind.py` (gated unblinding and
     analysis), `ml/benchmark.py` (readiness and holdout guard); commands under
     `cryptoguard ml review` ([ML_ANNOTATION_AUDIT.md](ML_ANNOTATION_AUDIT.md)).
+  - Phase 11.5: `ml/hard_negative_archive.py` and `ml/hard_negatives.py` (unlabeled
+    hard-negative pool), `ml/contamination.py` (known-positive screen),
+    `ml/grouping.py` (typed campaign edges), `ml/matching.py` (coarsened exact
+    matching), `ml/cohort.py` (generic frozen cohorts), `ml/evaluation.py` (benchmark
+    contract and metrics that refuse unverified negatives), `ml/hn_study.py` and
+    `ml/inventory.py` ([ML_HARD_NEGATIVE_STUDY.md](ML_HARD_NEGATIVE_STUDY.md)).
 - **Further reading:** [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md) covers the pilot
   reconstruction and the data-loss fix. [ML_RESEARCH_PLAN.md](ML_RESEARCH_PLAN.md) has the
   issue register, the collection design and the next experiment.

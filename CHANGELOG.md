@@ -26,6 +26,27 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Hard-negative discovery and benchmark contract (Phase 11.5)
+- `candidates/2`: a counterparty counts as chosen only with a verified wallet signature,
+  and generation is a single pass. The output is identical on all 13 recorded windows and
+  the published tables are unchanged.
+- Added `ml hard-negative-extract` and `ml hard-negative-study` (offline, 0 RPC):
+  - 8,651 uncategorized archive transfers (the publisher's count) plus 226 recorded-window
+    candidates, every one `unlabeled_candidate`;
+  - a contamination screen against every local known positive. 3,632 archive candidates
+    (42%) overlap known attacks; none is called benign;
+  - typed campaign grouping that never links through common tokens or routers;
+  - coarsened exact matching with balance diagnostics (strict: 17 of 1,409 positives
+    matched);
+  - source-separability diagnostics: value alone separates the frames, AUC 1.0.
+- Added a second frozen review cohort (`hard-negative-candidates/1`, 35 items) in the same
+  review app. Packages name no cohort, and the page shows a neutral title and pre-cutoff
+  context.
+- Added the `benchmark-example/1` contract and metrics that refuse unverified negatives
+  (`ml/evaluation.py`), plus a data inventory (`ml inventory`).
+- Docs: ML_HARD_NEGATIVE_STUDY.md, generated ML_HARD_NEGATIVE_TABLES.md, and readiness gates
+  A-J in ML_BENCHMARK_READINESS.md §8.
+
 ### Independent annotation and benchmark validation (Phase 11.4)
 - Verified the frozen review sample against its committed hashes (`ml review verify`) and
   audited its design (`ml review audit`). Every uniqueness, separation, allocation, weight
