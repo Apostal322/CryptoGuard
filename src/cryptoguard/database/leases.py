@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from cryptoguard.core.errors import CryptoGuardError
@@ -43,6 +43,21 @@ class LeaseLostError(CryptoGuardError):
     retryable = True
 
 
+class LeaseBusyError(CryptoGuardError):
+    """The database stayed locked by other writers past the driver's busy timeout, so it is
+    unknown whether the lease is free. Distinct from "held" (``acquire`` returns None) and
+    from a crash; the caller may retry."""
+
+    code = "operation_lease_busy"
+    http_status = 503
+    retryable = True
+
+
+def _locked(exc: OperationalError) -> bool:
+    text = str(exc.orig if exc.orig is not None else exc).lower()
+    return "database is locked" in text or "database is busy" in text
+
+
 @dataclass(frozen=True)
 class Lease:
     key: str
@@ -56,7 +71,18 @@ class LeaseStore:
         self._sessions = repository._sessions
 
     def acquire(self, key: str, ttl_seconds: float, *, now: datetime | None = None) -> Lease | None:
-        """Take the lease for ``key``, or return None if another live owner holds it."""
+        """Take the lease for ``key``, or return None if another live owner holds it. Raises
+        ``LeaseBusyError`` when the database stays locked past the busy timeout."""
+        try:
+            return self._acquire(key, ttl_seconds, now=now)
+        except OperationalError as exc:
+            if _locked(exc):
+                raise LeaseBusyError(
+                    "The lease table is locked by other writers; retry shortly."
+                ) from exc
+            raise
+
+    def _acquire(self, key: str, ttl_seconds: float, *, now: datetime | None) -> Lease | None:
         now = now or datetime.now(UTC)
         expires = now + timedelta(seconds=ttl_seconds)
         token = uuid.uuid4().hex

@@ -30,11 +30,14 @@ def _repo(url: str) -> HistoryRepository:
 
 
 def _contend(url: str, start: float, results: mp.Queue) -> None:  # runs in a child process
-    repo = _repo(url)
-    while time.time() < start:  # line every process up on the same instant
-        time.sleep(0.001)
-    lease = LeaseStore(repo).acquire(KEY, 30)
-    results.put(os.getpid() if lease is not None else None)
+    try:
+        repo = _repo(url)
+        while time.time() < start:  # line every process up on the same instant
+            time.sleep(0.001)
+        lease = LeaseStore(repo).acquire(KEY, 30)
+        results.put(("won" if lease is not None else "lost", os.getpid()))
+    except Exception as exc:  # reported to the parent: a failure must say what happened
+        results.put(("error", f"{type(exc).__name__}: {exc}"))
 
 
 CRASH_TTL = 8.0  # generous: process teardown on a loaded machine can take seconds
@@ -61,9 +64,42 @@ def test_only_one_process_wins_a_simultaneous_acquire(db_url: str) -> None:
         p.start()
     for p in procs:
         p.join(timeout=60)
-        assert p.exitcode == 0
-    winners = [r for r in (results.get(timeout=5) for _ in procs) if r is not None]
-    assert len(winners) == 1
+    outcomes = [results.get(timeout=5) for _ in procs]
+    winners = [o for o in outcomes if o[0] == "won"]
+    assert len(winners) <= 1, outcomes  # safety: never two owners, whatever else happens
+    errors = [o for o in outcomes if o[0] == "error"]
+    assert not errors, errors  # liveness: every contender got an answer
+    assert len(winners) == 1, outcomes
+    assert all(p.exitcode == 0 for p in procs), [p.exitcode for p in procs]
+
+
+def test_a_locked_database_is_reported_as_busy_not_as_free_or_held(tmp_path: Path) -> None:
+    """When other writers keep the database locked past the busy timeout, acquire raises the
+    retryable LeaseBusyError instead of returning None ("held") or crashing."""
+    import sqlite3
+
+    from sqlalchemy import create_engine
+
+    from cryptoguard.database.leases import LeaseBusyError
+    from cryptoguard.database.repository import _transactional_sqlite
+
+    path = tmp_path / "busy.db"
+    _repo(f"sqlite:///{path.as_posix()}")  # schema
+    engine = create_engine(
+        f"sqlite:///{path.as_posix()}", connect_args={"timeout": 0.2, "check_same_thread": False}
+    )
+    _transactional_sqlite(engine)
+    store = LeaseStore(HistoryRepository(engine))
+    blocker = sqlite3.connect(path, isolation_level=None)
+    blocker.execute("BEGIN IMMEDIATE")  # another writer holds the write lock
+    try:
+        with pytest.raises(LeaseBusyError) as err:
+            store.acquire(KEY, 30)
+        assert err.value.retryable
+    finally:
+        blocker.execute("ROLLBACK")
+        blocker.close()
+    assert store.acquire(KEY, 30) is not None  # free again once the writer is gone
 
 
 def test_lease_of_a_crashed_process_is_recovered_after_expiry(db_url: str) -> None:
