@@ -78,6 +78,7 @@ def frozen(tmp: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, dict
         monkeypatch.setitem(rs.FROZEN_V1, name, rs.file_sha256(sample / name))
     monkeypatch.setitem(rs.FROZEN_V1, "selection", manifest["selection_sha256"])
     monkeypatch.setitem(rs.FROZEN_V1, "queue", rs.file_sha256(q))
+    monkeypatch.delitem(rs.FROZEN_V1, "evidence", raising=False)  # no packets in synthetic runs
     return q, sample, manifest
 
 

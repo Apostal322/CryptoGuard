@@ -67,3 +67,5 @@ ul.chips li.ok { background: var(--okbg); color: var(--ok); }
 ul.chips li.warn, p.warn { background: var(--errbg); color: var(--err); }
 fieldset.reasons { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 2px 12px; }
 details.checklist { margin-top: 10px; }
+#item { min-width: 0; }
+.card { min-width: 0; overflow-wrap: anywhere; }
