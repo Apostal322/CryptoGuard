@@ -1,9 +1,10 @@
 # Reviewer handoff (maintainer)
 
 Materials for recruiting two independent human reviewers. Nothing here has been sent. No
-reviewer has been contacted, has agreed or exists yet.
+reviewer has been contacted, has agreed or exists yet. Only the maintainer contacts
+reviewers; no tool or AI assistant sends anything.
 
-## 1. Invitation draft (edit before sending; promise nothing not yet decided)
+## 1. Invitation (ready to send; adjust the greeting, promise nothing not yet decided)
 
 > **Subject: Independent review of Ethereum transactions (address-poisoning research)**
 >
@@ -13,7 +14,7 @@ reviewer has been contacted, has agreed or exists yet.
 > local review page on your own computer and, if you wish, a public block explorer.
 >
 > What it involves:
-> - installing a Python tool from a private repository;
+> - installing `uv` and running a small local Python tool that I send you as a zip file;
 > - working independently, without discussing items with the other reviewer until both
 >   of you have submitted;
 > - recording, for each item, a decision, your reasons and what you saw.
@@ -21,7 +22,8 @@ reviewer has been contacted, has agreed or exists yet.
 > The data come from a licensed research dataset and must stay on your computer. They are
 > not to be shared or published.
 >
-> My rough estimate is [N] hours. This is an assumption, not a measured time.
+> My rough estimate is about 9 hours in total, which you can split over several sessions.
+> This is an assumption, not a measured time. There is no payment.
 >
 > Would you be willing?
 
@@ -47,6 +49,12 @@ training cases once a reviewer has done them.
 
 ## 4. Data handling
 
+**Decide before sending.** The packets are derived from Tsuchiya et al. data under
+CC BY-NC-ND 4.0, whose "NoDerivatives" term restricts sharing adapted material. Sending
+it privately to two reviewers for non-commercial research may be acceptable, but that is
+your judgement or the dataset authors' to make, not this tool's. Asking the authors is the
+safe route. This is not legal advice.
+
 - Packages contain addresses derived from CC BY-NC-ND 4.0 research data. Keep them on the
   reviewer's computer, use them only for this review, and delete them afterwards if asked.
 - Return only `annotations/submission.json`.
@@ -70,15 +78,25 @@ training cases once a reviewer has done them.
    - `cryptoguard ml review build-evidence --cohort hard-negative-candidates/1`
 
    The printed hashes must equal the registered ones (`review_sample.COHORTS`).
-3. For each reviewer R (pseudonyms `A`, `B`):
-   - `cryptoguard ml review training-package --reviewer R --out <dir>/training-R`
-   - `cryptoguard ml review package --reviewer R --out <dir>/sample-R`
-   - `cryptoguard ml review package --cohort hard-negative-candidates/1 --reviewer R --out
-     <dir>/candidates-R`
-4. Send each reviewer only their own three folders, `docs/ml/reviewer-guide.md` and this
-   repository's setup instructions.
+3. Build one kit per pseudonym (`A`, `B`) from a clean tree. A pseudonym is not tied to
+   a person until its kit is sent; give `A` to whoever agrees first.
+
+   ```bash
+   uv run python scripts/make_reviewer_kit.py --reviewer A
+   ```
+
+   This writes `data/ml/poisoning/outbox/reviewer-A.zip` and a maintainer-only
+   `reviewer-A.record.json`. The kit holds three folders (`training`, `set-1` =
+   `review-sample/1`, `set-2` = `hard-negative-candidates/1`), the guide, a setup README
+   and the review tool's code without the reports, tests or research docs. The script
+   refuses to finish if any check fails (registered hashes, no key or manifest, no
+   source words in the real folders). The neutral folder names and the code-only copy keep
+   the cohort descriptions out of the reviewers' sight.
+4. Send each reviewer only their own zip, privately (not a public link). Write the date
+   into `sent` in the record file.
 5. When a submission arrives, run
-   `cryptoguard ml review check-submission <file> [--cohort …]` and fix nothing by hand. A
+   `cryptoguard ml review check-submission <file> [--cohort …]` and fix nothing by hand
+   (`set-1` needs no `--cohort`; `set-2` needs `--cohort hard-negative-candidates/1`). A
    problem goes back to the reviewer.
 6. With both finalized: run `cryptoguard ml review agreement --submission A --submission B
    [--cohort …]`. It needs no key.

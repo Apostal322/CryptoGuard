@@ -12,13 +12,13 @@ are never used as data, and the real items are never used for practice.
 
 ## Setup (once per folder)
 
-1. Get your personal review folders from the maintainer. Each contains
-   `reviewer_sheet.jsonl`, `reviewer.json` and usually `evidence_packets.jsonl`, and
-   nothing else is needed.
-2. From the CryptoGuard repository, with Python 3.12 and `uv`, run:
+1. Get your personal kit from the maintainer. Its `README.md` explains the setup. Each
+   review folder contains `reviewer_sheet.jsonl`, `reviewer.json` and usually
+   `evidence_packets.jsonl`, and nothing else is needed.
+2. From the kit's `cryptoguard` folder, with `uv` installed, run:
 
    ```bash
-   uv run cryptoguard ml review serve --package <your folder>
+   uv run --no-dev cryptoguard ml review serve --package <your folder>
    ```
 
 3. Your browser opens the review page. If it does not, open the exact address the command
