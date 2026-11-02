@@ -53,11 +53,38 @@ STABLECOINS = frozenset(
 RECENT_BLOCKS = 7_200  # about one day
 
 
-def _similar(a: str, b: str) -> tuple[int, int] | None:
+def similar(a: str, b: str) -> tuple[int, int] | None:
+    """The ``lookalike_in`` similarity rule: (prefix, suffix) when it matches, else None."""
     if a == b:
         return None
     prefix, suffix = affix_match(a, b)
     return (prefix, suffix) if prefix + suffix >= MIN_AFFIX and suffix >= MIN_SUFFIX else None
+
+
+def transfer_methods(
+    *,
+    incoming: bool,
+    outgoing: bool,
+    value: int,
+    token: str,
+    wallet_signed: bool | None,
+    matched: bool,
+) -> list[str]:
+    """The candidate rules that fire for one transfer seen from the wallet (see the module
+    docstring). ``wallet_signed`` is None when the transaction signer is unknown; ``matched`` is
+    whether the counterparty passes ``similar`` against a counterparty chosen earlier."""
+    methods: list[str] = []
+    if incoming and value == 0:
+        methods.append("zero_value_in")
+    if outgoing and wallet_signed is False:
+        methods.append("spoofed_out")
+    if incoming and matched:
+        methods.append("lookalike_in")
+        if token not in TRUSTED_TOKENS:
+            methods.append("untrusted_token_in")
+    if incoming and token in STABLECOINS and 0 < value <= DUST_MAX_BASE_UNITS:
+        methods.append("dust_in")
+    return methods
 
 
 @dataclass(frozen=True)
@@ -95,24 +122,21 @@ def generate(fixture: ReplayFixture, *, chain_id: int = 1) -> list[Candidate]:
         position = (t.block_number, t.transaction_index, t.log_index)
         token = t.token.lower()
         value = int(t.value)
-        methods: list[str] = []
         party = (t.sender if incoming else t.recipient).lower()
         chosen = _chosen_before(events, position)
         match = max(
-            ((k, m) for k in chosen if (m := _similar(party, k)) is not None),
+            ((k, m) for k in chosen if (m := similar(party, k)) is not None),
             key=lambda km: (sum(km[1]), km[1][1], km[0]),
             default=None,
         )
-        if incoming and value == 0:
-            methods.append("zero_value_in")
-        if outgoing and t.tx_sender is not None and t.tx_sender.lower() != wallet:
-            methods.append("spoofed_out")
-        if incoming and match is not None:
-            methods.append("lookalike_in")
-            if token not in TRUSTED_TOKENS:
-                methods.append("untrusted_token_in")
-        if incoming and token in STABLECOINS and 0 < value <= DUST_MAX_BASE_UNITS:
-            methods.append("dust_in")
+        methods = transfer_methods(
+            incoming=incoming,
+            outgoing=outgoing,
+            value=value,
+            token=token,
+            wallet_signed=None if t.tx_sender is None else t.tx_sender.lower() == wallet,
+            matched=match is not None,
+        )
         if not methods:
             continue
         out.append(
@@ -239,9 +263,7 @@ def event_features(
         token_trusted=(e.log_contract or "") in TRUSTED_TOKENS,
         prefix_to_imitated=c.best_match[0] if c.best_match else None,
         suffix_to_imitated=c.best_match[1] if c.best_match else None,
-        plausible_impersonated=sum(1 for k in chosen if _similar(e.lookalike, k))
-        if known
-        else None,
+        plausible_impersonated=sum(1 for k in chosen if similar(e.lookalike, k)) if known else None,
         blocks_since_imitated_chosen=(
             e.planting_block - chosen[e.imitated] if known and e.imitated in chosen else None
         ),

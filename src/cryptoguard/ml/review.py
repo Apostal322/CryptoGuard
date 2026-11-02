@@ -37,9 +37,11 @@ DECISION_TIER: dict[str, LabelTier] = {
 
 
 class ReviewPacket(BaseModel):
+    """v2 adds competing lookalikes and observed-payment evidence; v1 packets still load."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["poisoning-review/1"] = "poisoning-review/1"
+    schema_version: Literal["poisoning-review/1", "poisoning-review/2"] = "poisoning-review/2"
     victim_event_id: str
     victim: str
     lookalike: str
@@ -50,6 +52,8 @@ class ReviewPacket(BaseModel):
     evidence_summary: str
     coverage_limitations: str
     source_labels: tuple[str, ...]
+    competing_lookalikes: tuple[str, ...] = ()  # same victim and imitated address, earlier
+    payment_evidence: tuple[str, ...] = ()  # observed payments, each with its time category
 
 
 class ReviewDecision(BaseModel):
@@ -67,7 +71,14 @@ class ReviewImportError(ValueError):
     pass
 
 
-def packet(event: PoisoningEvent, source_labels: Sequence[str], evidence: str) -> ReviewPacket:
+def packet(
+    event: PoisoningEvent,
+    source_labels: Sequence[str],
+    evidence: str,
+    *,
+    competing: Sequence[str] = (),
+    payments: Sequence[str] = (),
+) -> ReviewPacket:
     limits = {
         "complete": "wallet window fully observed",
         "partial": "wallet history incomplete: unobserved events may exist",
@@ -84,6 +95,8 @@ def packet(event: PoisoningEvent, source_labels: Sequence[str], evidence: str) -
         evidence_summary=evidence,
         coverage_limitations=limits,
         source_labels=tuple(source_labels),
+        competing_lookalikes=tuple(sorted(competing)),
+        payment_evidence=tuple(payments),
     )
 
 

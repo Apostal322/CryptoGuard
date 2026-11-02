@@ -63,6 +63,30 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     pc.add_argument("--window-blocks", type=int, required=True)
     pc.add_argument("--request-cap", type=int, required=True)
     pc.add_argument("--log-range-blocks", type=int, default=100)
+    ff = ml.add_parser(
+        "fetch-file",
+        help="download ONE named, pinned research file after explicit approval (verified)",
+    )
+    ff.add_argument("name", help="pinned file name, e.g. address_poisoning_ethereum.sql.gz")
+    ff.add_argument("--dest", type=Path, default=DEFAULT_DATA_DIR / "tsuchiya2025")
+    ff.add_argument("--reserve-gib", type=float, default=10.0)
+    sa = ml.add_parser(
+        "scan-archive",
+        help="one offline pass over the local Tsuchiya archive (verified; never downloads)",
+    )
+    sa.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    sa.add_argument("--out", type=Path, default=ML_DIR / "poisoning")
+    sa.add_argument("--force", action="store_true", help="rescan even if a cached scan matches")
+    cr = ml.add_parser(
+        "cross-dataset-report",
+        help="reconcile the scanned archive with Poison-Hunter, payoffs and incidents (no RPC)",
+    )
+    cr.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    cr.add_argument("--out", type=Path, default=ML_DIR / "poisoning")
+    cr.add_argument("--tables", type=Path, default=Path("ML_CROSS_DATASET_TABLES.md"))
+    bz = ml.add_parser("bench-archive", help="archive-scanner scaling on synthetic dumps")
+    bz.add_argument("sizes", type=int, nargs="+")
+    bz.add_argument("--work", type=Path, default=ML_DIR / "bench")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -94,6 +118,19 @@ def run(args: argparse.Namespace) -> int:
             print(f"rejected: {exc}")
             return 2
         print(json.dumps(body, indent=1))
+        return 0
+    if args.ml_command == "fetch-file":
+        return _fetch_file(args)
+    if args.ml_command == "scan-archive":
+        return _scan_archive(args)
+    if args.ml_command == "cross-dataset-report":
+        return _cross_dataset_report(args)
+    if args.ml_command == "bench-archive":
+        import json
+
+        from cryptoguard.ml.bench_archive import bench
+
+        print(json.dumps(bench(args.sizes, args.work), indent=1))
         return 0
     if not ml_available():
         print("error [ml_unavailable]: install the ml extra (uv sync --extra ml)")
@@ -151,6 +188,77 @@ def run(args: argparse.Namespace) -> int:
     if args.ml_command in ("score", "monitor"):
         return _shadow(args)
     raise AssertionError(args.ml_command)
+
+
+def _fetch_file(args: argparse.Namespace) -> int:
+    import json
+
+    from cryptoguard.ml.fetch import TSUCHIYA_FILES, DownloadError, download
+
+    pinned = TSUCHIYA_FILES.get(args.name)
+    if pinned is None:
+        print(f"error: {args.name!r} is not pinned; known: {', '.join(TSUCHIYA_FILES)}")
+        return 2
+    last = [-1]
+
+    def progress(done: int, total: int) -> None:
+        pct = done * 100 // total
+        if pct >= last[0] + 5:
+            last[0] = pct
+            print(f"{pct:3d}% {done:,}/{total:,} bytes", flush=True)
+
+    try:
+        record = download(
+            pinned, args.dest, reserve_bytes=int(args.reserve_gib * (1 << 30)), progress=progress
+        )
+    except DownloadError as exc:
+        print(f"error [{type(exc).__name__}]: {exc}")
+        return 1
+    print(json.dumps(record, indent=1))
+    return 0
+
+
+def _scan_archive(args: argparse.Namespace) -> int:
+    import time
+
+    from cryptoguard.ml.cross_dataset import run_scan
+    from cryptoguard.ml.fetch import IntegrityError
+    from cryptoguard.ml.tsuchiya_archive import ArchiveError, ReaderStats
+
+    t0 = time.perf_counter()
+
+    def progress(stats: ReaderStats) -> None:
+        print(
+            f"{stats.data_rows:>12,} rows  {stats.decompressed_bytes / 1e9:6.2f} GB  "
+            f"{time.perf_counter() - t0:7.0f} s",
+            flush=True,
+        )
+
+    try:
+        s = run_scan(args.data_dir, args.out, force=args.force, progress=progress)
+    except (FileNotFoundError, IntegrityError, ArchiveError) as exc:
+        print(f"error [{type(exc).__name__}]: {exc}")
+        return 1
+    print(
+        f"{'cached' if s['cached'] else 'scanned'}: {s['reader']['valid_rows']:,} valid rows, "
+        f"{s['reader']['malformed_rows']:,} malformed, {s['stored_target_rows']:,} stored; "
+        f"{s['runtime_seconds']} s, peak RSS {s['peak_rss_bytes']} bytes (0 RPC requests)."
+    )
+    return 0
+
+
+def _cross_dataset_report(args: argparse.Namespace) -> int:
+    from cryptoguard.ml.cross_dataset import build_report, write_report
+    from cryptoguard.ml.tsuchiya_archive import ArchiveError
+
+    try:
+        report = build_report(args.data_dir, args.out)
+    except (FileNotFoundError, ArchiveError) as exc:
+        print(f"error [{type(exc).__name__}]: {exc} (run `cryptoguard ml scan-archive` first)")
+        return 1
+    written = write_report(report, args.out, args.tables)
+    print(f"Wrote {written} and {args.tables} (0 RPC requests).")
+    return 0
 
 
 def _shadow(args: argparse.Namespace) -> int:
