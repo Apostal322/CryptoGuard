@@ -260,6 +260,18 @@ and is kept in the run ledger.
 full-data run), so the test split is a previously examined development benchmark. Timeline:
 ML_GENERALIZATION_AUDIT.md §4.
 
+## Phase 12.1: lookalike prioritization (research only)
+
+The study ranked the source-flagged lookalikes that planted to a victim before its first
+confirmed payoff. On test:
+- recency of the latest planting puts the paid lookalike first 62% of the time;
+- the production similarity score does so 30% of the time, and random 20%;
+- cross-victim graph features do not beat random.
+
+This is a retrospective, payoff-conditioned result. Nothing is integrated: the
+production detector and its warnings are unchanged. Details are in
+[ML_TEMPORAL_GRAPH_RESEARCH.md](ML_TEMPORAL_GRAPH_RESEARCH.md).
+
 ## Limitations
 
 - One labelled source, with a benign class of prominent accounts; precision on real traffic

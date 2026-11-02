@@ -182,3 +182,24 @@ Issues 13–20 are in that document's §24. The plan as approved:
 - **Still missing afterwards:** verified negatives (gate B). They need a reviewed sample of
   legitimate lookalike-shaped interactions, which no public source provides. That remains
   the real blocker for supervised learning on this task.
+
+## 8. Done (Phase 12.1): temporal and graph signals for lookalike prioritization
+
+The study was pre-registered in `docs/ml/protocol-12.1.md` (`999794a`) and run offline,
+with 0 RPC requests. Results are in
+[ML_TEMPORAL_GRAPH_RESEARCH.md](ML_TEMPORAL_GRAPH_RESEARCH.md).
+
+The task was retrospective: rank the lookalikes that had planted to a victim who later
+paid one of them. The test split had 428 episodes. Top-1 against the production
+similarity score (B0, 0.300):
+
+| Signal | Top-1 | Decision |
+|---|---|---|
+| T0 recency | 0.618 | supported |
+| H_fixed hybrid | 0.462 | supported, through its temporal part only |
+| B3 recipient history | 0.247 | reversed |
+| G1 graph reuse | 0.206 | reversed; equal to random |
+
+- **Not a detection result:** no precision, FPR or recall was measured.
+- **Next:** pre-register recency-first warning ordering on a population not used here.
+

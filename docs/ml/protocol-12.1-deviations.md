@@ -73,6 +73,35 @@ reports:
 It also checks that the graph database was built from this exact manifest (by hash). If
 the audit fails, every G feature result is reported as invalid.
 
+## Added after the study was run
+
+These entries were written after the results existed. Neither changes a pre-registered
+value.
+
+### D3. Runtime budget overrun
+
+Section 9 set a budget of about 25 minutes for the archive pass and under 2 minutes for
+each experiment.
+
+| Step | Wall | Peak RSS |
+|---|---|---|
+| Archive pass | 58 min, of which the scan took 45 min | 344 MiB |
+| Study | 2 h 16 min | 744 MiB |
+
+Almost all of the study's time went to the primary feature extraction, which took
+1 h 47 min. Its cost was SQLite graph lookups for 13,435 candidates, on one HDD shared
+with other projects' jobs and running at 0% idle. The memory limits held. Results do not
+depend on runtime.
+
+### D4. Post-hoc recency-gap diagnostic
+
+`recency_gap_diagnostic` asks whether T0's advantage is built into the source's payoff
+matching. It reports:
+- the paid and rival planting-to-cutoff gap quantiles;
+- T0 among episodes whose paid gap exceeds 30 days.
+
+It is labelled post-hoc in the output and in the report. No decision depends on it.
+
 ## Unchanged
 
 - Eligibility and the 1,068 episodes.

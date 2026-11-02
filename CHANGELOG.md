@@ -26,6 +26,25 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Temporal and graph lookalike prioritization (Phase 12.1)
+- Pre-registered study `lookalike-prioritization/1`, run with
+  `cryptoguard ml lookalike-study` (aggregate output, 0 RPC requests). It ranks the
+  lookalikes that planted to a victim before a source-confirmed payoff, using
+  point-in-time features with typed missingness and a typed cross-victim graph.
+- A symmetric offline archive pass covers paid and rival lookalikes alike. The earlier
+  subset covered 0.2% of rivals, which would have leaked the outcome into graph features.
+  The coverage audit passes.
+- Results on test, against the production similarity score (top-1 0.300):
+  - recency, 0.618: supported;
+  - graph reuse, 0.206: equal to random;
+  - recipient-history counts, 0.247: below the production score.
+- These are retrospective ranking results, not detection metrics. Report:
+  ML_TEMPORAL_GRAPH_RESEARCH.md.
+- Fixed:
+  - rows of frozen review wallets entered the graph index;
+  - the archive scanner maintained indexes during inserts. It now builds them after the
+    load, and the schema is unchanged.
+
 ### Evidence completion and review hardening (Phase 11.7)
 - An offline recovery pass over the local archive gives all 19 Cohort B archive items
   that had no local wallet history some pre-cutoff rows (still source-selected).
