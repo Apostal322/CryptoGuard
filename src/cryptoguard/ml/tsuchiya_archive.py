@@ -748,7 +748,7 @@ def scan(
                 progress(reader.stats)
         stored += _insert(db, pending)
         db.executescript(_DDL_INDEXES)
-        distinct ={name: c.count() for name, c in counters.items()}
+        distinct = {name: c.count() for name, c in counters.items()}
         # Spill files only grow until cleanup, so the total written after the final flush
         # in ``count`` is the peak temporary disk use.
         peak_spill = sum(c.bytes_written for c in counters.values())

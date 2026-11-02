@@ -364,6 +364,52 @@ def coverage_symmetry(
     return out
 
 
+def recency_gap_diagnostic(episodes: Sequence[lr.Episode]) -> dict[str, Any]:
+    """Post-hoc (not pre-registered): is T0's advantage built into the source's payoff
+    matching? A matching window would cap the paid lookalike's planting-to-cutoff gap, and
+    recency would lose its edge among the episodes with long paid gaps."""
+    paid: list[float] = []
+    rival: list[float] = []
+    long_t0: list[float] = []
+    long_random: list[float] = []
+    for e in episodes:
+        f = lr.candidate_features(e, lr.View(), None, None)
+        if f is None:
+            continue
+        gap = -float(f[e.paid]["T0"] or 0.0)
+        paid.append(gap)
+        rival += [-float(v["T0"] or 0.0) for c, v in f.items() if c != e.paid]
+        if gap > 30 * lr.DAY:
+            long_t0.append(lr.top1(lr.single("T0")(f), e.paid, len(f)))
+            long_random.append(1 / len(f))
+
+    def quantiles(xs: list[float]) -> dict[str, float]:
+        xs = sorted(xs)
+        return {f"p{q}": xs[min(len(xs) - 1, q * len(xs) // 100)] for q in (50, 90, 99)} | {
+            "max": xs[-1]
+        }
+
+    return {
+        "label": "post-hoc diagnostic, not pre-registered",
+        "paid_gap_blocks": quantiles(paid) if paid else None,
+        "rival_gap_blocks": quantiles(rival) if rival else None,
+        "share_gap_over_days": {
+            str(d): {
+                "paid": round(sum(g > d * lr.DAY for g in paid) / len(paid), 4) if paid else None,
+                "rival": round(sum(g > d * lr.DAY for g in rival) / len(rival), 4)
+                if rival
+                else None,
+            }
+            for d in (1, 7, 30, 90, 365)
+        },
+        "paid_gap_over_30d": {
+            "episodes": len(long_t0),
+            "T0_top1": round(statistics.fmean(long_t0), 4) if long_t0 else None,
+            "random_top1": round(statistics.fmean(long_random), 4) if long_random else None,
+        },
+    }
+
+
 # --- the study ------------------------------------------------------------------------------
 
 
@@ -646,6 +692,7 @@ def run(poisoning_dir: Path) -> dict[str, Any]:
             errors["source_intended_missing"] += 1
     report["errors_test_H"] = dict(errors)
 
+    report["recency_gap_posthoc"] = recency_gap_diagnostic(episodes)
     report["coverage_task1"] = coverage(poisoning_dir, lr.protected_wallets(poisoning_dir))
     report["availability"] = availability()
     from cryptoguard.ml.tsuchiya_archive import peak_rss_bytes

@@ -516,3 +516,6 @@ def test_study_runs_end_to_end_on_synthetic_data(
     assert report["methods"]["T0"]["all"]["top1"] == pytest.approx(15 / 29, abs=1e-4)
     assert report["methods"]["random"]["all"]["top1"] == 0.5
     assert report["resources"]["rpc_requests"] == 0
+    gap = report["recency_gap_posthoc"]
+    assert gap["paid_gap_blocks"]["max"] == 199.0  # (b + 299) - (b + 100), by design
+    assert gap["paid_gap_over_30d"]["episodes"] == 0
