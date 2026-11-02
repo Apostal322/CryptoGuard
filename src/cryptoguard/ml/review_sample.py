@@ -48,8 +48,9 @@ SUBTYPE_QUOTA: dict[str, int] = {
     "dust": 9,
     "zero_value": 3,
 }
-# First block of each calendar year (UTC), from a block explorer; a packet within a few
-# blocks of a boundary could fall in the neighbouring year, which does not affect validity.
+# Approximate first block of each calendar year (UTC), entered from memory and not checked
+# against an explorer (the archive has no timestamps). The strata are defined by these
+# block ranges, so they are exact; only the calendar-year names are approximate.
 YEAR_STARTS: tuple[tuple[int, int], ...] = ((2024, 18_908_895), (2023, 16_308_190))
 MANIFEST = "sample_manifest.json"
 SHEET = "reviewer_sheet.jsonl"
@@ -295,3 +296,85 @@ def freeze(queue: Path, out_dir: Path) -> tuple[dict[str, Any], bool]:
     _write(out_dir / KEY, key)
     _write(existing, json.dumps(manifest, indent=1, sort_keys=True).encode() + b"\n")
     return manifest, True
+
+
+# --- verification of the frozen draw (never writes) ------------------------------------
+
+
+class FrozenIntegrityError(ReviewSampleError):
+    """A frozen file is missing or differs from its committed hash. Its bytes are left as
+    they are; nothing is regenerated."""
+
+
+# Committed in ML_CROSS_DATASET_VALIDATION.md §26 before any review (raw-byte SHA-256 of
+# each file; the selection hash is over ``_canonical`` of the selection fields).
+FROZEN_V1: dict[str, str] = {
+    "queue": "84f8268e7328b320d49b06808811bb27f821dcedb1319a9d090b1c3b27f42e83",
+    "selection": "e368beb4c179f02bf916ef3dcbb89c4a8260d17956fa897264959477b5b85a62",
+    SHEET: "a0ec4b6e5620cf001e8e048f37cfca5553c24296318a67b86dddd87772814027",
+    KEY: "407b412f9e97e2aac269af0f0be565223dcfe851412458cee639396b8503bb2d",
+    MANIFEST: "c38ae31d598bb58c33fcd2d6553823fc1880b25a4b49b8764d32a290bc7dbdc3",
+}
+SELECTION_FIELDS = ("sample_version", "queue_sha256", "design", "selected", "reserves")
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def selection_sha256(manifest: dict[str, Any]) -> str:
+    return hashlib.sha256(_canonical({k: manifest[k] for k in SELECTION_FIELDS})).hexdigest()
+
+
+def verify_frozen(
+    sample_dir: Path,
+    *,
+    queue: Path | None = None,
+    expected: dict[str, str] = FROZEN_V1,
+    with_key: bool = True,
+) -> dict[str, Any]:
+    """Check every frozen file against ``expected`` and the manifest's own records; return
+    the manifest. Raises ``FrozenIntegrityError`` naming every mismatch. ``with_key=False``
+    skips the unblinding key (for a reviewer package, which does not contain it)."""
+    problems: list[str] = []
+    names = [MANIFEST, SHEET] + ([KEY] if with_key else [])
+    got: dict[str, str] = {}
+    for name in names:
+        path = sample_dir / name
+        if not path.is_file():
+            problems.append(f"{name}: missing")
+            continue
+        got[name] = file_sha256(path)
+        if got[name] != expected[name]:
+            problems.append(f"{name}: sha256 {got[name]} != committed {expected[name]}")
+    if problems:
+        raise FrozenIntegrityError("; ".join(problems))
+    manifest: dict[str, Any] = json.loads((sample_dir / MANIFEST).read_text(encoding="utf-8"))
+    if manifest.get("sample_version") != SAMPLE_VERSION:
+        problems.append(f"sample_version {manifest.get('sample_version')!r}")
+    if selection_sha256(manifest) != expected["selection"]:
+        problems.append("selection hash does not match the committed value")
+    if manifest.get("selection_sha256") != expected["selection"]:
+        problems.append("manifest records a different selection hash")
+    if manifest.get("queue_sha256") != expected["queue"]:
+        problems.append("manifest records a different review queue")
+    for name in names[1:]:
+        if manifest.get("files", {}).get(name) != got[name]:
+            problems.append(f"{name}: differs from the hash recorded in the manifest")
+    if queue is not None and file_sha256(queue) != expected["queue"]:
+        problems.append(f"{queue.name}: review queue differs from the committed hash")
+    ids = [r["victim_event_id"] for r in manifest.get("selected", [])]
+    sheet_ids = [r["victim_event_id"] for r in read_sheet(sample_dir / SHEET)]
+    if len(set(ids)) != len(ids) or set(ids) != set(sheet_ids) or len(sheet_ids) != len(ids):
+        problems.append("selected ids and reviewer-sheet ids differ or repeat")
+    if problems:
+        raise FrozenIntegrityError("; ".join(problems))
+    return manifest
+
+
+def read_sheet(path: Path) -> list[dict[str, Any]]:
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    for r in rows:
+        if r.get("schema_version") != SHEET_SCHEMA:
+            raise ReviewSampleError(f"{path}: unexpected sheet schema {r.get('schema_version')!r}")
+    return rows
