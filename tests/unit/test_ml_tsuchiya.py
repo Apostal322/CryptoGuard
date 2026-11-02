@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -108,16 +109,37 @@ def test_inconsistent_rows_are_quarantined_with_reasons(
     assert any(issue in i for i in r.issues)
 
 
-def test_float_encoded_amounts_beyond_double_precision_are_flagged(tmp_path: Path) -> None:
-    """Base-unit amounts above 2**53 or in scientific notation cannot be trusted exactly."""
+def test_float4_amounts_are_marked_approximate_beyond_2_pow_24(tmp_path: Path) -> None:
+    """The source column is a PostgreSQL real: integers above 2**24 base units (about 16.8
+    USDT) are rounded, so only small integral amounts count as exact. Human amounts use
+    the token's decimals and stay separate from the source's USD valuation."""
     rows = [
-        payoff(value="5000000000.0"),
-        payoff(tx_hash=h(2), value="1.2345e+22"),
-        payoff(tx_hash=h(3), value="12345678901234567890.0"),
+        payoff(value="16777216.0"),  # 2**24: still exact
+        payoff(tx_hash=h(2), value="16777217.0"),
+        payoff(tx_hash=h(3), value="5e+09", value_usd="4999.5"),
+        payoff(tx_hash=h(4), value="1.5", addr=WBTC),
+        payoff(tx_hash=h(5), value="lots"),
     ]
-    parsed = parse_payoffs(write_payoffs(tmp_path / "p.csv", rows))
-    assert [r.value_exact for r in parsed.records] == [True, False, False]
-    assert profile(parsed)["inexact_values"] == 2
+    recs = parse_payoffs(write_payoffs(tmp_path / "p.csv", rows)).records
+    assert [r.amount_precision for r in recs] == [
+        "exact",
+        "float4_approximate",
+        "float4_approximate",
+        "float4_approximate",
+        "unparseable",
+    ]
+    assert recs[2].human_amount == Decimal("5000")  # 5e9 base units of a 6-decimal token
+    assert recs[2].value_usd == 4999.5  # the source's valuation is kept, not recomputed
+    assert recs[3].human_amount is None  # unknown decimals: no human amount is invented
+    assert recs[4].status == "quarantined"
+
+
+def test_payoff_identity_and_provenance(tmp_path: Path) -> None:
+    parsed = parse_payoffs(write_payoffs(tmp_path / "p.csv", [payoff(), payoff()]))
+    assert parsed.source_file == "p.csv"
+    assert parsed.source_version.startswith("KiltHub v1")
+    assert parsed.records[0].payoff_id == f"1:{h(1)}:{USDT.lower()}:{VICTIM}:{LOOKALIKE}"
+    assert profile(parsed)["duplicate_payoff_ids"] == 1  # a repeated row is not two payoffs
 
 
 def _check(

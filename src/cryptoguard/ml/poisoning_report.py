@@ -271,7 +271,9 @@ def render_payoffs(x: dict[str, Any]) -> list[str]:
         f"| Tokens | {', '.join(f'{k} {v}' for k, v in src['tokens'].items())} |",
         f"| Distinct payers / lookalikes | {src['distinct_payers']} / "
         f"{src['distinct_lookalikes']} |",
-        f"| Amounts not exactly representable (float-encoded) | {src['inexact_values']} |",
+        f"| Amount precision (float4 source: exact only up to 2^24 base units) | "
+        f"{', '.join(f'{k} {v}' for k, v in sorted(src['amount_precision'].items()))} |",
+        f"| Duplicate payoff identities | {src['duplicate_payoff_ids']} |",
         f"| Accepted by the detector predicate / candidate rule | "
         f"{src['detector_predicate_accepts']} / {src['candidate_rule_accepts']} (implied by "
         "the study's 3+4 selection: a consistency check, not recall) |",
