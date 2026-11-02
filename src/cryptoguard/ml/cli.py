@@ -92,6 +92,7 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         "--queue", type=Path, default=ML_DIR / "poisoning" / "review_packets_payoff_linked.jsonl"
     )
     fr.add_argument("--out", type=Path, default=ML_DIR / "poisoning" / "review_sample")
+    _add_review_parser(ml)
     bz = ml.add_parser("bench-archive", help="archive-scanner scaling on synthetic dumps")
     bz.add_argument("sizes", type=int, nargs="+")
     bz.add_argument("--work", type=Path, default=ML_DIR / "bench")
@@ -135,6 +136,8 @@ def run(args: argparse.Namespace) -> int:
         return _cross_dataset_report(args)
     if args.ml_command == "freeze-review-sample":
         return _freeze_review_sample(args)
+    if args.ml_command == "review":
+        return _review(args)
     if args.ml_command == "bench-archive":
         import json
 
@@ -289,6 +292,147 @@ def _freeze_review_sample(args: argparse.Namespace) -> int:
         f"{state} {len(manifest['selected'])} of {manifest['queue_packets']} packets in "
         f"{args.out}; selection sha256 {manifest['selection_sha256']} (0 RPC requests)."
     )
+    return 0
+
+
+SAMPLE_DIR = ML_DIR / "poisoning" / "review_sample"
+REVIEW_WORK = ML_DIR / "poisoning" / "review"
+QUEUE = ML_DIR / "poisoning" / "review_packets_payoff_linked.jsonl"
+
+
+def _add_review_parser(ml: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    rv = ml.add_parser("review", help="independent human review of the frozen sample (offline)")
+    sub = rv.add_subparsers(dest="review_command", required=True)
+    for name, text in (
+        ("verify", "check the frozen sample against its committed hashes (reads only)"),
+        ("audit", "recompute and check the sampling design; aggregate JSON"),
+    ):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("--sample", type=Path, default=SAMPLE_DIR)
+        p.add_argument("--queue", type=Path, default=QUEUE)
+    sub.choices["audit"].add_argument("--out", type=Path, default=REVIEW_WORK / "design_audit.json")
+    pk = sub.add_parser("package", help="make one reviewer's package (blinded sheet only)")
+    pk.add_argument("--reviewer", required=True, help="pseudonym, e.g. A")
+    pk.add_argument("--out", type=Path, required=True)
+    pk.add_argument("--sample", type=Path, default=SAMPLE_DIR)
+    pk.add_argument("--work", type=Path, default=REVIEW_WORK)
+    sv = sub.add_parser("serve", help="run the local review app for one reviewer package")
+    sv.add_argument("--package", type=Path, required=True)
+    sv.add_argument("--port", type=int, default=0)
+    sv.add_argument("--no-browser", action="store_true")
+    st = sub.add_parser("status", help="progress of one reviewer package (no decisions shown)")
+    st.add_argument("--package", type=Path, required=True)
+    rp = sub.add_parser("replace", help="replace a technically inaccessible item (maintainer)")
+    rp.add_argument("--event", required=True)
+    rp.add_argument(
+        "--reason",
+        required=True,
+        choices=["transaction_not_found", "chain_data_unavailable", "sheet_record_malformed"],
+    )
+    rp.add_argument("--evidence", required=True)
+    rp.add_argument("--exposed", default="", help="reviewers who already saw the original")
+    rp.add_argument("--by", required=True)
+    rp.add_argument("--sample", type=Path, default=SAMPLE_DIR)
+    rp.add_argument("--work", type=Path, default=REVIEW_WORK)
+    ub = sub.add_parser("unblind", help="gate, then compare reviews with the source (maintainer)")
+    ub.add_argument("--submission", type=Path, action="append", required=True)
+    ub.add_argument("--adjudication", type=Path)
+    ub.add_argument("--sample", type=Path, default=SAMPLE_DIR)
+    ub.add_argument("--work", type=Path, default=REVIEW_WORK)
+
+
+def _review(args: argparse.Namespace) -> int:
+    import json
+
+    from cryptoguard.ml import review_sample as rs
+    from cryptoguard.ml.annotation import AnnotationError
+
+    cmd = args.review_command
+    try:
+        if cmd == "verify":
+            manifest = rs.verify_frozen(args.sample, queue=args.queue)
+            print(
+                f"Frozen sample verified: {len(manifest['selected'])} items, selection "
+                f"{manifest['selection_sha256']}; all five committed hashes match."
+            )
+            return 0
+        if cmd == "audit":
+            from cryptoguard.ml.sample_design import audit
+
+            manifest = rs.verify_frozen(args.sample, queue=args.queue)
+            report = audit(rs.load_queue(args.queue), manifest)
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
+            print(json.dumps(report["checks"], indent=1))
+            print(f"Wrote {args.out} (aggregate only; 0 RPC requests).")
+            return 0 if report["all_checks_pass"] else 2
+        if cmd == "package":
+            from cryptoguard.ml.unblind import make_package
+
+            out = make_package(args.sample, args.work, args.reviewer, args.out)
+            print(f"Reviewer package for {args.reviewer} in {out} (blinded sheet only).")
+            return 0
+        if cmd == "serve":
+            return _review_serve(args)
+        if cmd == "status":
+            from cryptoguard.ml.review_server import ReviewApp
+
+            state = ReviewApp(args.package).state()
+            print(
+                f"Reviewer {state['reviewer']}: {len(state['decisions'])} of "
+                f"{len(state['items'])} items saved; finalized: {state['finalized']}."
+            )
+            return 0
+        if cmd == "replace":
+            from cryptoguard.ml.unblind import record_replacement
+
+            rec = record_replacement(
+                args.sample,
+                args.work,
+                original_event_id=args.event,
+                reason=args.reason,
+                evidence=args.evidence,
+                exposed=[x for x in args.exposed.split(",") if x],
+                recorded_by=args.by,
+            )
+            print(
+                f"Item {rec.original_item} replaced by item {rec.replacement_item} (reserve "
+                f"{rec.reserve_position}); remake reviewer packages to include it."
+            )
+            return 0
+        if cmd == "unblind":
+            from cryptoguard.ml.unblind import unblind
+
+            report = unblind(args.sample, args.work, args.submission, args.adjudication)
+            primary = report["primary_all_reviewers_attempt"]["overall"]
+            keys = ("items", "positives", "estimate", "wilson95_design")
+            print(json.dumps({k: primary.get(k) for k in keys}, indent=1))
+            print(f"Wrote {args.work / 'unblinded_report.json'} (0 RPC requests).")
+            return 0
+    except (rs.ReviewSampleError, AnnotationError, FileNotFoundError) as exc:
+        print(f"error [{type(exc).__name__}]: {exc}")
+        return 1
+    raise AssertionError(cmd)
+
+
+def _review_serve(args: argparse.Namespace) -> int:
+    import webbrowser
+
+    from cryptoguard.ml.review_server import ReviewApp, serve
+
+    app = ReviewApp(args.package)
+    with app.store:
+        httpd, url = serve(app, args.port)
+        print(f"Reviewer {app.pkg['reviewer']}: open {url}")
+        print("Keep this window open while reviewing; press Ctrl+C to stop (saves are on disk).")
+        if not args.no_browser:
+            webbrowser.open(url)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            httpd.server_close()
     return 0
 
 

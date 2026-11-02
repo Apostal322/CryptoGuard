@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CryptoGuard review</title>
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>CryptoGuard review</h1>
+  <span id="who"></span>
+  <span id="progress" aria-live="polite"></span>
+  <button id="finalize" type="button" disabled>Finalize submission</button>
+</header>
+<div id="banner" role="alert" hidden></div>
+<main>
+  <nav aria-label="Items"><ol id="items"></ol></nav>
+  <section id="item" aria-live="polite">
+    <p class="muted">Loading…</p>
+  </section>
+</main>
+<template id="form-template">
+  <div class="card">
+    <h2 class="item-title"></h2>
+    <p class="cutoff"></p>
+    <dl class="facts"></dl>
+  </div>
+  <form class="card" novalidate>
+    <fieldset class="decision">
+      <legend>Decision <span class="kbd">1–5</span></legend>
+    </fieldset>
+    <div class="grid">
+      <label>Confidence <select name="confidence"></select></label>
+      <label>1. Planting transfer <select name="planting_transfer" data-kind="evidence"></select></label>
+      <label>2. Imitated earlier counterparty <select name="prior_counterparty" data-kind="evidence"></select></label>
+      <label class="wide">Earlier counterparty address (found by you, before the cutoff)
+        <input name="prior_counterparty_address" autocomplete="off" spellcheck="false" placeholder="0x…">
+      </label>
+      <label>Matching leading characters <input name="matched_leading" type="number" min="0" max="40"></label>
+      <label>Matching trailing characters <input name="matched_trailing" type="number" min="0" max="40"></label>
+      <label>3. Token <select name="token"></select></label>
+      <label>3. Value <select name="value_class"></select></label>
+      <label>4. Initiated by <select name="initiator"></select></label>
+      <label>5. Legitimate explanation <select name="legitimate_explanation" data-kind="evidence"></select></label>
+    </div>
+    <fieldset class="exposure">
+      <legend>What you saw (recorded, not judged)</legend>
+      <label class="check"><input type="checkbox" name="used_explorer"> I used a block explorer</label>
+      <label>Viewed activity after the cutoff block <select name="viewed_after_cutoff" data-kind="exposure"></select></label>
+      <label>Saw an explorer or third-party label on an address <select name="saw_external_label" data-kind="exposure"></select></label>
+      <label class="check"><input type="checkbox" name="saw_source_or_model_output"> I saw a source label, payoff record or model output</label>
+    </fieldset>
+    <label class="wide">Rationale (name the evidence)
+      <textarea name="rationale" rows="4"></textarea>
+    </label>
+    <label class="wide">Notes (optional)
+      <textarea name="notes" rows="2"></textarea>
+    </label>
+    <div class="actions">
+      <button type="button" class="prev">← Previous <span class="kbd">[</span></button>
+      <button type="submit" class="save">Save <span class="kbd">Ctrl+S</span></button>
+      <button type="button" class="next">Next <span class="kbd">]</span> →</button>
+      <span class="status" role="status"></span>
+    </div>
+  </form>
+</template>
+</body>
+</html>

@@ -325,6 +325,13 @@ RESEARCH = (
     "cryptoguard.ml.reconcile",
     "cryptoguard.ml.cross_dataset",
     "cryptoguard.ml.bench_archive",
+    "cryptoguard.ml.review_sample",
+    "cryptoguard.ml.sample_design",
+    "cryptoguard.ml.annotation",
+    "cryptoguard.ml.agreement",
+    "cryptoguard.ml.review_server",
+    "cryptoguard.ml.unblind",
+    "cryptoguard.ml.benchmark",
 )
 # The pure lookalike predicates live in detectors.poisoning, whose base module imports type
 # definitions from history/services/risk. Persistence and the API are what could create,
