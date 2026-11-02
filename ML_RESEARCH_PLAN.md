@@ -1,7 +1,10 @@
 # ML research plan: wallet-centric poisoning detection (Phase 11.2)
 
 Status: infrastructure done, gates B and D fail (no verified labels), and no model is trained
-for this task. The Tsuchiya et al. payoff cross-check is done (§6). Data model and labels: [ML_POISONING_DATASET.md](ML_POISONING_DATASET.md).
+for this task. The Tsuchiya et al. payoff cross-check (§6) and the attempt-archive
+reconciliation (§7, Phase 11.3) are done; the next experiment is in
+[ML_CROSS_DATASET_VALIDATION.md](ML_CROSS_DATASET_VALIDATION.md) §25. Data model and labels:
+[ML_POISONING_DATASET.md](ML_POISONING_DATASET.md).
 Pilot: [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md). Generated numbers:
 [ML_POISONING_TABLES.md](ML_POISONING_TABLES.md).
 
@@ -90,11 +93,11 @@ at 26 requests each, 10% retries, 4 requests/s.
     archive indexer would provide, replaces bisection.
 - None of this has been run, and none is authorized.
 
-## 5. External data (checked on 2026-11-02; only the Ethereum payoff CSV downloaded)
+## 5. External data (checked on 2026-11-02)
 
 | Source | Verified facts | Fit | Blocker |
 |---|---|---|---|
-| Tsuchiya et al., "Blockchain Address Poisoning", USENIX Security 2025. KiltHub DOI 10.1184/R1/29212703.v1 | Files: `payoff_transfers_ethereum.csv` (482 KB, **downloaded with approval, parsed**: 1,738 token payoffs, no ETH), `payoff_transfers_bsc.csv` (1.33 MB), `address_poisoning_ethereum.sql.gz` (2.32 GB, the attempt table). Licence CC BY-NC-ND 4.0 | Payoffs: independent confirmed losses. The dump: the attempts behind them | NC-ND allows local research use only, with no redistributed derivatives. Each further file needs your approval |
+| Tsuchiya et al., "Blockchain Address Poisoning", USENIX Security 2025. KiltHub DOI 10.1184/R1/29212703.v1 | Files: `payoff_transfers_ethereum.csv` (482 KB, **downloaded with approval, parsed**: 1,738 token payoffs, no ETH), `payoff_transfers_bsc.csv` (1.33 MB), `address_poisoning_ethereum.sql.gz` (2.32 GB, **downloaded with approval, streamed**: 34,905,969 transfers, publisher counts reproduced), README and notebook (downloaded). Licence CC BY-NC-ND 4.0 | Payoffs: independent confirmed losses. The archive: the source-labelled attempts behind them | NC-ND allows local research use only, with no redistributed derivatives. The BSC file is not downloaded |
 | Poison-Hunter (Guan and Li, CCS 2024), `DS2L/Poison-Hunter` | 5 files in the repository, no licence; full data "available on request", with no contact address published | Weak attempt labels | A request is needed; a draft request exists, not sent |
 | RMIT arXiv 2609.23405 | Claims 4,209 victim transfers; its artifact link showed no files | — | Unverified |
 | Forta labelled datasets | MIT; Etherscan phish-hack/exploit/heist labels | Contamination checks only | No poisoning category |
@@ -126,16 +129,23 @@ whenever the file is present.
   - The source's declared affix counts equal `affix_match` on all 1,738 rows.
   - Both CryptoGuard predicates accept all 1,738 lookalikes. The study's 3+4 selection
     implies this, so it is not recall.
-  - 41 amounts are float-encoded beyond exact precision. Only `value_usd` is used.
+  - ~~41 amounts are float-encoded beyond exact precision.~~ Corrected in Phase 11.3
+    (issue 13): the source column is float4, so 1,644 of 1,738 amounts are approximations.
+    Only `value_usd` is used.
 - **Incidents.**
   - Three of the four are after the file's last block.
   - wbtc-1155 is inside the period but was paid in WBTC, and the file has no WBTC payoffs.
   - None appears in the file.
 
-## 7. Next experiment (highest value, 0 RPC requests)
+## 7. Done (Phase 11.3): payoffs turned into reviewable attempt events
 
-**Turn confirmed payoffs into reviewable attempt events using Tsuchiya et al.'s attempt
-table.**
+Approved and run on 2026-11-02 as planned below; results in
+[ML_CROSS_DATASET_VALIDATION.md](ML_CROSS_DATASET_VALIDATION.md):
+- 1,635 of 1,738 payoffs link to an earlier attempt by the same lookalike;
+- 89 of 105 in-definition Poison-Hunter rows match an archive attempt exactly;
+- 1,469 payoff-linked attempt events are exported for review.
+
+Issues 13–20 are in that document's §24. The plan as approved:
 
 - **Needs:**
   - your approval to download `address_poisoning_ethereum.sql.gz` (2.32 GB, CC BY-NC-ND

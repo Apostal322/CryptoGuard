@@ -26,6 +26,25 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Cross-dataset validation of poisoning research data (Phase 11.3)
+- Added a verified, resumable downloader for one approved file at a time
+  (`ml fetch-file`). Resume needs a matching `206`, the file is renamed only after size,
+  MD5, SHA-256 and gzip checks, and a disk reserve is kept. It has no default caller.
+- Added a safe streaming reader for Tsuchiya et al.'s PostgreSQL attempt archive
+  (`ml scan-archive`). It never executes the dump, whitelists statements, checks the schema,
+  bounds line lengths, counts distinct values exactly with bounded memory, and stores only a
+  target subset (renamed only after a complete pass). On the real archive: 34,905,969 rows,
+  0 malformed, all ten publisher counts reproduced, peak RSS 279 MiB.
+- Added the reconciliation (`ml cross-dataset-report`): match levels for Poison-Hunter
+  rows, payoff-to-attempt linkage, separate attempt/victim/address/campaign outcomes,
+  temporal categories, competing-lookalike analysis, decision gates and a local review
+  queue of 1,469 payoff-linked attempts.
+- Fixed: payoff amounts are float4 in the source, so 1,644 of 1,738 are approximations
+  (Phase 11.2 reported 41). Payoffs now carry a stable identity and provenance.
+- Fixed: a killed scan's stale SQLite journal is removed before a rescan.
+- Review packets (v2) carry competing lookalikes and payment evidence.
+- Docs: ML_CROSS_DATASET_VALIDATION.md, ML_CROSS_DATASET_TABLES.md.
+
 ### Wallet-centric poisoning research platform (Phase 11.2)
 - Fixed: the option A pilot lost three wallet recordings because its post-processing read a
   non-existent field (`transactions`, not `wallet_transactions`) inside a broad exception

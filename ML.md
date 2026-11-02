@@ -37,10 +37,18 @@ method and decision log.
   - `ml/candidates.py`: candidate generation and point-in-time event features;
   - `ml/review.py`: label review export and import;
   - `ml/planner.py`: collection cost planning, which never collects;
-  - `ml/poisoning_report.py`: the offline report (`cryptoguard ml poisoning-report`).
+  - `ml/poisoning_report.py`: the offline report (`cryptoguard ml poisoning-report`);
+  - Phase 11.3: `ml/fetch.py` (verified, resumable download of one approved file),
+    `ml/tsuchiya.py` and `ml/tsuchiya_archive.py` (payoff list and streaming attempt-archive
+    parser, never executes SQL), `ml/reconcile.py` and `ml/cross_dataset.py`
+    (`cryptoguard ml scan-archive`, `cryptoguard ml cross-dataset-report`).
 - **Further reading:** [ML_PILOT_AUDIT.md](ML_PILOT_AUDIT.md) covers the pilot
   reconstruction and the data-loss fix. [ML_RESEARCH_PLAN.md](ML_RESEARCH_PLAN.md) has the
   issue register, the collection design and the next experiment.
+  [ML_CROSS_DATASET_VALIDATION.md](ML_CROSS_DATASET_VALIDATION.md) reconciles Poison-Hunter
+  with Tsuchiya et al.'s attempts and payoffs, and records why no supervised benchmark is
+  possible yet. The PTXPhish metrics below belong to the transaction task only and say
+  nothing about poisoning-attempt detection.
 - **Monitoring correction.** PSI reference bins created from now on keep a tied decile in
   its own bin (`closed="left"`). The Phase 11 card's bins use the original binning, under
   which a feature that is mostly one value sits in one bin and its shifts are invisible.

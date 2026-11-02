@@ -150,12 +150,12 @@ ML_RESEARCH_PLAN.md §5.
 
 | Source | What it offers | Blocker |
 |---|---|---|
-| Tsuchiya et al., USENIX Security 2025 (KiltHub DOI 10.1184/R1/29212703.v1) | Ethereum attempts (2.3 GB SQL dump) plus payoff-transfer CSVs (under 2 MB) | Licence CC BY-NC-ND 4.0. The Ethereum payoff CSV is downloaded (§8); every other file needs your approval |
+| Tsuchiya et al., USENIX Security 2025 (KiltHub DOI 10.1184/R1/29212703.v1) | Ethereum attempts (2.3 GB SQL dump) plus payoff-transfer CSVs (under 2 MB) | Licence CC BY-NC-ND 4.0. The Ethereum payoff CSV (§8) and the attempt archive (§9) are downloaded with approval; the BSC file is not |
 | Poison-Hunter full data | Withheld; "contact us", with no address published | Request needed |
 | Forta labelled datasets | MIT, Etherscan-derived address labels | No poisoning category, no loss transactions |
 | Etherscan labels | Underlie Forta and Poison-Hunter ground truth | Terms require written permission for ML or dataset use |
 
-## 8. Tsuchiya et al. payoff transfers (`ml/tsuchiya.py`, `tsuchiya-payoff/1`)
+## 8. Tsuchiya et al. payoff transfers (`ml/tsuchiya.py`, `tsuchiya-payoff/2`)
 
 **Source.**
 - `payoff_transfers_ethereum.csv` from KiltHub DOI 10.1184/R1/29212703.v1, CC BY-NC-ND 4.0.
@@ -171,7 +171,8 @@ ML_RESEARCH_PLAN.md §5.
 - token contract (`addr`);
 - payer, the victim (`topics_from_addr`);
 - recipient, the lookalike (`topics_to_addr`);
-- amount (float-encoded base units, plus USD);
+- amount in base units, printed from a PostgreSQL `real` (float4), plus the source's
+  historical USD valuation;
 - `is_sender_victim` (always `True`);
 - leading and trailing matched digits;
 - the intended address.
@@ -182,7 +183,13 @@ ML_RESEARCH_PLAN.md §5.
 - One row per transaction: 1,502 payers and 1,551 lookalikes.
 - Blocks 16,060,625–20,207,365.
 - Tokens: USDT 1,154, USDC 543, DAI 36, other 5. None are native ETH.
-- 41 amounts cannot be represented exactly as stored, so only `value_usd` is used.
+- Amount precision (corrected in Phase 11.3; Phase 11.2 reported 41 inexact amounts
+  using the float64 limit): float4 is exact only up to 2^24 base units, so 1,644 amounts
+  are approximations and 94 are exact. Each record keeps the verbatim source text, a
+  precision class, and a human amount only for tokens with known decimals (USDT, USDC,
+  DAI). USD values stay the source's valuation and are never recomputed.
+- Identity: `payoff_id` = chain, transaction, token, payer, recipient (the source has no
+  log index); 0 duplicates.
 
 **How it is used.**
 - **As outcome evidence only: a victim paid a lookalike.** It contains no planting
@@ -192,3 +199,18 @@ ML_RESEARCH_PLAN.md §5.
   at least 3 leading and 4 trailing matches, and ends in mid-2024.
 - **Per-event attribution.** A payoff to a different lookalike of the same address (one
   case, line 74) is a loss for the victim, not an outcome of that Poison-Hunter event.
+
+## 9. Tsuchiya et al. attempt archive (`ml/tsuchiya_archive.py`, `tsuchiya-archive/1`)
+
+- `address_poisoning_ethereum.sql.gz`: a PostgreSQL dump of 34,905,969 token transfers
+  (July 2022 to June 2024), each flagged intended, zero-value, tiny, counterfeit, payoff,
+  unconfirmed payoff or uncategorized. It is streamed, never executed; only rows touching a
+  target manifest are kept, in a local SQLite subset.
+- Its categories are the source's heuristic labels. Every poisoning row meets the source's
+  3+4 lookalike rule. They are not loaded as `LabelRecord`s.
+- **Payoff-linked attempts** are the latest archive attempt by the paid lookalike against
+  the victim before the payoff. They become `PoisoningEvent`s only inside review packets
+  (`ml/reconcile.py`, coverage `unavailable`, `candidate_method`
+  `tsuchiya-archive:latest-attempt-before-payoff`). A label comes only from an independent
+  review decision.
+- Full results, format and limitations: ML_CROSS_DATASET_VALIDATION.md.

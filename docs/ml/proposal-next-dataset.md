@@ -9,6 +9,12 @@ ML_GENERALIZATION_AUDIT.md §16–17.
 claims below were corrected: the 0.069 bound (§11.2) is conditional, not a population bound,
 and the CSV header is aligned, not shifted. See ML_PILOT_AUDIT.md and ML_RESEARCH_PLAN.md.
 
+**Phase 11.3 (2026-11-02):** Tsuchiya et al.'s attempt archive was reconciled offline (0 RPC
+requests; ML_CROSS_DATASET_VALIDATION.md). It confirms that the pilot's sample lies mostly
+inside a well-documented attempt population, and it yields 1,469 payoff-linked attempts for
+independent review. It does not change §11, and it supplies no verified negatives. Any
+collection for negatives still needs a new, separately approved RPC cap.
+
 **Pilot verdict: option B as costed here is not viable.** Cost per wallet is about twice the
 §7 estimate, the free endpoint's throughput is about a third of the Phase 11 figure, and no
 positive was confirmed. See §11 before deciding on B, C or stopping.

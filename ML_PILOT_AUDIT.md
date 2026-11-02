@@ -173,3 +173,20 @@ three wallet-days and biased low (busier wallets were excluded).
 - **Effect on the pilot outcomes: none.** Pilot outcomes record only payments the pilot
   observed itself. Line 74 shows that a *victim's* loss and a *given event's* outcome can
   differ: the payment went to a competing lookalike.
+
+## 8. Coverage check against Tsuchiya et al.'s attempt archive (Phase 11.3, 0 RPC requests)
+
+- The archive (34.9 million transfers, July 2022 to June 2024) lists the planting itself
+  (same transaction, victim and lookalike) for:
+  - **27 of the 52 complete-coverage rows**;
+  - **62 of the 97 rows the pilot could not check** (39 not evaluated, 23 unresolved).
+- For those 62 rows the study demonstrably tracked the attempt, and its payoff list
+  confirms no ERC-20 payoff to the row's lookalike. This is stronger than the bare
+  absence reported in §7. It still says nothing about ETH, other tokens or payments after
+  June 2024.
+- The remaining rows are mostly "dust" plantings below the archive's 3+4 lookalike rule.
+  For most of them, the archive shows the same victim targeted by other lookalikes of the
+  same address.
+- The pilot's outcomes and the conditional 0.069 bound are unchanged. Details:
+  ML_CROSS_DATASET_VALIDATION.md §10–12 and §19.
+
