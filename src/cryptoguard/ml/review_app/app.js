@@ -48,6 +48,7 @@ const STATUS_TEXT = {
   unknown_token_legitimacy: ["warn", "Token not on the reviewed list (unknown, not necessarily fake)"],
   unsupported_contract_execution: ["warn", "Contract execution not interpretable offline"],
   insufficient_evidence: ["warn", "No local evidence"],
+  same_block_order_unknown: ["warn", "Other transfers in the same block; their order is unknown"],
 };
 const FACTS = [
   ["wallet", "Wallet"],
@@ -262,10 +263,11 @@ function renderEvidence(box, ev) {
     ev.token_provenance.map((t) => [t.token, t.on_reviewed_token_list ? "yes" : "unknown"])));
   box.append(el("h4", "4. Address relationship"));
   const rel = ev.address_relationship;
-  box.append(el("p", `${rel.earlier_rows_between_wallet_and_address} earlier row(s) between the wallet and this address. ${rel.note}.`));
+  box.append(el("p", `Between the wallet and this address: ${rel.interpretation || rel.earlier_rows_between_wallet_and_address + " earlier row(s)"}. ${rel.note}.`));
   const hist = ev.wallet_history;
   const d = el("details");
-  d.append(el("summary", `5. Wallet history before the cutoff: ${hist.rows_before_cutoff} row(s), showing the last ${hist.shown.length}`));
+  const same = hist.same_block_rows_order_unknown ? `; ${hist.same_block_rows_order_unknown} more in the same block, order unknown (not shown)` : "";
+  d.append(el("summary", `5. Wallet history before the cutoff: ${hist.rows_before_cutoff} row(s), showing the last ${hist.shown.length}${same}`));
   if (hist.shown.length) d.append(table(heads, hist.shown.map(row)));
   box.append(d);
   if (ev.graph_context) {

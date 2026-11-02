@@ -74,6 +74,12 @@ FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
     ),
 }
 FEATURE_GROUPS["combined"] = tuple(c for g in list(FEATURE_GROUPS.values()) for c in g)
+# Value, token and transaction shape separated the source frames almost perfectly (Phase
+# 11.5: value AUC 1.0, shape 0.98-0.99). This ablation drops them.
+SOURCE_PROXIES = FEATURE_GROUPS["transaction_only"]
+FEATURE_GROUPS["combined_without_source_proxies"] = tuple(
+    c for c in FEATURE_GROUPS["combined"] if c not in SOURCE_PROXIES
+)
 
 SPEC: dict[str, Any] = {
     "version": SPEC_VERSION,
@@ -114,7 +120,41 @@ SPEC: dict[str, Any] = {
     "feature_groups": FEATURE_GROUPS,
     "resource_budget": "CPU only, < 2 GB RAM, < 2 minutes per fit (larger needs approval)",
     "no_gnn": "graph context enters as tabular features; no GNN without a new hypothesis",
+    "fairness": [
+        "every method (rules, heuristics, models) scores the same eligible events",
+        "every method sees only information available at the same cutoff",
+        "every method is judged against the same label policy and the same split",
+        "the production rule is replayed on the same recorded histories, never with more "
+        "context than the models",
+    ],
+    "label_provenance": {
+        "positive": "label-policy/1 reviewed_attack (two independent humans, confirmed)",
+        "negative": "label-policy/1 reviewed_legitimate (two independent humans, confirmed, "
+        "positive evidence of a legitimate interpretation)",
+        "unknown": "excluded from the strict benchmark and counted",
+    },
+    "candidate_population": "defined by candidates/2 before any model exists; never by a "
+    "model score",
+    "test_set": "untouched until the model, features, threshold rule and metrics are frozen",
+    "label_count_stages": {
+        "smoke_test": "any labels; software correctness only, never a reported metric",
+        "feature_exploration": ">= 30 per class from >= 5 campaign groups (activation gate)",
+        "hyperparameter_selection": "a validation split disjoint by campaign and later in "
+        "time; >= 30 per class in validation itself",
+        "performance_estimate": "an untouched test split; see ml/power.bound_table for what "
+        "its negatives can bound",
+        "low_fpr_claim": "FPR <= 1% needs about 300+ effectively independent negatives with "
+        "0 false positives (one-sided 95%)",
+        "generalization": "several time periods and many campaigns; not reachable with the "
+        "current cohorts",
+    },
 }
+
+
+def spec_json() -> str:
+    import json
+
+    return json.dumps(SPEC, indent=1, sort_keys=True) + "\n"
 
 
 def forbidden_columns(columns: tuple[str, ...]) -> list[str]:

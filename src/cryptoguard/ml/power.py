@@ -53,3 +53,45 @@ def plan_table(targets: tuple[float, ...] = (0.10, 0.05, 0.01),
                 **{f"negatives_deff_{d}": (math.ceil(n * d) if n else None) for d in deffs},
             })  # fmt: skip
     return rows
+
+
+def _binom_cdf(k: int, n: int, p: float) -> float:
+    return sum(math.comb(n, i) * p**i * (1 - p) ** (n - i) for i in range(k + 1))
+
+
+def clopper_pearson_upper(k: int, n: float, alpha: float = 0.05) -> float:
+    """Exact one-sided (1 - alpha) upper bound for k events in n trials. A non-integer n
+    (an effective sample size) is rounded down, which is conservative."""
+    m = math.floor(n)
+    if m <= 0 or k > m:
+        return 1.0
+    if k == m:
+        return 1.0
+    lo, hi = k / m, 1.0
+    for _ in range(100):  # bisection on P(X <= k | p) = alpha
+        mid = (lo + hi) / 2
+        if _binom_cdf(k, m, mid) > alpha:
+            lo = mid
+        else:
+            hi = mid
+    return hi
+
+
+def bound_table(sizes: tuple[int, ...] = (30, 35, 50, 100, 300, 1000),
+                deffs: tuple[float, ...] = (1.0, 2.0)) -> list[dict[str, Any]]:  # fmt: skip
+    """What n reviewed legitimate events can show about FPR: the upper bound when 0 or 1
+    of them is flagged. One-sided 95% exact (Clopper-Pearson) and two-sided 95% Wilson;
+    clustering divides n by the design effect."""
+    rows = []
+    for n in sizes:
+        for d in deffs:
+            n_eff = n / d
+            rows.append({
+                "negatives": n,
+                "design_effect": d,
+                "effective_n": round(n_eff, 1),
+                "upper_0_flagged_cp_one_sided": round(clopper_pearson_upper(0, n_eff), 4),
+                "upper_1_flagged_cp_one_sided": round(clopper_pearson_upper(1, n_eff), 4),
+                "upper_0_flagged_wilson_two_sided": round((wilson(0.0, n_eff) or (0, 1))[1], 4),
+            })  # fmt: skip
+    return rows

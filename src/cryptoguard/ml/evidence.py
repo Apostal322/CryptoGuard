@@ -34,7 +34,7 @@ from typing import Any, Literal
 
 from cryptoguard.ml.payments import TRUSTED_TOKENS
 
-EVIDENCE_VERSION = "evidence-packets/1"
+EVIDENCE_VERSION = "evidence-packets/2"  # /2: same-block ambiguity, relationship reading
 MAX_HISTORY = 50
 PACKETS = "evidence_packets.jsonl"
 Status = Literal[
@@ -47,6 +47,7 @@ Status = Literal[
     "unknown_token_legitimacy",
     "unsupported_contract_execution",
     "insufficient_evidence",
+    "same_block_order_unknown",
 ]
 ARCHIVE_COLUMNS = "line, block, tx, token, sender, receiver, value"  # never flags or intended
 
@@ -177,6 +178,16 @@ def packet(
         and _before(r, cutoff, position)
     ]
     prior_pair = [r for r in history if addr in (r.sender, r.receiver)]
+    # Same-block rows whose order relative to the candidate is unknown: neither shown as
+    # history nor silently dropped.
+    ambiguous = [
+        r
+        for r in rows
+        if wallet in (r.sender, r.receiver)
+        and r.block == cutoff
+        and r.tx != tx
+        and (position is None or r.order is None)
+    ]
     signers = {r.signer for r in candidate}
     if candidate and None in signers:
         statuses.append("unknown_signer")
@@ -191,6 +202,8 @@ def packet(
         statuses.append("complete_for_declared_scope")
     if source is None:
         statuses.append("insufficient_evidence")
+    if ambiguous:
+        statuses.append("same_block_order_unknown")
 
     def view(r: Row) -> dict[str, Any]:
         return {
@@ -217,6 +230,7 @@ def packet(
         ],
         "address_relationship": {
             "earlier_rows_between_wallet_and_address": len(prior_pair),
+            "interpretation": _relationship(len(prior_pair), source),
             "note": "find the earlier counterparty yourself in the wallet history below; no "
             "similarity is computed here",
         },
@@ -235,6 +249,7 @@ def packet(
         ],
         "wallet_history": {
             "rows_before_cutoff": len(history),
+            "same_block_rows_order_unknown": len(ambiguous),
             "shown": [view(r) for r in history[-max_history:]],
             "window": list(window) if window else None,
         },
@@ -254,6 +269,18 @@ def packet(
             "explanation": _explain(source),
         },
     }
+
+
+def _relationship(n: int, source: str | None) -> str:
+    """What a count of earlier wallet-address rows means under this coverage. Missing
+    history is never read as 'unfamiliar'."""
+    if source is None:
+        return "no wallet history is available locally: familiarity is unknown"
+    if source == "recorded_window":
+        scope = "in the complete recorded window (history before the window is not recorded)"
+    else:
+        scope = "among the rows a research dataset kept (ordinary activity is missing)"
+    return f"{n} earlier row(s) {scope}" if n else f"none {scope}; this is not proof of novelty"
 
 
 def _explain(source: str | None) -> str:

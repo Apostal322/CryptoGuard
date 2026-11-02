@@ -142,3 +142,38 @@ def context_scan(data_dir: Path, out_dir: Path, *, progress: Any = None) -> dict
         source_sha256=source["sha256"],
         progress=progress,
     )
+
+
+REVIEW_CONTEXT_DB = "review_context.sqlite"
+
+
+def review_context_scan(data_dir: Path, sheets: list[Path], out_dir: Path) -> dict[str, Any]:
+    """Phase 11.7 recovery pass: every archive row touching any wallet, address under
+    review or planting transaction of the frozen reviewer sheets. The rows are still only
+    what the source kept (lookalike-related), never a complete wallet history."""
+    from cryptoguard.ml.review_sample import read_sheet
+
+    rows = [r for s in sheets for r in read_sheet(s)]
+    manifest = build_targets(
+        {
+            "review_wallets": {r["wallet"] for r in rows},
+            "review_addresses": {r["address_under_review"] for r in rows},
+            "review_txs": {r["transaction"] for r in rows},
+        }
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    targets_path = out_dir / "review_context_targets.json"
+    atomic_write(targets_path, json.dumps(manifest).encode())
+    archive = data_dir / "tsuchiya2025" / ARCHIVE
+    source = verify_local(TSUCHIYA_FILES[ARCHIVE], archive, gzip_crc=False)
+    work = out_dir / "spill"
+    summary = scan(
+        archive,
+        load_targets(targets_path),
+        out_dir / REVIEW_CONTEXT_DB,
+        work_dir=work,
+        source_sha256=source["sha256"],
+    )
+    if work.exists() and not any(work.iterdir()):
+        work.rmdir()
+    return summary

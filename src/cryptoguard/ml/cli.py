@@ -93,6 +93,15 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     )
     fr.add_argument("--out", type=Path, default=ML_DIR / "poisoning" / "review_sample")
     _add_review_parser(ml)
+    es = ml.add_parser("experiment-spec", help="write the pre-registered experiment spec (JSON)")
+    es.add_argument("--out", type=Path, default=Path("docs/ml/experiment-spec.json"))
+    vr = ml.add_parser("verify-research", help="offline reproducibility check of research inputs")
+    vr.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    vr.add_argument("--out", type=Path, default=ML_DIR / "verify-research.json")
+    vr.add_argument("--skip-archive-hash", action="store_true", help="size check only (fast)")
+    dg = ml.add_parser("diagnostics", help="label-free offline diagnostics (aggregate output)")
+    dg.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    dg.add_argument("--out", type=Path, default=ML_DIR / "diagnostics.json")
     iv = ml.add_parser("inventory", help="hash and describe every local research data file")
     iv.add_argument("--root", type=Path, default=Path("."))
     iv.add_argument("--out", type=Path, default=ML_DIR / "inventory.json")
@@ -155,6 +164,34 @@ def run(args: argparse.Namespace) -> int:
         return _freeze_review_sample(args)
     if args.ml_command == "review":
         return _review(args)
+    if args.ml_command == "experiment-spec":
+        from cryptoguard.ml.experiment_spec import spec_json
+
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(spec_json(), encoding="utf-8", newline="\n")
+        print(f"Wrote {args.out} (inactive until reviewed labels exist).")
+        return 0
+    if args.ml_command == "verify-research":
+        import json
+
+        from cryptoguard.ml.verify_research import verify
+
+        report = verify(args.data_dir, ML_DIR, hash_archive=not args.skip_archive_hash)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
+        for c in report["checks"]:
+            print(f"{c['status']:8} {c['check']}: {c['detail']}")
+        print(f"Wrote {args.out}.")
+        return 0 if not any(c["status"] == "FAIL" for c in report["checks"]) else 1
+    if args.ml_command == "diagnostics":
+        import json
+
+        from cryptoguard.ml.diagnostics import run_diagnostics
+
+        report = run_diagnostics(args.data_dir, ML_DIR / "poisoning")
+        args.out.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
+        print(json.dumps({k: v for k, v in report.items() if k != "notes"}, indent=1)[:4000])
+        return 0
     if args.ml_command == "inventory":
         import json
 

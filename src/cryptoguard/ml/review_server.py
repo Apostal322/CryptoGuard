@@ -185,7 +185,12 @@ def make_handler(app: ReviewApp, port_ref: list[int]) -> type[BaseHTTPRequestHan
 
         def _host_ok(self) -> bool:
             port = port_ref[0]
-            return self.headers.get("Host") in (f"127.0.0.1:{port}", f"localhost:{port}")
+            allowed = (f"127.0.0.1:{port}", f"localhost:{port}")
+            if self.headers.get("Host") not in allowed:
+                return False
+            # A browser names the page that sent a request; only this app's own page may.
+            origin = self.headers.get("Origin")
+            return origin is None or origin in {f"http://{a}" for a in allowed}
 
         def _authorized(self) -> bool:
             token = self.headers.get("X-Review-Token", "")
@@ -214,7 +219,10 @@ def make_handler(app: ReviewApp, port_ref: list[int]) -> type[BaseHTTPRequestHan
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "missing or bad token"})
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 return self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "JSON only"})
-            length = int(self.headers.get("Content-Length") or 0)
+            raw_length = self.headers.get("Content-Length") or "0"
+            if not raw_length.isdigit():  # also refuses negatives, which would read to EOF
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": "bad Content-Length"})
+            length = int(raw_length)
             if length > MAX_BODY:
                 return self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "too large"})
             try:

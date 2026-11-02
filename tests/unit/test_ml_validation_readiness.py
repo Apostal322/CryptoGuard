@@ -104,7 +104,6 @@ def test_future_rows_labels_and_payoffs_never_change_a_packet(tmp_path: Path) ->
     before = build(tmp_path, base_rows(), "a.sqlite")
     rows = [
         *base_rows(),
-        arow(4, 1_000, "0xsameblock", WALLET, STRANGER),  # same block, order unknown
         arow(5, 1_500, "0xpay", WALLET, LOOKALIKE, 5_000.0, flags=16),  # later payoff
         arow(6, 2_000, "0xlater", LOOKALIKE, STRANGER, 0.0, flags=2),
     ]
