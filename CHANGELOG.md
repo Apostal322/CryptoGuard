@@ -26,6 +26,15 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Incident recording, Stage 1 pilot (475 RPC requests of an approved 2,000)
+- The Aug 2026 counterfeit-USDT case was recorded as pre-registered, in
+  `docs/ml/incident-benchmark/cases/`:
+  - **Verified:** the harmful transaction and the planting are confirmed on chain.
+  - **Detector:** it warned 48 blocks before the theft.
+  - **Ranks:** OP1 2.0, OP0 4.0, random 3.5, with 6 warnings.
+- This is descriptive only; no gate is decided. Report:
+  `docs/ml/incident-benchmark/pilot-result.md`.
+
 ### Incident recording, Stage 0 (no RPC requests)
 - **Fixed:** the replay recorders (`replay record`, `sample-background`, `record-background`)
   had no total request cap. They now reserve every attempt, retries included, in the durable

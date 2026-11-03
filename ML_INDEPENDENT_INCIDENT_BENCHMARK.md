@@ -7,7 +7,8 @@
 | Candidate manifest (public identifiers and URLs only) | [`docs/ml/incident-benchmark/candidates.json`](docs/ml/incident-benchmark/candidates.json) |
 | Amendments | [12.2 follow-up audit](docs/ml/amendment-12.2-unconfirmed-audit.md); [frozen-cohort overlap](docs/ml/amendment-12.2-cohort-overlap.md) |
 | Outputs (git-ignored) | `data/ml/research/phase12.3/` |
-| RPC requests / downloads | 0 / none |
+| RPC requests / downloads | 0 / none (Phase 12.3); 475 in the Stage 1 pilot (§28) |
+| Stage 1 pilot result | [`docs/ml/incident-benchmark/pilot-result.md`](docs/ml/incident-benchmark/pilot-result.md) |
 
 ## 1. Executive summary
 
@@ -309,11 +310,37 @@ A missing input fails with a data-availability message. Nothing is fetched.
 - **Contribution:** the first Level I test of warning coverage, lead time, and OP1 against
   OP0, with Gate H decided by the frozen rule.
 
+## 28. Addendum: Stage 1 pilot (2026-11-03)
+
+The Aug 2026 counterfeit-USDT case was recorded exactly as pre-registered. That took
+475 RPC requests of an approved 2,000. Details:
+[`docs/ml/incident-benchmark/pilot-result.md`](docs/ml/incident-benchmark/pilot-result.md).
+
+**The case:**
+- It is now Level I, tier A.
+- Gate C passes for it: the harmful transfer and the planting are both confirmed in the
+  window.
+
+**The detector, on pre-theft data only:**
+- It recovered the theft recipient as a candidate.
+- It warned 48 blocks (576 s) before the theft.
+- The warning was one of 6, all of them lookalikes of the same intended recipient.
+
+**The ranks:**
+- OP1 (recency): expected rank 2.0.
+- OP0: 4.0.
+- Random: 3.5.
+
+**What this changes:** this is one descriptive observation.
+- **Gates G and H:** still not decided. Ten rankable cases are needed.
+- **Gate I:** still FAIL (1 of the 10 required).
+- **Not claimed:** a rate or independent ML validation.
+
 ## Benchmark result table
 
 | Case | Level | Subtype | Outcome status | Mode | Candidate | Warning | Pre-harm | OP0 rank | OP1 rank | Lead | History | Main limitation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| usdt-counterfeit-39890-2026-08-09 | I (pending) | counterfeit token | documented (Bitquery) | not evaluable | unknown | unknown | unknown | — | — | — | none local | needs RPC recording |
+| usdt-counterfeit-39890-2026-08-09 | I | counterfeit token | documented (Bitquery); confirmed on chain (§28) | evaluated | recovered | yes | yes | 4.0 | 2.0 | 48 blocks | 3-day window, planting inside | single source; 3-day history |
 | usdt-700k-2025-04 | — | zero-value | documented (Decrypt) | not evaluable | unknown | unknown | unknown | — | — | — | none local | identifiers incomplete |
 | wbtc-2.38-2025-12-18 | — | unknown | documented (Bitquery) | not evaluable | unknown | unknown | unknown | — | — | — | none local | identifiers incomplete |
 | dea-usdt-55k-2023 | — | airdrop | documented (Forbes, via press) | not evaluable | unknown | unknown | unknown | — | — | — | archive range | no identifiers |
@@ -325,14 +352,14 @@ A missing input fails with a data-availability message. Nothing is fetched.
 
 | Gate | Status | Evidence |
 |---|---|---|
-| A. New evidence | PASS WITH LIMITATIONS | 1 new case with full identifiers; 5 new without |
+| B. Independent provenance | PASS FOR 1 CASE | the new case is independent on all readable sets and, since §28, confirmed on chain |
 | B. Independent provenance | BLOCKED BY DATA | the new case is independent on all readable sets, but unverifiable on chain offline |
-| C. Transaction verification | BLOCKED BY DATA | no local record for the new case; no RPC |
+| C. Transaction verification | PASS FOR 1 CASE | §28: the Stage 1 pilot confirmed harm and planting on chain; the others lack identifiers |
 | D. Point-in-time validity | PASS | implemented and tested (trim, cutoff guard, leakage checks) |
-| E. Candidate availability | NOT EVALUATED | no evaluable real case |
-| F. Operational replay | BLOCKED BY DATA | no admissible recorded stream |
-| G. Warning coverage | NOT EVALUATED | — |
-| H. Ranking usefulness | NOT EVALUATED | H3 withdrawn; 0 rankable admissible cases |
-| I. Statistical support | FAIL | 0 independent cases, against the 10 required |
+| E. Candidate availability | NOT EVALUATED (1 case observed) | §28: theft recipient recovered in 1 of 1 case; no rate from one case |
+| F. Operational replay | PASS FOR 1 CASE | §28: one admissible recorded stream; leakage checks pass |
+| G. Warning coverage | NOT EVALUATED (1 case observed) | §28: warned 48 blocks before the theft in 1 of 1 case |
+| H. Ranking usefulness | NOT EVALUATED | H3 withdrawn; 1 rankable admissible case (§28), against the 10 required |
+| I. Statistical support | FAIL | 1 independent case (§28), against the 10 required |
 | J. Production safety | PASS | no detector, service or risk change; ranker isolated |
 | K. Reproducibility | PASS WITH LIMITATIONS | offline commands; the inputs cannot be redistributed |

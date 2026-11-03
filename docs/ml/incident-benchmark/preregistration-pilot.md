@@ -5,8 +5,8 @@ the case, before its window exists, and before any detector output on it.
 
 **Budget plan:** `docs/ml/incident-recording-budget-plan.md`, Stage 1.
 
-**Status:** Stage 0 is complete, and 0 requests have been made. Stage 1 runs only after you
-explicitly approve its cap.
+**Status:** Stage 1 ran on 2026-11-03 under an approved 2,000 cap. It used 475 requests.
+Result: `pilot-result.md`. This file was not changed before or during the run.
 
 ## 1. The case
 

@@ -1,0 +1,40 @@
+{
+  "case_id": "usdt-counterfeit-39890-2026-08-09",
+  "title": "Counterfeit-USDT poisoning theft, Aug 2026",
+  "category": "address_poisoning",
+  "chain_id": 1,
+  "summary": "Pre-registered Phase 12.3 benchmark case (counterfeit_token); see docs/ml/incident-benchmark/candidates.json.",
+  "first_public_report": "2026-11-03",
+  "public_sources": [
+    {
+      "publisher": "Bitquery",
+      "title": "Counterfeit-USDT poisoning theft, Aug 2026",
+      "url": "https://bitquery.io/investigations/address-poisoning-ethereum",
+      "accessed": "2026-11-03",
+      "used_for": "victim, lookalike, intended recipient, planting and harmful transaction hashes"
+    }
+  ],
+  "victim": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+  "intended_recipient": "0x053DBA7292957341779cB0e9aae1AA7B139aDa3A",
+  "harm": {
+    "transaction_hash": "0x374076fa28ed745227c28f42c5054a0bcd024c51ad7a41c17d52e7c6c24980eb",
+    "block_number": 25718397,
+    "recipient": "0x053dc459bade1baf76AEd6E8630823f8392FDA3A",
+    "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "value_base_units": "39889952535",
+    "description": "The victim's transfer to the lookalike, as located on chain."
+  },
+  "evaluation": {
+    "from_block": 25696797,
+    "to_block": 25718397,
+    "rationale": "The 21,600 blocks (about 3 days) before and including the harmful block: the rule pre-registered before any request, the same as the 4 replay cases."
+  },
+  "onchain_verification": [
+    "Harmful transaction 0x374076fa28ed745227c28f42c5054a0bcd024c51ad7a41c17d52e7c6c24980eb: block 25718397, signed by the victim, 1 Transfer log(s) from the victim to the lookalike (replay locate).",
+    "Planting transaction 0xf84dacfeb3a92ae3291120d954b86d89932fe31702103754cad4f8e8ac41a10d: block 25718349 (replay locate)."
+  ],
+  "ground_truth_limitations": [
+    "One public write-up; the recipient is a lookalike by the source's account and by the located transfer, not by an independent label.",
+    "The recorded window is 3 days; earlier history is not observed."
+  ]
+}

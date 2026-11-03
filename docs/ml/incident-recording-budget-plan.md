@@ -3,7 +3,9 @@
 **Status:**
 - **Stage 0 is complete:** the recorder cap, the pre-registration
   (`incident-benchmark/preregistration-pilot.md`) and the overlap check are all done.
-- **No RPC request** has been made for this plan, and none is authorized by this document. Each stage below needs its own explicit approval of a request cap, and unused
+- **Stage 1 is complete** (2026-11-03): **475 of 2,000 approved requests** used
+  (`incident-benchmark/pilot-result.md`). The other 1,525 do not carry over.
+- **No further request is authorized** by this document. Each stage below needs its own explicit approval of a request cap, and unused
 requests from one approval do not carry over to the next.
 
 **Purpose:** give the Phase 12.3 benchmark its first independently documented (Level I) cases.
