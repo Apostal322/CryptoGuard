@@ -604,3 +604,127 @@ def test_recency_validation_runs_end_to_end_on_synthetic_data(
     bg = report["E14_background"]
     assert bg["windows_warning_set_preserved"] == bg["windows"]
     assert report["resources"]["rpc_requests"] == 0
+
+
+def _add_unconfirmed(d: Path, n: int = 20) -> dict[str, str]:
+    """U population next to a synthetic R directory: victims 0x...1001.., with unconfirmed
+    payoffs. Victim i = 0 also has a confirmed payoff row (excluded), victim i = 1 planted by
+    a frozen item's address under review (excluded), and one Phase 12.1 victim also sent an
+    unconfirmed payoff (excluded). Returns the special addresses."""
+    import hashlib
+    import json
+    import sqlite3
+
+    from cryptoguard.ml import unconfirmed_recency as ur
+    from cryptoguard.ml.tsuchiya_archive import _DDL, PAYOFF_UNCONFIRMED
+
+    out = d / ur.OUT_DIR
+    out.mkdir()
+    rows: list[tuple[Any, ...]] = []
+    line = 10_000_000
+
+    def add(
+        block: int, sender: str, receiver: str, siv: bool, flags: int, intended: str | None
+    ) -> None:
+        nonlocal line
+        line += 1
+        rows.append(
+            (
+                line,
+                block,
+                f"0x{line:064x}",
+                USDT,
+                sender,
+                receiver,
+                int(siv),
+                0.0,
+                0.0,
+                flags,
+                intended,
+                None,
+                None,
+            )
+        )
+
+    special: dict[str, str] = {}
+    for i in range(n):
+        v = f"0x{0x1001 + i:040x}"
+        ref = f"0x{0xBCD000 + i:06x}" + "0" * 30 + f"{i:04x}"
+        good = ref[:8] + "f" * 30 + ref[-4:]
+        rival = ref[:5] + "e" * 33 + ref[-4:]
+        b = 2_000_000 + 10_000 * i
+        add(b, v, ref, True, INTENDED, None)
+        late, early = (good, rival) if i % 2 else (rival, good)
+        add(b + 100, early, v, False, ZERO, ref)
+        add(b + 200, late, v, False, TINY, ref)
+        add(b + 300, v, good, True, PAYOFF_UNCONFIRMED, None)
+        if i == 0:
+            add(b + 50, v, good, True, PAYOFF, None)
+            special["confirmed"] = v
+        if i == 1:
+            special["under_review"] = early
+    r_victim = f"0x{2:040x}"  # a Phase 12.1 victim of _synthetic_dir
+    add(9_000_000, r_victim, "0x" + "7" * 40, True, PAYOFF_UNCONFIRMED, None)
+    con = sqlite3.connect(out / ur.SUBSET)
+    con.executescript(_DDL)
+    con.executemany("insert into transfers values (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    con.commit()
+    con.close()
+    cols = ("line", "block", "tx", "token", "sender", "receiver", "sender_is_victim")
+    unconf = [dict(zip(cols, r[:7], strict=True)) for r in rows if r[9] & PAYOFF_UNCONFIRMED]
+    data = b"".join(json.dumps(r, sort_keys=True).encode() + b"\n" for r in unconf)
+    (out / ur.ROWS).write_bytes(data)
+    (out / ur.SUMMARY).write_text(json.dumps({"rows_sha256": hashlib.sha256(data).hexdigest()}))
+    return special
+
+
+def test_unconfirmed_population_exclusions_and_study(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptoguard.ml import unconfirmed_recency as ur
+
+    d = _synthetic_dir(tmp_path)
+    special = _add_unconfirmed(d)
+    protected = "0x" + f"{1:040x}"
+    monkeypatch.setattr(lr, "protected_wallets", lambda _d: frozenset({protected}))
+    monkeypatch.setattr(
+        lr,
+        "protected_entities",
+        lambda _d: (frozenset({protected, special["under_review"]}), frozenset()),
+    )
+    eps, excluded = ur.load_u_episodes(d)
+    assert excluded == {
+        "has_confirmed_payoff_row": 1,
+        "phase12_1_payoff_victim": 1,
+        "protected_entity_overlap": 1,
+    }
+    assert len(eps) == 18
+    assert special["confirmed"] not in {e.victim for e in eps}
+    report = ur.run(d)
+    assert report["episodes"] == 18
+    assert report["U_H1"]["decision"] in {"survives", "explained_or_null", "inconclusive"}
+    assert report["U_H2"]["decision"] in {
+        "confirmation_implicated",
+        "not_implicated",
+        "inconclusive",
+    }
+    # The paid lookalike planted last in the odd episodes i = 3, 5, ..., 19: 9 of 18.
+    assert report["U_H1"]["T0_top1"] == pytest.approx(9 / 18, abs=1e-4)
+    assert report["UE1_rule_on_U"]["paid_SR_any_passes"]["episodes"] == 18
+    assert report["resources"]["rpc_requests"] == 0
+
+
+@pytest.mark.parametrize(
+    ("diff", "ci", "expected"),
+    [
+        (0.30, [0.20, 0.40], "confirmation_implicated"),
+        (0.02, [-0.05, 0.10], "not_implicated"),
+        (0.15, [0.05, 0.25], "inconclusive"),
+    ],
+)
+def test_unconfirmed_contrast_rule(diff: float, ci: list[float], expected: str) -> None:
+    from cryptoguard.ml import unconfirmed_recency as ur
+
+    assert ur._contrast(diff, ci) == expected
+    assert ur._conclusion("survives", "not_implicated").startswith("the confirmation step does not")
+    assert ur._conclusion("survives", "inconclusive") == "inconclusive"

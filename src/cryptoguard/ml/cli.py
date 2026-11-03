@@ -119,6 +119,16 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     rv.add_argument(
         "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "recency-validation.json"
     )
+    ur = ml.add_parser(
+        "unconfirmed-recency",
+        help="recency on the source's unconfirmed payoffs (two offline archive passes)",
+    )
+    ur.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    ur.add_argument("--extract", action="store_true", help="run pass 1 (unconfirmed rows)")
+    ur.add_argument("--scan", action="store_true", help="run pass 2 (victim-side rows)")
+    ur.add_argument(
+        "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "unconfirmed-recency.json"
+    )
     iv = ml.add_parser("inventory", help="hash and describe every local research data file")
     iv.add_argument("--root", type=Path, default=Path("."))
     iv.add_argument("--out", type=Path, default=ML_DIR / "inventory.json")
@@ -234,6 +244,25 @@ def run(args: argparse.Namespace) -> int:
         for key in ("manipulation_check", "H1_symmetric_confirmation", "H2_production_warnings"):
             print(key, json.dumps(report[key], indent=1))
         print(f"Wrote {args.out} (aggregate only; 0 RPC requests).")
+        return 0
+    if args.ml_command == "unconfirmed-recency":
+        import json
+
+        from cryptoguard.ml import unconfirmed_recency as ur_
+
+        poisoning = ML_DIR / "poisoning"
+        if args.extract:
+            print(json.dumps(ur_.extract(args.data_dir, poisoning), indent=1))
+        if args.scan:
+            summary = ur_.context_scan(args.data_dir, poisoning)
+            print(json.dumps({k: summary[k] for k in ("stored_target_rows", "runtime_seconds")}))
+        if not (args.extract or args.scan):
+            report = ur_.run(poisoning)
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(json.dumps(report, indent=1, default=str) + "\n", encoding="utf-8")
+            for key in ("episodes", "U_H1", "U_H2", "conclusion"):
+                print(key, json.dumps(report[key], indent=1))
+            print(f"Wrote {args.out} (aggregate only; 0 RPC requests).")
         return 0
     if args.ml_command == "inventory":
         import json

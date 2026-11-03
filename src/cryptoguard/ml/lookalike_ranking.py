@@ -141,14 +141,19 @@ def protected_overlap(
     return [g in tainted for g in grp]
 
 
-def episode_from_rows(victim: str, rows: Iterable[Row]) -> Episode | str:
-    """The episode for one victim, or the reason it is ineligible."""
+def episode_from_rows(
+    victim: str, rows: Iterable[Row], *, payoff_flag: int | None = None
+) -> Episode | str:
+    """The episode for one victim, or the reason it is ineligible. ``payoff_flag`` selects
+    which source flag marks the payoff: confirmed (the default) or, for the follow-up
+    population, unconfirmed."""
     from cryptoguard.ml.tsuchiya_archive import PAYOFF, POISONING
 
+    flag = PAYOFF if payoff_flag is None else payoff_flag
     ordered = sorted(set(rows), key=lambda r: (r.block, r.line))
-    payoffs = [r for r in ordered if r.flags & PAYOFF and r.sender == victim]
+    payoffs = [r for r in ordered if r.flags & flag and r.sender == victim]
     if not payoffs:
-        return "no_confirmed_payoff_row"
+        return "no_confirmed_payoff_row" if flag == PAYOFF else "no_payoff_row"
     t = payoffs[0].block
     paid = {r.receiver for r in payoffs if r.block == t}
     if len(paid) != 1:
@@ -164,7 +169,7 @@ def episode_from_rows(victim: str, rows: Iterable[Row]) -> Episode | str:
                 same_block += 1
             else:
                 plantings.append(r)
-        elif r.sender == victim and not r.flags & PAYOFF and r.block < t:
+        elif r.sender == victim and not r.flags & flag and r.block < t:
             out.append(r)
     ep = Episode(victim, t, paid.pop(), tuple(plantings), tuple(out), same_block)
     if ep.paid not in ep.candidates:
