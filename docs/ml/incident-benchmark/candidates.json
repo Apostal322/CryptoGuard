@@ -1,0 +1,137 @@
+{
+ "schema_version": "incident-candidates/1",
+ "protocol": "protocol-12.3/1",
+ "discovery": {
+  "date": "2026-11-03",
+  "searches": 7,
+  "page_reads": 7,
+  "note": "Bounded per protocol 12.3 section 4. Identifiers are quoted verbatim from the cited public source; none is inferred. Truncated or absent identifiers are recorded as such."
+ },
+ "candidates": [
+  {
+   "case_id": "wbtc-1155-poisoning-2024-05-03",
+   "source": {"publisher": "replay fixture manifest (Phase 9)", "url": "src/cryptoguard/replay/cases/wbtc-1155-poisoning-2024-05-03/manifest.json", "date": "2024-05-03"},
+   "chain_id": 1,
+   "mechanism": "zero_value_transfer",
+   "identifiers": {"victim": null, "lookalike": null, "harm_tx": null},
+   "identifier_status": "from_fixture",
+   "fixture_case_id": "wbtc-1155-poisoning-2024-05-03",
+   "synthetic": false
+  },
+  {
+   "case_id": "eth-140-poisoning-2025-08-14",
+   "source": {"publisher": "replay fixture manifest (Phase 9)", "url": "src/cryptoguard/replay/cases/eth-140-poisoning-2025-08-14/manifest.json", "date": "2025-08-15"},
+   "chain_id": 1,
+   "mechanism": "zero_value_transfer",
+   "identifiers": {"victim": null, "lookalike": null, "harm_tx": null},
+   "identifier_status": "from_fixture",
+   "fixture_case_id": "eth-140-poisoning-2025-08-14",
+   "synthetic": false
+  },
+  {
+   "case_id": "usdt-50m-poisoning-2025-12-19",
+   "source": {"publisher": "Bitquery (independent documentation of an existing fixture)", "url": "https://bitquery.io/investigations/address-poisoning-ethereum", "date": "2026"},
+   "chain_id": 1,
+   "mechanism": "zero_value_transfer",
+   "identifiers": {
+    "victim": "0xcb80784ef74c98a89b6ab8d96ebe890859600819",
+    "lookalike": "0xbaff2f13638c04b10f8119760b2d2ae86b08f8b5",
+    "intended": "0xbaf4b1af7e3b560d937da0458514552b6495f8b5",
+    "harm_tx": "0xc0514a795f065fce8a3e1238a1ba480e8a792d45f6431ee4ba8d800bedd86a0f"
+   },
+   "identifier_status": "verbatim",
+   "fixture_case_id": "usdt-50m-poisoning-2025-12-19",
+   "synthetic": false
+  },
+  {
+   "case_id": "eth-4556-poisoning-2026-01-30",
+   "source": {"publisher": "Bitquery (independent documentation of an existing fixture)", "url": "https://bitquery.io/investigations/address-poisoning-ethereum", "date": "2026"},
+   "chain_id": 1,
+   "mechanism": "spoofed_transfer_from",
+   "identifiers": {
+    "victim": "0xd6741220a947941bf290799811fcdcea8ae4a7da",
+    "lookalike": "0x6d9052b2df589de00324127fe2707eb34e592e48",
+    "intended": "0x6d90cc8ce83b6d0acf634ed45d4bcc37eddd2e48",
+    "harm_tx": "0x7facade9d4731a639c4f31e84f5dfef0ddce8d2dc4d8a4399b72cd66817a8ac7"
+   },
+   "identifier_status": "verbatim",
+   "fixture_case_id": "eth-4556-poisoning-2026-01-30",
+   "synthetic": false
+  },
+  {
+   "case_id": "usdt-counterfeit-39890-2026-08-09",
+   "source": {"publisher": "Bitquery", "url": "https://bitquery.io/investigations/address-poisoning-ethereum", "date": "2026"},
+   "chain_id": 1,
+   "mechanism": "counterfeit_token",
+   "identifiers": {
+    "victim": "0xb83f1c98b6d799f8ec56a002f2c0a2c343a0f50e",
+    "lookalike": "0x053dc459bade1baf76aed6e8630823f8392fda3a",
+    "intended": "0x053dba7292957341779cb0e9aae1aa7b139ada3a",
+    "planting_tx": "0xf84dacfeb3a92ae3291120d954b86d89932fe31702103754cad4f8e8ac41a10d",
+    "harm_tx": "0x374076fa28ed745227c28f42c5054a0bcd024c51ad7a41c17d52e7c6c24980eb"
+   },
+   "identifier_status": "verbatim",
+   "fixture_case_id": null,
+   "synthetic": false
+  },
+  {
+   "case_id": "usdt-700k-2025-04",
+   "source": {"publisher": "Decrypt (citing PeckShield, Cyvers, AMLBot, Bubblemaps)", "url": "https://decrypt.co/316412/crypto-user-loses-700000-to-address-poisoning-scam-heres-what-happened", "date": "2025-04-25"},
+   "chain_id": 1,
+   "mechanism": "zero_value_transfer",
+   "identifiers": {
+    "victim": null,
+    "lookalike": null,
+    "planting_tx": "0x30714a52580828b27d69a711601c637c1e93b06414aed782272d73186b2c1919",
+    "harm_tx": "0xa80805c97f5008637c4706b03316f61429ca3243f84b1124630d32a9540915df"
+   },
+   "identifier_status": "partial: victim and lookalike not given (derivable only from chain data)",
+   "fixture_case_id": null,
+   "synthetic": false
+  },
+  {
+   "case_id": "wbtc-2.38-2025-12-18",
+   "source": {"publisher": "Bitquery", "url": "https://bitquery.io/investigations/address-poisoning-ethereum", "date": "2026"},
+   "chain_id": 1,
+   "mechanism": "unknown",
+   "identifiers": {"victim": null, "lookalike": null, "harm_tx": "0xfda53b40c3b3ed13dbacc0df8f81141f6dde7c86164a013ae7ef24d883554a11"},
+   "identifier_status": "partial: victim not named; lookalike truncated (0x65f3...773c)",
+   "fixture_case_id": null,
+   "synthetic": false
+  },
+  {
+   "case_id": "dea-usdt-55k-2023",
+   "source": {"publisher": "Cointelegraph / The Block (citing Forbes and an FBI search warrant)", "url": "https://cointelegraph.com/news/dea-loses-tether-in-address-poisoning-scam", "date": "2023-08-25"},
+   "chain_id": 1,
+   "mechanism": "token_airdrop",
+   "identifiers": {"victim": null, "lookalike": null, "harm_tx": null},
+   "identifier_status": "absent",
+   "fixture_case_id": null,
+   "synthetic": false
+  },
+  {
+   "case_id": "usdt-100k-2026-08",
+   "source": {"publisher": "crypto.news (citing a Cyvers alert on X)", "url": "https://crypto.news/address-poisoning-attack-drains-100k-dollars-usdt/", "date": "2026-08-11"},
+   "chain_id": null,
+   "mechanism": "unknown",
+   "identifiers": {"victim": null, "lookalike": null, "harm_tx": null},
+   "identifier_status": "absent",
+   "fixture_case_id": null,
+   "synthetic": false
+  },
+  {
+   "case_id": "usdt-50k-2026-10",
+   "source": {"publisher": "crypto.news (citing a Scam Sniffer post on X)", "url": "https://crypto.news/address-poisoning-user-loss-50000/", "date": "2026-10-28"},
+   "chain_id": 1,
+   "mechanism": "unknown",
+   "identifiers": {"victim": null, "lookalike": null, "harm_tx": null},
+   "identifier_status": "absent",
+   "fixture_case_id": null,
+   "synthetic": false
+  }
+ ],
+ "not_usable_sources": [
+  {"source": "Guan and Li, CCS 2024 (Poison-Hunter), https://par.nsf.gov/servlets/purl/10580433", "reason": "PDF text not extractable without installing tooling (not approved); Poison-Hunter source family, Level II at best"},
+  {"source": "Webacy, $25K USDC poisoning", "reason": "Base, not Ethereum mainnet"}
+ ]
+}

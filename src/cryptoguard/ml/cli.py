@@ -129,6 +129,14 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ur.add_argument(
         "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "unconfirmed-recency.json"
     )
+    ib = ml.add_parser(
+        "incident-benchmark", help="Phase 12.3 independent incident benchmark (offline)"
+    )
+    ib.add_argument("step", choices=("verify", "run", "report"))
+    ib.add_argument(
+        "--manifest", type=Path, default=Path("docs/ml/incident-benchmark/candidates.json")
+    )
+    ib.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.3")
     iv = ml.add_parser("inventory", help="hash and describe every local research data file")
     iv.add_argument("--root", type=Path, default=Path("."))
     iv.add_argument("--out", type=Path, default=ML_DIR / "inventory.json")
@@ -263,6 +271,35 @@ def run(args: argparse.Namespace) -> int:
             for key in ("episodes", "U_H1", "U_H2", "conclusion"):
                 print(key, json.dumps(report[key], indent=1))
             print(f"Wrote {args.out} (aggregate only; 0 RPC requests).")
+        return 0
+    if args.ml_command == "incident-benchmark":
+        import json
+
+        from cryptoguard.ml import incident_benchmark as ib_
+
+        args.out.mkdir(parents=True, exist_ok=True)
+        verified_path = args.out / "incident-verify.json"
+        run_path = args.out / "incident-benchmark.json"
+        if args.step == "verify":
+            rows = ib_.verify(ib_.load_manifest(args.manifest), ML_DIR / "poisoning")
+            verified_path.write_text(json.dumps(rows, indent=1) + "\n", encoding="utf-8")
+            for r in rows:
+                print(f"{r['case_id']:40} {r['tier']:18} {r['status']}")
+        elif args.step == "run":
+            result = ib_.run()
+            run_path.write_text(json.dumps(result, indent=1, default=str) + "\n", encoding="utf-8")
+            print(json.dumps(result["summary_level_III"], indent=1))
+        else:
+            for p in (verified_path, run_path):
+                if not p.exists():
+                    print(f"{p} is missing: run the verify and run steps first.")
+                    return 1
+            md = ib_.report(
+                json.loads(verified_path.read_text(encoding="utf-8")),
+                json.loads(run_path.read_text(encoding="utf-8")),
+            )
+            (args.out / "incident-benchmark.md").write_text(md, encoding="utf-8")
+            print(md)
         return 0
     if args.ml_command == "inventory":
         import json
