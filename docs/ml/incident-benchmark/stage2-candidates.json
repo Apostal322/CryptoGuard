@@ -1,0 +1,106 @@
+{
+  "schema_version": "incident-candidates/1",
+  "protocol": "protocol-12.3/1 (discovery rules of section 4, applied to Stage 2 discovery)",
+  "discovery": {
+    "date": "2026-11-03",
+    "searches": 8,
+    "page_reads": 12,
+    "note": "Bounded by protocol 12.3 section 4: at most 8 searches and 15 page reads; 3 page reads unused. Identifiers are copied verbatim from the cited page. Truncated identifiers are stored as null, with the visible characters in identifier_status. A role is never assigned unless the page states it. No RPC request, explorer query or paid API was used."
+  },
+  "candidates": [
+    {
+      "case_id": "scamsniffer-763k-2025-02-20",
+      "source": {
+        "publisher": "ForkLog (citing Scam Sniffer, X post of 2025-02-26)",
+        "url": "https://forklog.com/en/user-loses-over-760000-due-to-address-poisoning/",
+        "date": "2025-02-26"
+      },
+      "chain_id": 1,
+      "mechanism": "unknown",
+      "identifiers": {
+        "etherscan_filter_fadd": "0xf6b1539cc562c0ca5151825488eb8c3cdaf2b6e4",
+        "etherscan_filter_tadd": "0x804051b0cbc20443943c4f363573ef9bb7793375"
+      },
+      "identifier_status": "partial: two full addresses, taken from an Etherscan advanced-filter link (fadd, tadd); the page does not state which is the victim or the lookalike; no transaction hash; token not stated",
+      "fixture_case_id": null,
+      "synthetic": false
+    },
+    {
+      "case_id": "pink-drainer-10eth-2024-06-27",
+      "source": {
+        "publisher": "ForkLog (citing MistTrack, X post of 2024-07-07)",
+        "url": "https://forklog.com/en/pink-drainer-hackers-fall-victim-to-address-poisoning-scam/",
+        "date": "2024-07-08"
+      },
+      "chain_id": 1,
+      "mechanism": "unknown",
+      "identifiers": {
+        "victim": "0x8980ab6d185af9bcc10292d4e91ae4c0b4f14213",
+        "intended": "0xeff0e5244d5c78ba4dd6bc01082576280558f58a",
+        "lookalike": null
+      },
+      "identifier_status": "partial: victim and intended recipient given in full; lookalike not given in full; no transaction hash; 10 ETH (native)",
+      "fixture_case_id": null,
+      "synthetic": false
+    },
+    {
+      "case_id": "webacy-6.88m-usdt-2025-09",
+      "source": {
+        "publisher": "Webacy (From the CTO's Desk, September 2025)",
+        "url": "https://www.webacy.com/blog/from-the-ctos-desk-september-2025",
+        "date": "2025-09 (month of the report; no exact publication date read)"
+      },
+      "chain_id": 1,
+      "mechanism": "unknown",
+      "identifiers": {
+        "victim": "0xee7ada00c9e5f654c8f8ea0f355a1f3c50942732",
+        "lookalike": null
+      },
+      "identifier_status": "partial: victim given in full; four scam addresses given only as prefixes (0x418e0ddb..., 0x4186a058..., 0x4186a666..., 0x4186b115...); no transaction hash; about 6,880,000 USDT over 15 and 18 Sep 2025",
+      "fixture_case_id": null,
+      "synthetic": false
+    }
+  ],
+  "not_usable_sources": [
+    {
+      "case": "Cyvers, 2.6M USDT (843k + 1.75M), 2025-05-26",
+      "url": "https://forklog.com/en/crypto-investor-loses-2-6-million-in-zero-transfer-scam/",
+      "reason": "no identifiers; chain not stated; primary source is a social-media alert"
+    },
+    {
+      "case": "Cyvers, about 100k USDT, 2026-08",
+      "url": "https://www.chaincatcher.com/en/article/2282116",
+      "reason": "no identifiers; chain not stated (already listed as usdt-100k-2026-08)"
+    },
+    {
+      "case": "Cyvers, 509k USDT, 2026-01, and 600k USDT, 2026-02",
+      "url": "https://www.chaincatcher.com/en/article/2282116",
+      "reason": "search summary only; no identifiers; social-media primary source"
+    },
+    {
+      "case": "Tether freeze, 20M, 2023-08-01",
+      "url": "https://www.web3isgoinggreat.com/single/20m-zero-transfer-attack",
+      "reason": "no identifiers; inside the Tsuchiya archive range"
+    },
+    {
+      "case": "Address-poisoning wave, about 1.6M, 2025-08",
+      "url": "https://cointelegraph.com/news/1-6m-lost-wave-crypto-address-poisonings-this-week",
+      "reason": "no identifiers; the 140 ETH case is the existing fixture eth-140-poisoning-2025-08-14"
+    },
+    {
+      "case": "ETH variant with real ETH, 47.6k victim, 2024-02",
+      "url": "https://crypto.news/scammers-target-victims-with-real-crypto-in-new-address-poisoning-attack/",
+      "reason": "no identifiers; social-media primary source"
+    },
+    {
+      "case": "50M USDT, 2025-12-20 (several outlets)",
+      "url": "https://cointelegraph.com/news/address-poisoning-copy-paste-mistake-50m-usdt-loss",
+      "reason": "duplicate of the existing fixture usdt-50m-poisoning-2025-12-19 (frozen Cohort B overlap)"
+    },
+    {
+      "case": "Guan and Li, CCS 2024 (Poison-Hunter) case studies",
+      "url": "https://par.nsf.gov/servlets/purl/10580433",
+      "reason": "addresses deliberately shortened by the authors; data already a reference set"
+    }
+  ]
+}

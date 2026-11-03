@@ -86,7 +86,7 @@ ledger. No process was stopped or changed.
 | Theft recipient recovered as a candidate | yes (`spoofed_out`) |
 | Warned at the cutoff | yes, `elevated_risk` |
 | Outcome, ERC-20 only and full visibility | early warning in both |
-| Lead time | **48 blocks (576 s, about 10 min)**, first warning at the planting block |
+| Lead time | **48 blocks, 576 s (9 min 36 s), measured** from recorded block-header timestamps (15:34:23Z to 15:43:59Z). The first warning is at the planting block. |
 | Warnings at the cutoff (k) | 6 |
 | OP0 (severity, then similarity) expected rank | 4.0 |
 | OP1 (frozen recency) expected rank | **2.0** |
@@ -116,8 +116,9 @@ address.
 - OP1 placed that recipient above OP0's expected position and above random.
 
 **Not shown:**
-- **No ranking gate.** Gate H needs at least 10 rankable cases, and an exact sign test needs at least 6 untied cases.
+- **No reliable ranking result.** Gate H needs at least 10 rankable cases for a PASS, and an exact sign test needs at least 6 untied cases.
   This is 1 case, so OP1 "better" here is a single observation, not evidence of superiority.
+  - **Correction:** §10 of the frozen protocol labels this outcome PASS WITH LIMITATIONS at Level I, and Gate G is the exact count 1 of 1. See `stage2-shortlist.md` §1 and §7, which also proposes closing this loophole.
 - **No rates.** There is no detection rate, precision, recall or false-positive rate.
 - **Not independent ML validation.** OP1 is a frozen ranking rule. It was not trained or tuned here, and nothing was tuned on this outcome.
 - **No claim on warning burden.** The 6 background windows from Phase 12.3 hold 0 warnings. They are other wallets at other dates and are not a control for this one.

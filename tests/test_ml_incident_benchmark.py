@@ -341,3 +341,35 @@ def test_levels_are_summarised_separately() -> None:
     assert r["summary_level_I"]["tier_A_cases"] == 1
     assert r["summary_level_I"]["OP1_vs_OP0"] == {"better": 1, "equal": 0, "worse": 0}
     assert r["summary_level_III"]["tier_A_cases"] == 0
+
+
+PILOT = "usdt-counterfeit-39890-2026-08-09"
+
+
+def test_stage_1_pilot_case_is_frozen_and_reproduces_exactly() -> None:
+    """The first Level I case is a frozen benchmark input: its recorded data and its result
+    may not change silently (a detector or ranker change that moves it must be disclosed)."""
+    import hashlib
+
+    [case] = [c for c in ib.load_new_cases() if c.manifest.case_id == PILOT]
+    assert case.fixture_sha256 == (
+        "62b3744c496cca63bdef6e34e8881718f9f9a125cb14c6c8af7656255f0573b8"
+    )
+    assert hashlib.sha256(case.manifest.model_dump_json().encode()).hexdigest() == (
+        "ef903fbbcd94837188a6624310eef8f6eda9abcee7d5fc4baa43362d45095e39"
+    )
+    row = ib.run_case(case, level="I")
+    primary = row["ranking"]["primary"]
+    full = row["visibilities"]["erc20_plus_wallet_transactions"]
+    assert row["candidates"]["target_recovered"]
+    assert row["leakage_checks_passed"]
+    assert (full["outcome"], full["lead_time_blocks"], full["lead_time_seconds"]) == (
+        "early_warning",
+        48,
+        576,
+    )
+    assert (primary["k"], primary["OP0_expected_rank"], primary["OP1_expected_rank"]) == (
+        6,
+        4.0,
+        2.0,
+    )

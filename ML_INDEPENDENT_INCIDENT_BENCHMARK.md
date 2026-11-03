@@ -332,8 +332,15 @@ The Aug 2026 counterfeit-USDT case was recorded exactly as pre-registered. That 
 - Random: 3.5.
 
 **What this changes:** this is one descriptive observation.
-- **Gates G and H:** still not decided. Ten rankable cases are needed.
-- **Gate I:** still FAIL (1 of the 10 required).
+- **Gate labels under §10 of the frozen protocol:**
+  - Gate G is reported as an exact count: 1 of 1 warned before the harm.
+  - Gate H at Level I is **PASS WITH LIMITATIONS**: fewer than 10 cases, OP1 never worse and
+    better in 1.
+  - The phase classification becomes a **limited external case-study result**.
+- **Correction (2026-11-03, Stage 2 preparation):** this section first said that Gates G and H
+  were "not decided". That misapplied §10, and both labels are corrected above.
+- **The labels are weak evidence.** The pilot pre-registration's statement that one case decides nothing still stands, and Gate I is still FAIL (1 of the 10 required). `docs/ml/incident-benchmark/stage2-shortlist.md` §7 proposes reporting
+  fewer than 6 untied cases as DESCRIPTIVE, never PASS.
 - **Not claimed:** a rate or independent ML validation.
 
 ## Benchmark result table
@@ -356,10 +363,10 @@ The Aug 2026 counterfeit-USDT case was recorded exactly as pre-registered. That 
 | B. Independent provenance | BLOCKED BY DATA | the new case is independent on all readable sets, but unverifiable on chain offline |
 | C. Transaction verification | PASS FOR 1 CASE | §28: the Stage 1 pilot confirmed harm and planting on chain; the others lack identifiers |
 | D. Point-in-time validity | PASS | implemented and tested (trim, cutoff guard, leakage checks) |
-| E. Candidate availability | NOT EVALUATED (1 case observed) | §28: theft recipient recovered in 1 of 1 case; no rate from one case |
+| E. Candidate availability | 1 of 1 (exact count) | §28: theft recipient recovered in 1 of 1 Level I case; no rate from one case |
 | F. Operational replay | PASS FOR 1 CASE | §28: one admissible recorded stream; leakage checks pass |
-| G. Warning coverage | NOT EVALUATED (1 case observed) | §28: warned 48 blocks before the theft in 1 of 1 case |
-| H. Ranking usefulness | NOT EVALUATED | H3 withdrawn; 1 rankable admissible case (§28), against the 10 required |
+| G. Warning coverage | 1 of 1 (exact count, per §10) | §28: warned 48 blocks (576 s, measured) before the theft in 1 of 1 Level I case |
+| H. Ranking usefulness | PASS WITH LIMITATIONS (Level I, n = 1) | §28: OP1 better in 1, worse in 0; the §10 rule allows this label below 10 cases; descriptive only. H3 withdrawn. |
 | I. Statistical support | FAIL | 1 independent case (§28), against the 10 required |
 | J. Production safety | PASS | no detector, service or risk change; ranker isolated |
 | K. Reproducibility | PASS WITH LIMITATIONS | offline commands; the inputs cannot be redistributed |

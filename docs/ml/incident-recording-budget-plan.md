@@ -5,6 +5,9 @@
   (`incident-benchmark/preregistration-pilot.md`) and the overlap check are all done.
 - **Stage 1 is complete** (2026-11-03): **475 of 2,000 approved requests** used
   (`incident-benchmark/pilot-result.md`). The other 1,525 do not carry over.
+- **Stage 2 preparation** (0 requests): `incident-benchmark/stage2-shortlist.md`. Public
+  discovery found no fully eligible new case. It proposes Stage 2a (2 public cases, cap
+  5,840) and Stage 2b (user-sourced, cap 14,000), plus a protocol amendment.
 - **No further request is authorized** by this document. Each stage below needs its own explicit approval of a request cap, and unused
 requests from one approval do not carry over to the next.
 

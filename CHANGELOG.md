@@ -26,6 +26,17 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Incident recording, Stage 2 preparation (no RPC requests)
+- **Stage 1 audit:**
+  - CI passed for `0aa1892`;
+  - the lead time is measured from header timestamps (576 s);
+  - the pilot case is frozen by a hash-and-result regression test;
+  - the Gate G and Gate H labels are corrected to the frozen §10 rule.
+- **Bounded public discovery** (8 searches, 12 reads) and an offline deduplication:
+  - no fully eligible new case;
+  - 3 near-misses are assessed in `docs/ml/incident-benchmark/stage2-candidates.json`.
+- **Shortlist, budget and statistical review:** `docs/ml/incident-benchmark/stage2-shortlist.md`.
+
 ### Incident recording, Stage 1 pilot (475 RPC requests of an approved 2,000)
 - The Aug 2026 counterfeit-USDT case was recorded as pre-registered, in
   `docs/ml/incident-benchmark/cases/`:
