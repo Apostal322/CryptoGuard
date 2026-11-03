@@ -284,6 +284,15 @@ so they are not independent validation.
   removes or re-tiers a warning.
 - **Details:** [ML_RECENCY_VALIDATION.md](ML_RECENCY_VALIDATION.md).
 
+## Phase 12.3: independent incident benchmark (research only)
+
+- **Delivered:** an offline incident benchmark (`ml incident-benchmark`).
+- **Not yet answered:** no independently documented incident can be evaluated without an
+  approved RPC recording.
+- **Withdrawn:** the 4 recorded incidents hold frozen review items, so Phase 12.2's
+  incident result is withdrawn.
+- **Details:** [ML_INDEPENDENT_INCIDENT_BENCHMARK.md](ML_INDEPENDENT_INCIDENT_BENCHMARK.md).
+
 ## Limitations
 
 - One labelled source, with a benign class of prominent accounts; precision on real traffic

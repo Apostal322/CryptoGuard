@@ -26,6 +26,18 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Independent incident benchmark (Phase 12.3)
+- **New command:** `cryptoguard ml incident-benchmark verify / run / report`. It runs
+  offline and is bound to a protocol:
+  - a provenance, tier and overlap audit of discovered incidents;
+  - tier A replay with candidates, warnings, both orderings, lead time and perturbations.
+  The result is data-limited: no Level I or II case is evaluable without RPC.
+- **Fixed:** recorded replay windows holding frozen Cohort B items were used by Phase 12.1
+  availability and by Phase 12.2's H3 and E14. Those results are withdrawn, and the
+  exclusion is now enforced everywhere. See docs/ml/amendment-12.2-cohort-overlap.md.
+- **Audit of the 12.2 follow-up:** the attrition is a complete partition, and the exact
+  p-value is 0.0625. See docs/ml/amendment-12.2-unconfirmed-audit.md.
+
 ### Recency validation and experimental warning ordering (Phase 12.2)
 - **Follow-up** `cryptoguard ml unconfirmed-recency`: two offline passes, then a
   pre-registered test on the source's 13,683 unconfirmed payoffs. The result is

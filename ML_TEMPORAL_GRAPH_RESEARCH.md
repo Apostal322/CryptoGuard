@@ -15,6 +15,12 @@ theft-prevention effect, and every number below is an aggregate.
 | RPC requests | 0. No downloads. Nothing paid. |
 | Production detector | unchanged; nothing here is wired into it |
 
+**Amendment (2026-11-03,
+[`docs/ml/amendment-12.2-cohort-overlap.md`](docs/ml/amendment-12.2-cohort-overlap.md)).**
+- **Affected:** the P2 and P3 availability counts in §21 included recorded windows that
+  hold frozen Cohort B items. Future re-runs exclude those windows.
+- **Not affected:** no confirmatory result.
+
 ## 1. Summary
 
 The task: rank the k ≥ 2 lookalikes that had planted transfers to a victim, at the block

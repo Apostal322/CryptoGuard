@@ -242,3 +242,18 @@ budget.
 - Details: ML_RECENCY_VALIDATION.md §25a.
 - **Next:** newly recorded incidents. They need an approved RPC budget.
 
+## 10. Done (Phase 12.3): independent incident benchmark (data-limited)
+
+The study is pre-registered in `docs/ml/protocol-12.3.md` (`f0e4dc1`). Results are in
+[ML_INDEPENDENT_INCIDENT_BENCHMARK.md](ML_INDEPENDENT_INCIDENT_BENCHMARK.md).
+
+- **Discovery:** 10 candidate incidents. Only one new case has complete identifiers, and it
+  happened after the local archive ends, so it needs an RPC recording.
+- **Overlap audit:** the 4 recorded incident windows hold frozen Cohort B items. Phase
+  12.2's H3 and E14 are withdrawn
+  ([amendment](docs/ml/amendment-12.2-cohort-overlap.md)), and the exclusion is now enforced
+  in code.
+- **Delivered:** an offline benchmark (`ml incident-benchmark`).
+- **Next:** an approved, capped RPC budget to record about 10 new incident windows. That is
+  about 7,000–14,000 requests, measured.
+

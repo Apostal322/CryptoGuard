@@ -9,6 +9,14 @@
 | RPC requests / downloads | 0 / none |
 | Production detector | unchanged; nothing is wired into it |
 
+**Amendment (2026-11-03,
+[`docs/ml/amendment-12.2-cohort-overlap.md`](docs/ml/amendment-12.2-cohort-overlap.md)).**
+- **Withdrawn:** H3 (the recorded incidents) and E14 (background windows). Their recorded
+  windows hold frozen Cohort B items, and those items appeared among the competing warnings.
+  "3 of 3 rankable incidents" is withdrawn, and E14 reduces to 6 windows with 0 warnings.
+- **Unchanged:** every archive result (H1, H2, E1–E13), confirmed by a corrected re-run.
+- **Below:** the original text is kept as written.
+
 **Scope.** This phase re-examines the archive episodes whose outcomes Phase 12.1 already
 saw. Every archive result below is therefore a **retrospective internal sensitivity
 analysis, not independent validation**. "Top-1" means the paid lookalike ranked first among
