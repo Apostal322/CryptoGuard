@@ -286,7 +286,15 @@ def run(args: argparse.Namespace) -> int:
             for r in rows:
                 print(f"{r['case_id']:40} {r['tier']:18} {r['status']}")
         elif args.step == "run":
-            result = ib_.run()
+            from cryptoguard.ml import lookalike_ranking
+
+            if not verified_path.exists():
+                print(f"{verified_path} is missing: run the verify step first.")
+                return 1
+            result = ib_.run(
+                json.loads(verified_path.read_text(encoding="utf-8")),
+                lookalike_ranking.protected_entities(ML_DIR / "poisoning"),
+            )
             run_path.write_text(json.dumps(result, indent=1, default=str) + "\n", encoding="utf-8")
             print(json.dumps(result["summary_level_III"], indent=1))
         else:

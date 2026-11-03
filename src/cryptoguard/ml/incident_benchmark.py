@@ -412,14 +412,34 @@ def run_case(case: Any) -> dict[str, Any]:
     return out
 
 
-def run(cases: Sequence[Any] | None = None) -> dict[str, Any]:
-    from cryptoguard.ml.recency_validation import background
+def run(
+    verified: Sequence[Mapping[str, Any]],
+    blind: tuple[frozenset[str], frozenset[str]],
+    cases: Sequence[Any] | None = None,
+) -> dict[str, Any]:
+    """Tier A replay of the cases ``verify`` admitted. A case it excluded, or one whose
+    recorded window holds a frozen review item, is never computed."""
+    from cryptoguard.ml.recency_validation import background, touches_frozen
     from cryptoguard.ml.tsuchiya_archive import peak_rss_bytes
     from cryptoguard.replay.models import load_cases
 
     t = time.perf_counter()
     cases = load_cases() if cases is None else cases
-    tier_a = [c for c in cases if c.fixture is not None and c.fixture.transfer_scan_complete]
+    admitted = {v["case_id"] for v in verified if v["tier"] == "A"}
+    by_fixture = {v["case_id"]: v for v in verified}
+    skipped: list[dict[str, str]] = []
+    tier_a = []
+    for c in cases:
+        if c.fixture is None or not c.fixture.transfer_scan_complete:
+            continue
+        cid = c.manifest.case_id
+        if cid not in admitted:
+            status = by_fixture.get(cid, {}).get("status", "not in the verified manifest")
+            skipped.append({"case_id": cid, "reason": status})
+        elif touches_frozen(c.fixture, blind):
+            skipped.append({"case_id": cid, "reason": "recorded window holds a frozen review item"})
+        else:
+            tier_a.append(c)
     results = [run_case(c) for c in tier_a]
     rankable = [
         r
@@ -440,6 +460,7 @@ def run(cases: Sequence[Any] | None = None) -> dict[str, Any]:
             "III (existing replay incidents); no Level I or II case is evaluable offline"
         ),
         "cases": results,
+        "not_computed": skipped,
         "summary_level_III": {
             "tier_A_cases": len(results),
             "target_recovered_as_candidate": sum(
@@ -457,7 +478,7 @@ def run(cases: Sequence[Any] | None = None) -> dict[str, Any]:
             "OP0_top1_cases": sum(r["ranking"]["primary"]["OP0_top1"] == 1.0 for r in rankable),
             "OP1_top1_cases": sum(r["ranking"]["primary"]["OP1_top1"] == 1.0 for r in rankable),
         },
-        "background_alert_burden": background(),
+        "background_alert_burden": background(blind),
         "resources": {
             "seconds": round(time.perf_counter() - t, 2),
             "peak_rss_mib": None if peak is None else round(peak / 2**20, 1),

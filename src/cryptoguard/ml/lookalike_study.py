@@ -246,9 +246,11 @@ def coverage(poisoning_dir: Path, protected: frozenset[str]) -> dict[str, Any]:
 # --- P2 and P3 ------------------------------------------------------------------------------
 
 
-def availability() -> dict[str, Any]:
-    """Which ranking features a production-like recording can compute (P2, P3)."""
+def availability(blind: tuple[frozenset[str], frozenset[str]]) -> dict[str, Any]:
+    """Which ranking features a production-like recording can compute (P2, P3). Windows
+    holding a frozen review item are skipped (amendment 12.2-cohort-overlap)."""
     from cryptoguard.ml import candidates as cand
+    from cryptoguard.ml.recency_validation import touches_frozen
     from cryptoguard.replay.background import load_background
     from cryptoguard.replay.models import load_cases
 
@@ -257,6 +259,8 @@ def availability() -> dict[str, Any]:
         ("P2_background", [b.fixture for b in load_background() if b.fixture]),
         ("P3_incidents", [c.fixture for c in load_cases() if c.fixture]),
     ):
+        skipped = sum(touches_frozen(fx, blind) for fx in fixtures)
+        fixtures = [fx for fx in fixtures if not touches_frozen(fx, blind)]
         n = with_ref = multi = 0
         per_wallet: list[int] = []
         t0 = time.perf_counter()
@@ -269,6 +273,7 @@ def availability() -> dict[str, Any]:
             multi += len(looks) >= 2
         out[label] = {
             "windows": len(fixtures),
+            "windows_excluded_frozen_cohort": skipped,
             "candidates": n,
             "candidates_with_reference": with_ref,
             "windows_with_2plus_lookalikes": multi,
@@ -752,7 +757,7 @@ def run(poisoning_dir: Path, *, lazy_graph: bool = False) -> dict[str, Any]:
 
     report["recency_gap_posthoc"] = recency_gap_diagnostic(episodes)
     report["coverage_task1"] = coverage(poisoning_dir, lr.protected_wallets(poisoning_dir))
-    report["availability"] = availability()
+    report["availability"] = availability(lr.protected_entities(poisoning_dir))
     from cryptoguard.ml.tsuchiya_archive import peak_rss_bytes
 
     peak = peak_rss_bytes()

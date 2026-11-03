@@ -167,7 +167,25 @@ def _pack(t: tuple[int, ...]) -> int:
 # --- recorded incidents (H3) and background windows (E14) ---------------------------------
 
 
-def incidents() -> list[dict[str, Any]]:
+Blind = tuple[frozenset[str], frozenset[str]]  # frozen-cohort (addresses, transactions)
+
+
+def touches_frozen(fixture: Any, blind: Blind) -> bool:
+    """A recorded window that holds a frozen review item: its wallet, or any transfer whose
+    party or transaction is a frozen address or transaction. Such a window never enters a
+    computation (protocol 12.1 section 3; amendment 12.2-cohort-overlap)."""
+    addrs, txs = blind
+    if fixture.wallet.lower() in addrs:
+        return True
+    return any(
+        t.sender.lower() in addrs
+        or t.recipient.lower() in addrs
+        or t.transaction_hash.lower() in txs
+        for t in fixture.transfers
+    )
+
+
+def incidents(blind: Blind) -> list[dict[str, Any]]:
     from cryptoguard.detectors.poisoning import PoisoningConfig
     from cryptoguard.ml.warning_rank import rank_warnings
     from cryptoguard.replay.engine import Visibility, detector_outputs
@@ -178,6 +196,9 @@ def incidents() -> list[dict[str, Any]]:
         if case.fixture is None:
             continue
         m = case.manifest
+        if touches_frozen(case.fixture, blind):
+            out.append({"case": m.case_id, "excluded": "holds a frozen review item"})
+            continue
         c = m.harm.block_number - 1
         cases, _ = detector_outputs(
             case.fixture, c, Visibility.ERC20_PLUS_WALLET_TRANSACTIONS, PoisoningConfig()
@@ -196,16 +217,19 @@ def incidents() -> list[dict[str, Any]]:
     return out
 
 
-def background() -> dict[str, Any]:
+def background(blind: Blind) -> dict[str, Any]:
     from cryptoguard.detectors.poisoning import PoisoningConfig
     from cryptoguard.ml.warning_rank import baseline_score, rank_warnings
     from cryptoguard.replay.background import load_background
     from cryptoguard.replay.engine import Visibility, detector_outputs
 
     t = time.perf_counter()
-    windows = multi = changed = preserved = no_basis = n = 0
+    windows = multi = changed = preserved = no_basis = n = excluded = 0
     for b in load_background():
         if b.fixture is None:
+            continue
+        if touches_frozen(b.fixture, blind):
+            excluded += 1
             continue
         windows += 1
         c = b.fixture.to_block
@@ -227,6 +251,7 @@ def background() -> dict[str, Any]:
         "windows_order_changed": changed,
         "windows_warning_set_preserved": preserved,
         "warnings_without_recency_basis": no_basis,
+        "windows_excluded_frozen_cohort": excluded,
         "seconds": round(time.perf_counter() - t, 3),
     }
 
@@ -430,7 +455,8 @@ def run(poisoning_dir: Path) -> dict[str, Any]:
     report["H1_SR_none_included"] = _restricted(
         episodes, feats, grp, lambda i, c: sr[i][c][0] is not False
     )
-    report["H3_incidents"] = incidents()
+    blind = lr.protected_entities(poisoning_dir)
+    report["H3_incidents"] = incidents(blind)
 
     # E1 within-episode permutation of T0; E2 reversed time.
     rng = random.Random(SEED)  # noqa: S311 - seeded research sampling, not security
@@ -635,7 +661,7 @@ def run(poisoning_dir: Path) -> dict[str, Any]:
         cat["B0_tied_at_top"] += 0 < b0[i] < 1
     report["E12_errors"] = {k: {"episodes": v, **cats[k]} for k, v in sorted(cells.items())}
 
-    report["E14_background"] = background()
+    report["E14_background"] = background(blind)
     from cryptoguard.ml.tsuchiya_archive import peak_rss_bytes
 
     peak = peak_rss_bytes()

@@ -216,3 +216,40 @@ def test_expected_rank_and_trim() -> None:
     f = incident().fixture
     assert f is not None
     assert max(t.block_number for t in ib.trim(f, 110).transfers) == 105
+
+
+def test_run_never_computes_excluded_or_frozen_cases() -> None:
+    case = incident()
+    admitted = [{"case_id": "synthetic", "tier": "A", "status": "ok"}]
+    none: tuple[frozenset[str], frozenset[str]] = (frozenset(), frozenset())
+    assert len(ib.run(admitted, none, cases=[case])["cases"]) == 1
+    excluded = [
+        {
+            "case_id": "synthetic",
+            "tier": "excluded",
+            "status": "excluded: frozen review cohort overlap",
+        }
+    ]
+    r = ib.run(excluded, none, cases=[case])
+    assert r["cases"] == []
+    assert r["not_computed"][0]["reason"].startswith("excluded")
+    # Even when admitted, a window holding a frozen address (here a competing lookalike) is
+    # never computed.
+    frozen = (frozenset({FAKE2.lower()}), frozenset())
+    r = ib.run(admitted, frozen, cases=[case])
+    assert r["cases"] == []
+    assert r["not_computed"][0]["reason"] == "recorded window holds a frozen review item"
+
+
+def test_phase_12_2_replays_skip_windows_with_frozen_items() -> None:
+    from cryptoguard.ml import recency_validation as rv
+    from cryptoguard.replay.models import load_cases
+
+    cases = [c for c in load_cases() if c.fixture is not None]
+    victims = frozenset(c.manifest.victim.lower() for c in cases)
+    out = rv.incidents((victims, frozenset()))
+    assert all(e.get("excluded") == "holds a frozen review item" for e in out)
+    f = cases[0].fixture
+    assert f is not None
+    assert rv.touches_frozen(f, (frozenset(), frozenset({f.transfers[0].transaction_hash.lower()})))
+    assert not rv.touches_frozen(f, (frozenset(), frozenset()))
