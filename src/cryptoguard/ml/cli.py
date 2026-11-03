@@ -314,7 +314,7 @@ def run(args: argparse.Namespace) -> int:
                 else stage2.model_copy(
                     update={
                         "protocol": f"{ib_.PROTOCOL} with {ib_.AMENDMENT}",
-                        "discovery": {"resolved_from": str(ib_.STAGE2)},
+                        "discovery": {"resolved_from": ib_.STAGE2.as_posix()},
                         "candidates": [],
                         "not_usable_sources": [],
                     }

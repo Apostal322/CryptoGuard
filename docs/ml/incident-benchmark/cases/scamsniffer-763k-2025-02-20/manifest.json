@@ -1,0 +1,39 @@
+{
+  "case_id": "scamsniffer-763k-2025-02-20",
+  "title": "Scam Sniffer-reported poisoning loss, Feb 2025",
+  "category": "address_poisoning",
+  "chain_id": 1,
+  "summary": "Pre-registered Phase 12.3 benchmark case (unknown); see docs/ml/incident-benchmark/stage2-resolved.json.",
+  "first_public_report": "2025-02-26",
+  "public_sources": [
+    {
+      "publisher": "ForkLog (citing Scam Sniffer, X post of 2025-02-26)",
+      "title": "Scam Sniffer-reported poisoning loss, Feb 2025",
+      "url": "https://forklog.com/en/user-loses-over-760000-due-to-address-poisoning/",
+      "accessed": "2025-02-26",
+      "used_for": "the reported addresses and dates; the harmful transaction was resolved on chain by the rule frozen in amendment-12.3-A1"
+    }
+  ],
+  "victim": "0xf6B1539cc562C0cA5151825488eb8c3cdaf2b6E4",
+  "intended_recipient": null,
+  "harm": {
+    "transaction_hash": "0x05ea701d3d53976632b228127cafedc84abe7dec8054051ebcc070f9ecd81ced",
+    "block_number": 21890897,
+    "recipient": "0x804051B0cbc20443943C4F363573eF9bB7793375",
+    "token": "0x44ff8620b8cA30902395A7bD3F2407e1A091BF73",
+    "value_base_units": "96517394555617036350647",
+    "description": "The victim's transfer to the lookalike, as located on chain."
+  },
+  "evaluation": {
+    "from_block": 21869297,
+    "to_block": 21890897,
+    "rationale": "The 21,600 blocks (about 3 days) before and including the harmful block: the rule pre-registered before any request, the same as the 4 replay cases."
+  },
+  "onchain_verification": [
+    "Harmful transaction 0x05ea701d3d53976632b228127cafedc84abe7dec8054051ebcc070f9ecd81ced: block 21890897, signed by the victim, 1 Transfer log(s) from the victim to the lookalike (replay locate)."
+  ],
+  "ground_truth_limitations": [
+    "One public write-up; the recipient is a lookalike by the source's account and by the located transfer, not by an independent label.",
+    "The recorded window is 3 days; earlier history is not observed."
+  ]
+}

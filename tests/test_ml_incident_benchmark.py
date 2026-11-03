@@ -479,3 +479,27 @@ def test_manifests_merge_and_reject_duplicate_case_ids(tmp_path: Path) -> None:
     assert [c.case_id for c in merged.candidates] == ["x", "y"]
     with pytest.raises(ValueError, match="more than one manifest"):
         ib.load_manifests([a, write("c.json", ["x"])])
+
+
+def test_stage_2a_case_is_frozen_and_reproduces_exactly() -> None:
+    """The first resolved Level I case: frozen like the pilot, including its miss (the theft
+    recipient never appears in the recorded stream before the harm)."""
+    import hashlib
+
+    [case] = [c for c in ib.load_new_cases() if c.manifest.case_id == "scamsniffer-763k-2025-02-20"]
+    assert case.fixture_sha256 == (
+        "67e44177ad7785bd5779bb3db205f3175ee8aca404f6d29e0dc1e6f3d95674f1"
+    )
+    assert hashlib.sha256(case.manifest.model_dump_json().encode()).hexdigest() == (
+        "770b1200f3d4dd3231232533beb1cfc2900f68d2a00ef899cfd2c732644192f1"
+    )
+    row = ib.run_case(case, level="I")
+    assert row["leakage_checks_passed"]
+    assert not row["candidates"]["target_recovered"]
+    assert row["visibilities"]["erc20_plus_wallet_transactions"]["outcome"] == (
+        "post_incident_only"
+    )
+    assert (row["ranking"]["primary"]["k"], row["ranking"]["primary"]["target_warned"]) == (
+        2,
+        False,
+    )

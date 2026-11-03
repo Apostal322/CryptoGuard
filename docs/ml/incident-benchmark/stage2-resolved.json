@@ -1,0 +1,30 @@
+{
+  "schema_version": "incident-candidates/1",
+  "protocol": "protocol-12.3/1 with amendment-12.3-A1",
+  "discovery": {
+    "resolved_from": "docs/ml/incident-benchmark/stage2-candidates.json"
+  },
+  "candidates": [
+    {
+      "case_id": "scamsniffer-763k-2025-02-20",
+      "source": {
+        "publisher": "ForkLog (citing Scam Sniffer, X post of 2025-02-26)",
+        "url": "https://forklog.com/en/user-loses-over-760000-due-to-address-poisoning/",
+        "date": "2025-02-26"
+      },
+      "chain_id": 1,
+      "mechanism": "unknown",
+      "identifiers": {
+        "victim": "0xf6b1539cc562c0ca5151825488eb8c3cdaf2b6e4",
+        "lookalike": "0x804051b0cbc20443943c4f363573ef9bb7793375",
+        "intended": null,
+        "planting_tx": null,
+        "harm_tx": "0x05ea701d3d53976632b228127cafedc84abe7dec8054051ebcc070f9ecd81ced"
+      },
+      "identifier_status": "resolved on chain (amendment-12.3-A1): oldest nonzero Transfer signed by etherscan_filter_fadd to etherscan_filter_tadd, 2025-02-19..2025-02-21 UTC",
+      "fixture_case_id": null,
+      "synthetic": false
+    }
+  ],
+  "not_usable_sources": []
+}

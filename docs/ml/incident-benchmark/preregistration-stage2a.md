@@ -7,7 +7,7 @@ and before any detector output on these cases.
 - `protocol-12.3.md` and `../amendment-12.3-A1.md`;
 - the shortlist and statistical review in `stage2-shortlist.md`.
 
-**Status: not approved.** Stage 2a runs only after the user explicitly approves its cap.
+**Status:** run on 2026-11-03 under an approved 6,000 cap. It used 1,433 requests. Result: `stage2a-result.md`. This file was not changed before or during the run.
 
 ## 1. Cases
 

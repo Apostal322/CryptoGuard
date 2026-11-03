@@ -9,6 +9,8 @@
   discovery found no fully eligible new case. It proposes Stage 2a (2 public cases, cap
   6,000 after the Step 0 revision) and Stage 2b (user-sourced, cap 14,000), plus a protocol
   amendment.
+- **Stage 2a is complete** (2026-11-03): **1,433 of 6,000** used (`incident-benchmark/stage2a-result.md`).
+  It produced 1 Level I case, and 1 case was *not evaluable: RPC*.
 - **Stage 2 Step 0 is complete** (0 requests): amendment `amendment-12.3-A1.md`, the
   resolution tools, and `incident-benchmark/preregistration-stage2a.md`.
 - **No further request is authorized** by this document. Each stage below needs its own explicit approval of a request cap, and unused

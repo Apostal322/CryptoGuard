@@ -26,6 +26,13 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Incident recording, Stage 2a (1,433 RPC requests of an approved 6,000)
+- **Case 1, `scamsniffer-763k-2025-02-20`:**
+  - resolved on chain by the frozen rule, recorded, and frozen by test;
+  - Level I, but the detector **missed** it. The theft recipient never appears in the recorded stream before the harm, while two other lookalikes were warned.
+- **Case 2, `webacy-6.88m-usdt-2025-09`:** *not evaluable: RPC* (rejected twice; stop rule).
+- **Level I:** warned 1 of 2; Gate H DESCRIPTIVE. Report: `docs/ml/incident-benchmark/stage2a-result.md`.
+
 ### Incident recording, Stage 2 Step 0 (no RPC requests)
 - **Amendment 12.3-A1** (`docs/ml/amendment-12.3-A1.md`), frozen before any Stage 2 request:
   - **R1, identifier resolution:** a frozen on-chain rule, with no similarity scoring.

@@ -343,6 +343,28 @@ The Aug 2026 counterfeit-USDT case was recorded exactly as pre-registered. That 
   fewer than 6 untied cases as DESCRIPTIVE, never PASS.
 - **Not claimed:** a rate or independent ML validation.
 
+## 29. Addendum: Stage 2a (2026-11-03)
+
+Run under amendment 12.3-A1 and `docs/ml/incident-benchmark/preregistration-stage2a.md`. It
+used 1,433 of an approved 6,000 RPC requests. Details:
+[`docs/ml/incident-benchmark/stage2a-result.md`](docs/ml/incident-benchmark/stage2a-result.md).
+
+- **`scamsniffer-763k-2025-02-20`:** resolved on chain by the frozen rule, recorded, Level I,
+  tier A.
+  - The detector **did not** warn on the theft recipient before the harm
+    (`post_incident_only`).
+  - The recipient's first appearance in the recorded stream is the theft itself.
+  - Two other lookalikes of the same reference address were warned.
+  - This is a coverage miss (the planting channel was not observed), not a ranking result.
+- **`webacy-6.88m-usdt-2025-09`:** *not evaluable: RPC*. The provider rejected the request
+  twice, and the stop rule applied.
+- **Level I:**
+  - 2 tier A cases;
+  - warned before the harm in 1 of 2 (Gate G, exact count);
+  - 1 rankable;
+  - Gate H under A1 is **DESCRIPTIVE**; under §10 it stays PASS WITH LIMITATIONS.
+- **Not claimed:** a rate or independent ML validation.
+
 ## Benchmark result table
 
 | Case | Level | Subtype | Outcome status | Mode | Candidate | Warning | Pre-harm | OP0 rank | OP1 rank | Lead | History | Main limitation |
@@ -363,10 +385,10 @@ The Aug 2026 counterfeit-USDT case was recorded exactly as pre-registered. That 
 | B. Independent provenance | BLOCKED BY DATA | the new case is independent on all readable sets, but unverifiable on chain offline |
 | C. Transaction verification | PASS FOR 1 CASE | §28: the Stage 1 pilot confirmed harm and planting on chain; the others lack identifiers |
 | D. Point-in-time validity | PASS | implemented and tested (trim, cutoff guard, leakage checks) |
-| E. Candidate availability | 1 of 1 (exact count) | §28: theft recipient recovered in 1 of 1 Level I case; no rate from one case |
+| E. Candidate availability | 1 of 2 (exact count) | §28, §29: theft recipient recovered in 1 of 2 Level I cases; the miss was never observed before the harm; no rate |
 | F. Operational replay | PASS FOR 1 CASE | §28: one admissible recorded stream; leakage checks pass |
-| G. Warning coverage | 1 of 1 (exact count, per §10) | §28: warned 48 blocks (576 s, measured) before the theft in 1 of 1 Level I case |
-| H. Ranking usefulness | PASS WITH LIMITATIONS (Level I, n = 1) | §28: OP1 better in 1, worse in 0; the §10 rule allows this label below 10 cases; descriptive only. H3 withdrawn. |
-| I. Statistical support | FAIL | 1 independent case (§28), against the 10 required |
+| G. Warning coverage | 1 of 2 (exact count, per §10) | §28: warned 48 blocks (576 s, measured) before the pilot theft; §29: no pre-harm warning on the Stage 2a case |
+| H. Ranking usefulness | DESCRIPTIVE under A1 (§10: PASS WITH LIMITATIONS) | 1 rankable Level I case, 1 cluster, OP1 better; descriptive only. H3 withdrawn. |
+| I. Statistical support | FAIL | 2 independent tier A cases, 1 rankable (§28, §29), against the 10 required |
 | J. Production safety | PASS | no detector, service or risk change; ranker isolated |
 | K. Reproducibility | PASS WITH LIMITATIONS | offline commands; the inputs cannot be redistributed |
