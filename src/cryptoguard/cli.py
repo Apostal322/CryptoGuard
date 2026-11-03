@@ -16,6 +16,7 @@ import asyncio
 import json
 import sys
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 from pydantic import SecretStr, ValidationError
 
@@ -38,6 +39,9 @@ from cryptoguard.services.inspection import AddressInspection, inspect_address
 from cryptoguard.services.poisoning import PoisoningReport, scan_poisoning
 from cryptoguard.services.providers import build_provider, require_provider
 from cryptoguard.services.snapshots import DetectionOptions, SnapshotOutcome, take_snapshot
+
+if TYPE_CHECKING:
+    from cryptoguard.blockchain.budget import RequestLedger
 
 
 def _load_settings(demo: bool) -> Settings:
@@ -322,6 +326,7 @@ def _print_findings(settings: Settings, address: str, show_all: bool) -> None:
 def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
     from pathlib import Path
 
+    from cryptoguard.blockchain.budget import BudgetExhaustedError, budgeted_transport
     from cryptoguard.blockchain.provider import build_rpc_provider
     from cryptoguard.core.config import validate_rpc_url
     from cryptoguard.replay.engine import replay
@@ -336,11 +341,17 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
             print(f"{case.manifest.case_id}  [{status}]  {case.manifest.title}")
         return 0
 
+    if args.replay_command == "locate":
+        return _locate_command(args, settings)
+
     if args.replay_command == "record":
+        if args.cases_dir:
+            cases = load_cases(Path(args.cases_dir))
         manifest = next((c.manifest for c in cases if c.manifest.case_id == args.case_id), None)
         if manifest is None:
             print(f"error: unknown case {args.case_id}", file=sys.stderr)
             return 1
+        ledger = _replay_ledger(args)
         record_settings = settings.model_copy(
             update={
                 "rpc_url": SecretStr(validate_rpc_url(args.rpc_url)),
@@ -350,12 +361,24 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
         )
 
         async def run_recording() -> str:
-            provider = build_rpc_provider(record_settings)
+            provider = build_rpc_provider(record_settings, transport=budgeted_transport(ledger))
+            before = ledger.used()
             try:
                 fixture = await record_fixture(provider, manifest, chunk_blocks=args.chunk_blocks)
+            except BudgetExhaustedError as exc:  # fail closed: no partial fixture is written
+                ledger.note(f"replay record {manifest.case_id}: stopped at the cap ({exc})")
+                raise
             finally:
                 await provider.aclose()
-            path = case_directory(manifest.case_id) / "fixture.json"
+            ledger.note(
+                f"replay record {manifest.case_id}: {ledger.used() - before} requests reserved"
+            )
+            case_dir = (
+                Path(args.cases_dir) / manifest.case_id
+                if args.cases_dir
+                else case_directory(manifest.case_id)
+            )
+            path = case_dir / "fixture.json"
             path.write_bytes(fixture.canonical_bytes() + b"\n")
             return (
                 f"Recorded {len(fixture.transfers)} transfers and "
@@ -363,7 +386,14 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
                 f"({fixture.rpc_requests} RPC requests) to {path}"
             )
 
-        print(asyncio.run(run_recording()))
+        try:
+            print(asyncio.run(run_recording()))
+        except BudgetExhaustedError as exc:
+            print(
+                f"{manifest.case_id}: not evaluable: budget ({exc}); no fixture written",
+                file=sys.stderr,
+            )
+            return 2
         return 0
 
     if args.replay_command in ("sample-background", "record-background"):
@@ -432,9 +462,69 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _replay_ledger(args: argparse.Namespace) -> RequestLedger:
+    """Every live replay request is reserved in a durable ledger first (fail closed)."""
+    from pathlib import Path
+
+    from cryptoguard.blockchain.budget import run_ledger
+
+    return run_ledger(Path(args.ledger), args.cap, per_run=args.max_requests)
+
+
+def _add_rpc_budget(parser: argparse.ArgumentParser, *, per_run_help: str) -> None:
+    parser.add_argument(
+        "--ledger", required=True, help="request ledger file for this approval (one per budget)"
+    )
+    parser.add_argument(
+        "--cap", type=int, required=True, help="approved total for the ledger, retries included"
+    )
+    parser.add_argument("--max-requests", type=int, default=None, help=per_run_help)
+
+
+def _locate_command(args: argparse.Namespace, settings: Settings) -> int:
+    from pathlib import Path
+
+    from cryptoguard.blockchain.budget import BudgetExhaustedError, budgeted_transport
+    from cryptoguard.blockchain.provider import build_rpc_provider
+    from cryptoguard.core.config import validate_rpc_url
+    from cryptoguard.replay.record import locate_transaction
+
+    ledger = _replay_ledger(args)
+    rpc_settings = settings.model_copy(
+        update={
+            "rpc_url": SecretStr(validate_rpc_url(args.rpc_url)),
+            "chain_id": args.chain_id,
+            "rpc_max_concurrency": 1,
+        }
+    )
+
+    async def run() -> list[dict[str, Any]]:
+        provider = build_rpc_provider(rpc_settings, transport=budgeted_transport(ledger))
+        before = ledger.used()
+        try:
+            return [await locate_transaction(provider, h) for h in args.tx_hash]
+        finally:
+            await provider.aclose()
+            ledger.note(f"replay locate {len(args.tx_hash)} tx: {ledger.used() - before} reserved")
+
+    try:
+        found = asyncio.run(run())
+    except BudgetExhaustedError as exc:
+        print(f"error: not located: budget ({exc})", file=sys.stderr)
+        return 2
+    text = json.dumps(found, indent=1)
+    if args.out:
+        Path(args.out).write_text(text + "\n", encoding="utf-8")
+        print(f"Wrote {args.out}")
+    else:
+        print(text)
+    return 0
+
+
 def _background_command(args: argparse.Namespace, settings: Settings) -> int:
     from datetime import UTC, datetime
 
+    from cryptoguard.blockchain.budget import BudgetExhaustedError, budgeted_transport
     from cryptoguard.blockchain.provider import build_rpc_provider
     from cryptoguard.core.config import validate_rpc_url
     from cryptoguard.replay.background import (
@@ -450,7 +540,9 @@ def _background_command(args: argparse.Namespace, settings: Settings) -> int:
     )
 
     async def sample() -> str:
-        provider = build_rpc_provider(rpc_settings)
+        provider = build_rpc_provider(
+            rpc_settings, transport=budgeted_transport(_replay_ledger(args))
+        )
         try:
             chosen, log = await sample_background(
                 provider,
@@ -475,7 +567,11 @@ def _background_command(args: argparse.Namespace, settings: Settings) -> int:
         pending = [c for c in load_background() if c.fixture is None][: args.limit]
         for case in pending:
             m = case.manifest
-            provider = build_rpc_provider(rpc_settings.model_copy(update={"chain_id": m.chain_id}))
+            ledger = _replay_ledger(args)  # per window: --max-requests more, never past --cap
+            provider = build_rpc_provider(
+                rpc_settings.model_copy(update={"chain_id": m.chain_id}),
+                transport=budgeted_transport(ledger),
+            )
             try:
                 fixture = await record_window(
                     provider,
@@ -488,6 +584,11 @@ def _background_command(args: argparse.Namespace, settings: Settings) -> int:
                     all_timestamps=False,
                     max_wallet_transactions=200,
                 )
+            except BudgetExhaustedError as exc:  # fail closed: no partial fixture is written
+                lines.append(f"{m.case_id}: not evaluable: budget ({exc}); no fixture written")
+                if ledger.cap >= args.cap:
+                    break  # the approval itself is spent
+                continue
             except Exception as exc:  # report and continue with the next wallet
                 lines.append(f"{m.case_id}: FAILED ({type(exc).__name__}: {exc})")
                 continue
@@ -760,6 +861,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--rpc-url", required=True, help="RPC endpoint with historical logs and state"
     )
     p_record.add_argument("--chunk-blocks", type=int, default=100)
+    p_record.add_argument(
+        "--cases-dir", help="read the manifest from and write the fixture to this case folder"
+    )
+    _add_rpc_budget(p_record, per_run_help="most requests this window may reserve")
+    p_locate = replay_sub.add_parser(
+        "locate", help="read reported transactions' receipts (block, parties, transfers)"
+    )
+    p_locate.add_argument("tx_hash", nargs="+")
+    p_locate.add_argument("--rpc-url", required=True)
+    p_locate.add_argument("--chain-id", type=int, default=1)
+    p_locate.add_argument("--out", metavar="PATH", help="write the JSON here")
+    _add_rpc_budget(p_locate, per_run_help="most requests this run may reserve")
     p_sample = replay_sub.add_parser(
         "sample-background", help="draw unlabelled background wallets (seeded) from an RPC"
     )
@@ -770,12 +883,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_sample.add_argument("--to-block", type=int, required=True)
     p_sample.add_argument("--window-blocks", type=int, default=21_601)
     p_sample.add_argument("--max-nonce-delta", type=int, default=100)
+    _add_rpc_budget(p_sample, per_run_help="most requests this run may reserve")
     p_bg = replay_sub.add_parser(
         "record-background", help="record fixtures for background wallets that have none"
     )
     p_bg.add_argument("--rpc-url", required=True)
     p_bg.add_argument("--chunk-blocks", type=int, default=1_000)
     p_bg.add_argument("--limit", type=int, default=None, help="record at most this many")
+    _add_rpc_budget(p_bg, per_run_help="most requests each window may reserve")
     p_run = replay_sub.add_parser("run", help="replay recorded cases offline")
     p_run.add_argument("case_id", nargs="?", help="one case (default: all recorded cases)")
     p_run.add_argument("--json", action="store_true")

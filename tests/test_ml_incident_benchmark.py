@@ -253,3 +253,91 @@ def test_phase_12_2_replays_skip_windows_with_frozen_items() -> None:
     assert f is not None
     assert rv.touches_frozen(f, (frozenset(), frozenset({f.transfers[0].transaction_hash.lower()})))
     assert not rv.touches_frozen(f, (frozenset(), frozenset()))
+
+
+# --- new (Level I) cases ----------------------------------------------------------------------
+
+
+def new_cand(**over: Any) -> ib.Candidate:
+    """The synthetic incident's identifiers, as a public source would report them."""
+    theft = transfer(WALLET, FAKE, 1000, HARM, signer=WALLET)
+    plant = transfer(WALLET, FAKE, 0, 120, signer=ATTACKER_SIGNER)
+    ids = {
+        "victim": WALLET.lower(),
+        "lookalike": FAKE.lower(),
+        "intended": REAL.lower(),
+        "planting_tx": plant.transaction_hash,
+        "harm_tx": theft.transaction_hash,
+    }
+    return ib.Candidate.model_validate(cand(case_id="synthetic", identifiers=ids) | over)
+
+
+def located(c: ib.Candidate, **over: Any) -> list[dict[str, Any]]:
+    harm = {
+        "transaction_hash": c.identifiers["harm_tx"],
+        "found": True,
+        "block_number": HARM,
+        "from": WALLET,
+        "to": "0x" + "e" * 40,
+        "succeeded": True,
+        "transfers": [
+            {"token": "0x" + "e" * 40, "from": WALLET, "to": FAKE, "value_base_units": "1000"}
+        ],
+    }
+    return [harm | over]
+
+
+def test_prepare_fixes_the_window_by_rule_and_refuses_unconfirmed_identifiers() -> None:
+    c = new_cand()
+    m = ib.prepare(c, located(c), title="t", first_report="2026-11-03")
+    assert (m.evaluation.from_block, m.evaluation.to_block) == (HARM - ib.WINDOW_BLOCKS, HARM)
+    assert m.harm.recipient == FAKE
+    assert m.victim == WALLET
+    assert m.harm.value_base_units == "1000"
+    for bad in (
+        {"found": False},
+        {"succeeded": False},
+        {"from": REAL},  # not signed by the victim
+        {
+            "transfers": [
+                {"token": "0x" + "e" * 40, "from": WALLET, "to": FAKE2, "value_base_units": "1"}
+            ]
+        },
+    ):
+        with pytest.raises(ValueError, match=r"not located|not confirmed"):
+            ib.prepare(c, located(c, **bad), title="t", first_report="2026-11-03")
+    with pytest.raises(ValueError, match="complete identifiers"):
+        ib.prepare(new_cand(chain_id=None), located(c), title="t", first_report="2026-11-03")
+
+
+def test_a_new_case_is_level_i_only_when_the_chain_confirms_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ib, "reference_sets", no_refs)
+    c = new_cand()
+    prepared = ib.prepare(c, located(c), title="t", first_report="2026-11-03")
+    case = ReplayCase(manifest=prepared, fixture=incident().fixture, fixture_sha256=None)
+    rows = ib.verify(manifest_of(c.model_dump()), Path("unused"), cases=[], new_cases=[case])
+    assert rows[0]["level"] == "I"
+    assert rows[0]["tier"] == "A"
+    assert rows[0]["onchain"]["planting"] == "confirmed in the window"
+    wrong = new_cand(identifiers={**c.identifiers, "lookalike": FAKE2.lower()})
+    rows = ib.verify(manifest_of(wrong.model_dump()), Path("unused"), cases=[], new_cases=[case])
+    assert rows[0]["verified"] is False
+    assert rows[0]["tier"] == "B"
+    assert "NOT confirmed" in rows[0]["status"]
+    unrecorded = ReplayCase(manifest=prepared, fixture=None, fixture_sha256=None)
+    rows = ib.verify(manifest_of(c.model_dump()), Path("unused"), cases=[], new_cases=[unrecorded])
+    assert rows[0]["status"] == "pre-registered; window not recorded"
+    with pytest.raises(ValueError, match="both case sets"):
+        ib.verify(manifest_of(c.model_dump()), Path("unused"), cases=[case], new_cases=[case])
+
+
+def test_levels_are_summarised_separately() -> None:
+    admitted = [{"case_id": "synthetic", "tier": "A", "level": "I", "status": "ok"}]
+    none: tuple[frozenset[str], frozenset[str]] = (frozenset(), frozenset())
+    r = ib.run(admitted, none, cases=[incident()])
+    assert r["cases"][0]["level"] == "I"
+    assert r["summary_level_I"]["tier_A_cases"] == 1
+    assert r["summary_level_I"]["OP1_vs_OP0"] == {"better": 1, "equal": 0, "worse": 0}
+    assert r["summary_level_III"]["tier_A_cases"] == 0

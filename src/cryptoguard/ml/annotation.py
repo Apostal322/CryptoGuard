@@ -241,7 +241,7 @@ class ReviewerStore:
         self._load()
 
     def __enter__(self) -> ReviewerStore:
-        from cryptoguard.ml.collect import _try_os_lock
+        from cryptoguard.blockchain.budget import _try_os_lock
 
         fd = os.open(self.root / LOCK, os.O_RDWR | os.O_CREAT)
         if not _try_os_lock(fd):
@@ -251,7 +251,7 @@ class ReviewerStore:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        from cryptoguard.ml.collect import _os_unlock
+        from cryptoguard.blockchain.budget import _os_unlock
 
         if self._fd is not None:
             _os_unlock(self._fd)

@@ -2,6 +2,8 @@
 docs/ml/protocol-12.3.md. Offline only: it never fetches chain data.
 
 - ``verify``: a provenance, identifier, tier and overlap audit of every discovered case.
+- ``prepare``: a pre-registered new case's manifest, built from its located receipts
+  (``cryptoguard replay locate``); it refuses identifiers the chain does not confirm.
 - ``run``: tier A operational replay of the cases with a complete recorded wallet stream.
   The unchanged detector sees only records at or before the cutoff and is never told the
   outcome address. Then come the production order (OP0), the frozen recency order (OP1),
@@ -27,6 +29,9 @@ BENCHMARK_VERSION = "incident-benchmark/1"
 PROTOCOL = "protocol-12.3/1"
 FROZEN_AT = "b3f66ae"
 MANIFEST = Path("docs/ml/incident-benchmark/candidates.json")
+# Newly recorded cases (Level I), kept apart from the packaged replay cases.
+NEW_CASES = Path("docs/ml/incident-benchmark/cases")
+WINDOW_BLOCKS = 21_600  # before and including the harmful block, as in the 4 replay cases
 ARCHIVE_BLOCKS = (15_053_226, 20_208_032)
 ARCHIVE_LAST_DATE = "2024-06-30"  # the archive's last block (~20.2M) is late June 2024
 RECORDING_RPC = (503, 1_361)  # requests per 21,600-block window, measured on the 4 fixtures
@@ -155,15 +160,63 @@ def overlap(
     return out
 
 
+def load_new_cases(directory: Path = NEW_CASES) -> list[Any]:
+    from cryptoguard.replay.models import load_cases
+
+    if not directory.is_dir() or not any(p.is_dir() for p in directory.iterdir()):
+        return []
+    return load_cases(directory)
+
+
+def onchain_check(ids: Mapping[str, str | None], case: Any) -> dict[str, Any]:
+    """Do the reported identifiers appear in the recorded window? The harmful transfer must
+    be in it, from the victim to the lookalike; the planting transaction must be in it with
+    the lookalike as a party, unless it falls before the window."""
+    m, fx = case.manifest, case.fixture
+    victim, look = (ids.get("victim") or "").lower(), (ids.get("lookalike") or "").lower()
+    by_tx: dict[str, list[Any]] = {}
+    for tr in fx.transfers:
+        by_tx.setdefault(tr.transaction_hash.lower(), []).append(tr)
+    harm_tx = (ids.get("harm_tx") or "").lower()
+    harm = by_tx.get(harm_tx, [])
+    same_case = m.victim.lower() == victim and m.harm.transaction_hash.lower() == harm_tx
+    harm_ok = same_case and any(
+        tr.sender.lower() == victim and tr.recipient.lower() == look
+        for tr in harm
+        if tr.block_number == m.harm.block_number
+    )
+    plant_tx = (ids.get("planting_tx") or "").lower()
+    plants = by_tx.get(plant_tx, [])
+    if not plant_tx:
+        planting = "not reported"
+    elif any(look in (tr.sender.lower(), tr.recipient.lower()) for tr in plants):
+        planting = "confirmed in the window"
+    elif not plants:
+        planting = "not in the window (earlier, or not a transfer of this wallet)"
+    else:
+        planting = "MISMATCH: in the window without the lookalike"
+    return {
+        "harm_transfer_confirmed": harm_ok,
+        "planting": planting,
+        "verified": harm_ok and not planting.startswith("MISMATCH"),
+    }
+
+
 def verify(
     manifest: CandidateManifest,
     poisoning_dir: Path,
     cases: Sequence[Any] | None = None,
+    new_cases: Sequence[Any] | None = None,
 ) -> list[dict[str, Any]]:
     from cryptoguard.replay.models import load_cases
 
+    if new_cases is None:  # the committed folder, unless the caller supplies its own cases
+        new_cases = load_new_cases() if cases is None else []
     cases = load_cases() if cases is None else cases
     by_id = {c.manifest.case_id: c for c in cases}
+    new_by_id = {c.manifest.case_id: c for c in new_cases}
+    if set(by_id) & set(new_by_id):
+        raise ValueError(f"case ids in both case sets: {sorted(set(by_id) & set(new_by_id))}")
     refs = reference_sets(poisoning_dir)
     out: list[dict[str, Any]] = []
     for cand in manifest.candidates:
@@ -194,8 +247,35 @@ def verify(
         fx = by_id.get(cand.fixture_case_id or "")
         if cand.fixture_case_id and fx is None:
             raise ValueError(f"{cand.case_id}: fixture {cand.fixture_case_id} is missing")
-        sets = {**refs, **fixture_sets(cases, cand.fixture_case_id)}
-        if fx is not None:
+        new = new_by_id.get(cand.case_id)
+        sets = {
+            **refs,
+            **fixture_sets([*cases, *new_cases], cand.fixture_case_id or (new and cand.case_id)),
+        }
+        if new is not None and fx is None:
+            if new.fixture is None:
+                row |= {
+                    "level": "I (if overlap stays empty)",
+                    "tier": "not_evaluable",
+                    "verified": False,
+                    "status": "pre-registered; window not recorded",
+                }
+            else:
+                check = onchain_check(ids, new)
+                complete = new.fixture.transfer_scan_complete
+                row |= {
+                    "level": "I",
+                    "tier": "A" if complete and check["verified"] else "B",
+                    "verified": check["verified"],
+                    "onchain": check,
+                    "status": "newly recorded window"
+                    + ("" if check["verified"] else "; identifiers NOT confirmed on chain")
+                    + ("" if complete else "; transfer scan incomplete"),
+                    "history": "complete for the recorded window only"
+                    if complete
+                    else "incomplete",
+                }
+        elif fx is not None:
             m = fx.manifest
             local = {
                 "victim": m.victim.lower(),
@@ -253,6 +333,98 @@ def verify(
             row |= {"tier": "excluded", "status": "excluded: frozen review cohort overlap"}
         out.append(row)
     return out
+
+
+# --- prepare (new cases) --------------------------------------------------------------------
+
+
+def prepare(
+    cand: Candidate, located: Sequence[Mapping[str, Any]], *, title: str, first_report: str
+) -> Any:
+    """The replay manifest of a pre-registered case, from ``replay locate`` output for its
+    harmful (and planting) transaction. The window is fixed by rule, never by inspection.
+    Refuses when the chain does not show the reported harmful transfer."""
+    from datetime import date
+
+    from cryptoguard.core.address import to_checksum_address
+    from cryptoguard.replay.models import (
+        EvaluationWindow,
+        HarmfulTransaction,
+        IncidentManifest,
+        SourceRef,
+    )
+
+    ids = cand.identifiers
+    if cand.synthetic or cand.chain_id != 1 or not _complete(ids):
+        raise ValueError(f"{cand.case_id}: not a mainnet case with complete identifiers")
+    by_tx = {str(x["transaction_hash"]).lower(): x for x in located}
+    harm = by_tx.get(str(ids["harm_tx"]).lower())
+    if harm is None or not harm.get("found"):
+        raise ValueError(f"{cand.case_id}: the harmful transaction was not located")
+    victim, look = str(ids["victim"]).lower(), str(ids["lookalike"]).lower()
+    paid = [
+        tr for tr in harm["transfers"] if tr["from"].lower() == victim and tr["to"].lower() == look
+    ]
+    if not harm.get("succeeded") or str(harm.get("from") or "").lower() != victim or not paid:
+        raise ValueError(
+            f"{cand.case_id}: identifiers not confirmed on chain (the harmful transaction is "
+            "not a successful transfer signed by the victim to the lookalike)"
+        )
+    block = int(harm["block_number"])
+    checks = [
+        f"Harmful transaction {ids['harm_tx']}: block {block}, signed by the victim, "
+        f"{len(paid)} Transfer log(s) from the victim to the lookalike (replay locate)."
+    ]
+    plant = by_tx.get(str(ids.get("planting_tx") or "").lower())
+    if plant is not None:
+        checks.append(
+            f"Planting transaction {ids['planting_tx']}: "
+            + (f"block {plant['block_number']}" if plant.get("found") else "not found")
+            + " (replay locate)."
+        )
+    intended = ids.get("intended")
+    return IncidentManifest(
+        case_id=cand.case_id,
+        title=title,
+        category="address_poisoning",
+        chain_id=1,
+        summary=f"Pre-registered Phase 12.3 benchmark case ({cand.mechanism}); see "
+        "docs/ml/incident-benchmark/candidates.json.",
+        first_public_report=date.fromisoformat(first_report),
+        public_sources=[
+            SourceRef(
+                publisher=cand.source.publisher,
+                title=title,
+                url=cand.source.url,
+                accessed=date.fromisoformat(first_report),
+                used_for="victim, lookalike, intended recipient, planting and harmful "
+                "transaction hashes",
+            )
+        ],
+        victim=to_checksum_address(victim),
+        intended_recipient=to_checksum_address(intended) if intended else None,
+        harm=HarmfulTransaction(
+            transaction_hash=str(ids["harm_tx"]).lower(),
+            block_number=block,
+            recipient=to_checksum_address(look),
+            token=to_checksum_address(paid[0]["token"]),
+            value_base_units=str(paid[0]["value_base_units"]),
+            description="The victim's transfer to the lookalike, as located on chain.",
+        ),
+        evaluation=EvaluationWindow(
+            from_block=block - WINDOW_BLOCKS,
+            to_block=block,
+            rationale=f"The {WINDOW_BLOCKS:,} blocks (about 3 days) before and including the "
+            "harmful block: the rule pre-registered before any request, the same as the "
+            "4 replay cases.",
+        ),
+        onchain_verification=checks,
+        ground_truth_limitations=[
+            "One public write-up; the recipient is a lookalike by the source's account and by "
+            "the located transfer, not by an independent label.",
+            "The recorded window is 3 days; earlier history is not observed.",
+        ],
+    )
 
 
 # --- run (tier A) ---------------------------------------------------------------------------
@@ -340,7 +512,7 @@ def _variants(fixture: Any, c: int) -> dict[str, tuple[Any, int, Any]]:
     }
 
 
-def run_case(case: Any) -> dict[str, Any]:
+def run_case(case: Any, level: str = "III") -> dict[str, Any]:
     from cryptoguard.ml import candidates as cand
     from cryptoguard.ml.warning_rank import PLANTING_SIGNALS
     from cryptoguard.replay.engine import replay
@@ -354,7 +526,7 @@ def run_case(case: Any) -> dict[str, Any]:
     rep = replay(m, fx)
     out: dict[str, Any] = {
         "case_id": m.case_id,
-        "level": "III",
+        "level": level,
         "tier": "A",
         "cutoff": c,
         "harm_block": m.harm.block_number,
@@ -412,6 +584,34 @@ def run_case(case: Any) -> dict[str, Any]:
     return out
 
 
+def _summary(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    rankable = [
+        r
+        for r in results
+        if r["ranking"]["primary"].get("target_warned") and r["ranking"]["primary"]["k"] >= 2
+    ]
+    paired = {"better": 0, "equal": 0, "worse": 0}
+    for r in rankable:
+        p = r["ranking"]["primary"]
+        d = p["OP0_expected_rank"] - p["OP1_expected_rank"]
+        paired["better" if d > 0 else "worse" if d < 0 else "equal"] += 1
+    return {
+        "tier_A_cases": len(results),
+        "target_recovered_as_candidate": sum(r["candidates"]["target_recovered"] for r in results),
+        "target_warned_at_cutoff": sum(
+            bool(r["ranking"]["primary"].get("target_warned")) for r in results
+        ),
+        "early_warning_full_visibility": sum(
+            r["visibilities"]["erc20_plus_wallet_transactions"]["outcome"] == "early_warning"
+            for r in results
+        ),
+        "rankable_cases": len(rankable),
+        "OP1_vs_OP0": paired,
+        "OP0_top1_cases": sum(r["ranking"]["primary"]["OP0_top1"] == 1.0 for r in rankable),
+        "OP1_top1_cases": sum(r["ranking"]["primary"]["OP1_top1"] == 1.0 for r in rankable),
+    }
+
+
 def run(
     verified: Sequence[Mapping[str, Any]],
     blind: tuple[frozenset[str], frozenset[str]],
@@ -424,7 +624,8 @@ def run(
     from cryptoguard.replay.models import load_cases
 
     t = time.perf_counter()
-    cases = load_cases() if cases is None else cases
+    if cases is None:
+        cases = [*load_cases(), *load_new_cases()]
     admitted = {v["case_id"] for v in verified if v["tier"] == "A"}
     by_fixture = {v["case_id"]: v for v in verified}
     skipped: list[dict[str, str]] = []
@@ -440,44 +641,19 @@ def run(
             skipped.append({"case_id": cid, "reason": "recorded window holds a frozen review item"})
         else:
             tier_a.append(c)
-    results = [run_case(c) for c in tier_a]
-    rankable = [
-        r
-        for r in results
-        if r["ranking"]["primary"].get("target_warned") and r["ranking"]["primary"]["k"] >= 2
+    results = [
+        run_case(c, str(by_fixture[c.manifest.case_id].get("level") or "III")) for c in tier_a
     ]
-    paired = {"better": 0, "equal": 0, "worse": 0}
-    for r in rankable:
-        p = r["ranking"]["primary"]
-        d = p["OP0_expected_rank"] - p["OP1_expected_rank"]
-        paired["better" if d > 0 else "worse" if d < 0 else "equal"] += 1
     peak = peak_rss_bytes()
     return {
         "benchmark": BENCHMARK_VERSION,
         "protocol": PROTOCOL,
         "methods_frozen_at": FROZEN_AT,
-        "evidence_level": (
-            "III (existing replay incidents); no Level I or II case is evaluable offline"
-        ),
+        "evidence_level": "levels are reported separately and never pooled",
         "cases": results,
         "not_computed": skipped,
-        "summary_level_III": {
-            "tier_A_cases": len(results),
-            "target_recovered_as_candidate": sum(
-                r["candidates"]["target_recovered"] for r in results
-            ),
-            "target_warned_at_cutoff": sum(
-                bool(r["ranking"]["primary"].get("target_warned")) for r in results
-            ),
-            "early_warning_full_visibility": sum(
-                r["visibilities"]["erc20_plus_wallet_transactions"]["outcome"] == "early_warning"
-                for r in results
-            ),
-            "rankable_cases": len(rankable),
-            "OP1_vs_OP0": paired,
-            "OP0_top1_cases": sum(r["ranking"]["primary"]["OP0_top1"] == 1.0 for r in rankable),
-            "OP1_top1_cases": sum(r["ranking"]["primary"]["OP1_top1"] == 1.0 for r in rankable),
-        },
+        "summary_level_I": _summary([r for r in results if r["level"] == "I"]),
+        "summary_level_III": _summary([r for r in results if r["level"] == "III"]),
         "background_alert_burden": background(blind),
         "resources": {
             "seconds": round(time.perf_counter() - t, 2),

@@ -201,13 +201,15 @@ uv run cryptoguard graph <address>             # relationships from the latest s
 # Historical incident replay (offline, from packaged fixtures)
 uv run cryptoguard replay list
 uv run cryptoguard replay run --write-report EVALUATION.md
-# Re-record a fixture (needs historical logs + state, e.g. https://eth.drpc.org):
-uv run cryptoguard replay record <case-id> --rpc-url <archive-capable RPC>
+# Re-record a fixture (needs historical logs + state, e.g. https://eth.drpc.org). Every live
+# replay command needs a request ledger and an approved cap; retries count, and a run that
+# reaches the cap writes nothing:
+uv run cryptoguard replay record <case-id> --rpc-url <archive-capable RPC> --ledger <file> --cap <n>
 # Evaluate the experimental analyses too (incidents + background wallets; analytics extra):
 uv run --extra analytics cryptoguard replay run --analytics --write-report EVALUATION.md
 # Background wallets: seeded random sample, then record their fixtures
-uv run cryptoguard replay sample-background --rpc-url <RPC> --seed <n> --from-block <a> --to-block <b>
-uv run cryptoguard replay record-background --rpc-url <RPC>
+uv run cryptoguard replay sample-background --rpc-url <RPC> --seed <n> --from-block <a> --to-block <b> --ledger <file> --cap <n>
+uv run cryptoguard replay record-background --rpc-url <RPC> --ledger <file> --cap <n> --max-requests <per window>
 
 # Cross-wallet campaigns (CRYPTOGUARD_CAMPAIGN_ANALYSIS=shadow)
 uv run cryptoguard campaigns analyze                 # cluster stored attempts, no RPC calls

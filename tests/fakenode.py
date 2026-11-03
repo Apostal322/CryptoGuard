@@ -297,6 +297,9 @@ class FakeNode:
             sent = next((t for t in self.sent_txs if t["hash"] == tx_hash), None)
             return {
                 "transactionHash": tx_hash,
+                "blockNumber": sent["blockNumber"] if sent else logs[0]["blockNumber"],
+                "from": self.tx_senders[tx_hash],
+                "to": sent["to"] if sent else (logs[0]["address"] if logs else None),
                 "blockHash": sent["blockHash"]
                 if sent
                 else (logs[0]["blockHash"] if logs else None),

@@ -132,7 +132,11 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ib = ml.add_parser(
         "incident-benchmark", help="Phase 12.3 independent incident benchmark (offline)"
     )
-    ib.add_argument("step", choices=("verify", "run", "report"))
+    ib.add_argument("step", choices=("verify", "prepare", "run", "report"))
+    ib.add_argument("--case", help="prepare: the pre-registered case id")
+    ib.add_argument("--located", type=Path, help="prepare: `replay locate` JSON for the case")
+    ib.add_argument("--title", help="prepare: the case title")
+    ib.add_argument("--first-report", help="prepare: ISO date of the first public report")
     ib.add_argument(
         "--manifest", type=Path, default=Path("docs/ml/incident-benchmark/candidates.json")
     )
@@ -285,6 +289,37 @@ def run(args: argparse.Namespace) -> int:
             verified_path.write_text(json.dumps(rows, indent=1) + "\n", encoding="utf-8")
             for r in rows:
                 print(f"{r['case_id']:40} {r['tier']:18} {r['status']}")
+        elif args.step == "prepare":
+            if not (args.case and args.located and args.title and args.first_report):
+                print("prepare needs --case, --located, --title and --first-report.")
+                return 1
+            cand = next(
+                (c for c in ib_.load_manifest(args.manifest).candidates if c.case_id == args.case),
+                None,
+            )
+            if cand is None:
+                print(f"{args.case} is not in {args.manifest}.")
+                return 1
+            case_dir = ib_.NEW_CASES / cand.case_id
+            if (case_dir / "manifest.json").exists():
+                print(f"{case_dir / 'manifest.json'} exists; it is never overwritten.")
+                return 1
+            try:
+                m = ib_.prepare(
+                    cand,
+                    json.loads(args.located.read_text(encoding="utf-8")),
+                    title=args.title,
+                    first_report=args.first_report,
+                )
+            except ValueError as exc:
+                print(f"not prepared: {exc}")
+                return 1
+            case_dir.mkdir(parents=True)
+            (case_dir / "manifest.json").write_text(m.model_dump_json(indent=2) + "\n")
+            print(
+                f"Wrote {case_dir / 'manifest.json'}: window {m.evaluation.from_block}.."
+                f"{m.evaluation.to_block}"
+            )
         elif args.step == "run":
             from cryptoguard.ml import lookalike_ranking
 
@@ -296,7 +331,11 @@ def run(args: argparse.Namespace) -> int:
                 lookalike_ranking.protected_entities(ML_DIR / "poisoning"),
             )
             run_path.write_text(json.dumps(result, indent=1, default=str) + "\n", encoding="utf-8")
-            print(json.dumps(result["summary_level_III"], indent=1))
+            print(
+                json.dumps(
+                    {k: result[k] for k in ("summary_level_I", "summary_level_III")}, indent=1
+                )
+            )
         else:
             for p in (verified_path, run_path):
                 if not p.exists():
@@ -384,7 +423,8 @@ def run(args: argparse.Namespace) -> int:
     if args.ml_command == "collect":
         import pandas as pd
 
-        from cryptoguard.ml.collect import RequestLedger, budget_path, collect
+        from cryptoguard.blockchain.budget import RequestLedger
+        from cryptoguard.ml.collect import budget_path, collect
 
         sample = pd.read_csv(args.sample, dtype={"tx_hash": str})
         if args.limit is not None:

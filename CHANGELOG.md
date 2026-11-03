@@ -26,6 +26,22 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Incident recording, Stage 0 (no RPC requests)
+- **Fixed:** the replay recorders (`replay record`, `sample-background`, `record-background`)
+  had no total request cap. They now reserve every attempt, retries included, in the durable
+  request ledger, and need `--ledger` and `--cap`. A run that reaches the cap writes no
+  fixture. The ledger moved to `cryptoguard.blockchain.budget`, and `ml.collect`
+  re-exports it.
+- **Added:**
+  - `replay locate`, a capped receipt lookup;
+  - `replay record --cases-dir`;
+  - `ml incident-benchmark prepare`, which builds a case manifest by rule from located
+    receipts and refuses identifiers the chain does not confirm;
+  - Level I bookkeeping in `verify` and `run`, with an on-chain identifier check and
+    per-level summaries.
+- **Plan and pre-registration:** `docs/ml/incident-recording-budget-plan.md` and
+  `docs/ml/incident-benchmark/preregistration-pilot.md`.
+
 ### Independent incident benchmark (Phase 12.3)
 - **New command:** `cryptoguard ml incident-benchmark verify / run / report`. It runs
   offline and is bound to a protocol:

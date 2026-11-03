@@ -16,7 +16,9 @@ The manifest supplies only the wallet and the window; its ground truth is never 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
+from cryptoguard.blockchain.abi import TRANSFER_TOPIC
 from cryptoguard.blockchain.provider import RpcEthereumProvider
 from cryptoguard.core.address import to_checksum_address
 from cryptoguard.core.errors import RpcInvalidResponseError
@@ -146,3 +148,35 @@ async def record_window(
         transfers=[RecordedTransfer.from_event(t) for t in transfers.transfers],
         wallet_transactions=transactions,
     )
+
+
+async def locate_transaction(provider: RpcEthereumProvider, tx_hash: str) -> dict[str, Any]:
+    """One receipt read: the block, sender, recipient, status and ERC-20 Transfer logs of a
+    publicly reported transaction. Used to fix a pre-registered case's window from its
+    harmful block and to check its reported identifiers; the recorder never receives it."""
+    receipt = await provider.get_transaction_receipt(tx_hash)
+    if receipt is None:
+        return {"transaction_hash": tx_hash, "found": False}
+
+    def word_address(topic: str) -> str:
+        return to_checksum_address("0x" + topic[-40:])
+
+    transfers = [
+        {
+            "token": to_checksum_address(log["address"]),
+            "from": word_address(log["topics"][1]),
+            "to": word_address(log["topics"][2]),
+            "value_base_units": str(int(log.get("data") or "0x0", 16)),
+        }
+        for log in receipt.get("logs") or []
+        if len(log.get("topics") or []) == 3 and log["topics"][0].lower() == TRANSFER_TOPIC
+    ]
+    return {
+        "transaction_hash": tx_hash,
+        "found": True,
+        "block_number": int(receipt["blockNumber"], 16),
+        "from": to_checksum_address(receipt["from"]) if receipt.get("from") else None,
+        "to": to_checksum_address(receipt["to"]) if receipt.get("to") else None,
+        "succeeded": receipt.get("status") == "0x1",
+        "transfers": transfers,
+    }
