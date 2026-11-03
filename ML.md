@@ -272,6 +272,18 @@ This is a retrospective, payoff-conditioned result. Nothing is integrated: the
 production detector and its warnings are unchanged. Details are in
 [ML_TEMPORAL_GRAPH_RESEARCH.md](ML_TEMPORAL_GRAPH_RESEARCH.md).
 
+## Phase 12.2: recency validation (research only)
+
+Recency was tested two ways. Both results come from previously examined archive episodes,
+so they are not independent validation.
+- **Selection artifact (H1):** recency survives the source's payoff-confirmation rule
+  applied to rivals too. Top-1 is 0.682 against similarity's 0.300.
+- **Production warnings (H2):** within severity tiers, recency orders the production
+  detector's own warnings better than similarity does: 0.502 against 0.267.
+- **Experimental ranker:** `ml/warning_rank.py` is experimental, not wired in, and never
+  removes or re-tiers a warning.
+- **Details:** [ML_RECENCY_VALIDATION.md](ML_RECENCY_VALIDATION.md).
+
 ## Limitations
 
 - One labelled source, with a benign class of prominent accounts; precision on real traffic

@@ -203,3 +203,31 @@ similarity score (B0, 0.300):
 - **Not a detection result:** no precision, FPR or recall was measured.
 - **Next:** pre-register recency-first warning ordering on a population not used here.
 
+## 9. Done (Phase 12.2): is recency a source-selection artifact?
+
+The study was pre-registered in `docs/ml/protocol-12.2.md` (`03f1c1d`) and run offline,
+with 0 RPC requests. Results are in [ML_RECENCY_VALIDATION.md](ML_RECENCY_VALIDATION.md).
+
+**Results.**
+
+| Test | Population | Ordering | Top-1 | Comparator | Difference |
+|---|---|---|---|---|---|
+| H1 | 1,059 episodes, the source's confirmation rule applied to rivals too | recency | 0.682 | similarity 0.300 | +0.382, attenuation 0.2% |
+| H2 | the unchanged production detector's warnings | severity, then recency | 0.502 | severity, then similarity: 0.267 | +0.235 |
+
+- **Incidents:** in all 3 recorded incidents with at least 2 warnings, recency ordering puts
+  the stolen-funds recipient first.
+- **Classification:** a source-conditional retrospective effect. The independence gate is
+  **blocked by data**: every archive episode was examined in Phase 12.1.
+
+**Engineering.** A single-pass graph preload reproduces Phase 12.1 exactly. It runs in
+179 s instead of 8,157 s.
+
+**Next.** Pre-register recency on the 13,683 unconfirmed archive payoffs:
+- they were never examined;
+- they were not confirmed;
+- it needs two offline passes, about 2 hours, and no RPC.
+
+A genuinely independent test needs newly recorded incidents, which need an approved RPC
+budget.
+

@@ -26,6 +26,25 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Recency validation and experimental warning ordering (Phase 12.2)
+- **Pre-registered study** `recency-validation/1`, run with
+  `cryptoguard ml recency-validation`. It produces aggregate output and makes 0 RPC
+  requests.
+- **H1:** recency survives when every rival faces the source's own payoff-confirmation rule.
+  Top-1 is 0.682 against 0.300, and the rule attenuates the effect by 0.2%.
+- **H2:** on the production detector's own warnings, ordering by severity then recency beats
+  ordering by severity then similarity: 0.502 against 0.267.
+- **Status:** retrospective sensitivity analysis of previously examined data. No independent
+  validation was possible. Report: ML_RECENCY_VALIDATION.md.
+- **Experimental ranker** `ml/warning_rank.py` (`poisoning-warning-rank/1`):
+  - orders warnings by severity tier, then by the latest planting signal;
+  - never removes or re-tiers a warning;
+  - is not wired into any production path.
+- **Performance:** the graph is preloaded in one sequential pass, which reproduces Phase 12.1
+  exactly (same result hash).
+  - The Phase 12.1 study drops from 8,157 s to 179 s, and from 744 to 485 MiB.
+  - The lazy per-address SQLite lookups are kept as `--lazy-graph`.
+
 ### Temporal and graph lookalike prioritization (Phase 12.1)
 - Pre-registered study `lookalike-prioritization/1`, run with
   `cryptoguard ml lookalike-study` (aggregate output, 0 RPC requests). It ranks the
