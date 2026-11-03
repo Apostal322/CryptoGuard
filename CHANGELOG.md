@@ -27,6 +27,11 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
 ### Recency validation and experimental warning ordering (Phase 12.2)
+- **Follow-up** `cryptoguard ml unconfirmed-recency`: two offline passes, then a
+  pre-registered test on the source's 13,683 unconfirmed payoffs. The result is
+  inconclusive, with only 7 rankable episodes. In 488 of the 499 excluded victims, the paid
+  address never planted to the victim at all. `episode_from_rows` now takes the payoff
+  flag; its default behaviour is unchanged.
 - **Pre-registered study** `recency-validation/1`, run with
   `cryptoguard ml recency-validation`. It produces aggregate output and makes 0 RPC
   requests.

@@ -231,3 +231,14 @@ with 0 RPC requests. Results are in [ML_RECENCY_VALIDATION.md](ML_RECENCY_VALIDA
 A genuinely independent test needs newly recorded incidents, which need an approved RPC
 budget.
 
+**Follow-up (done):** recency on the 13,683 unconfirmed payoffs, pre-registered in
+`docs/ml/protocol-12.2-unconfirmed.md`, is **inconclusive**.
+- Only 7 of 507 victims are rankable. In 488 of the excluded, the paid address never
+  planted to the victim at all.
+- In the 7 rankable episodes, recency ranks the paid address first in 5, even though all 7
+  fail the confirmation rule.
+- So the confirmation step mainly requires a prior planting by the paid address, which the
+  study's eligibility already requires symmetrically.
+- Details: ML_RECENCY_VALIDATION.md §25a.
+- **Next:** newly recorded incidents. They need an approved RPC budget.
+

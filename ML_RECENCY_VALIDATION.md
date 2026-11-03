@@ -463,28 +463,83 @@ uv run --offline cryptoguard ml recency-validation
 
 ## 25. Recommended next experiment
 
-Pre-register and run recency on the archive's **13,683 unconfirmed payoff rows**:
-- Their victims are disjoint from the study, apart from 143 rows.
-- They were never examined.
-- They were *not* subjected to the confirmation step.
+**Done since this section was first written:** the unconfirmed-payoff test (addendum §25a).
+It was inconclusive by its own pre-registered rule, for lack of rankable episodes, and it
+largely answers why.
 
-**What it tests.** If recency also orders lookalikes there, the confirmation step is ruled
-out as its cause, and with it the documented selection mechanism. If recency is much
-weaker there, the confirmation step is implicated.
+**Remaining step.** A genuinely independent test needs **newly recorded incidents**: their
+outcome is known from public reports, and their candidate sets come from CryptoGuard's own
+warnings. This needs:
+- an approved RPC budget to record wallet windows, sized with `ml plan-collection`;
+- a pre-registered OP1-versus-OP0 comparison of the kind in §15.
 
-**Limitations:**
-- the labels are uncertain by the source's own account, so results must be reported per
-  confirmation status;
-- it is the same collection, so it still is not independent of the source's flagging
-  rules.
+Alternatively, the BSC payoff file would allow a second-chain replication, but it needs
+download approval.
 
-**Cost:**
-- two offline archive passes, about 2 hours on this disk, under 512 MiB;
-- 0 RPC requests, no download;
-- then the preloaded study, about 5 minutes.
+## 25a. Addendum: recency on the source's unconfirmed payoffs
 
-A genuinely independent test needs **newly recorded incidents**. That requires an approved
-RPC budget, or the BSC payoff file, which requires download approval.
+| Item | Value |
+|---|---|
+| Protocol | [`docs/ml/protocol-12.2-unconfirmed.md`](docs/ml/protocol-12.2-unconfirmed.md) (`8590366`), frozen before either pass |
+| Code | `ml/unconfirmed_recency.py` (`89998d5`), committed before any U row existed |
+| Output (git-ignored) | `data/ml/research/phase12.2/unconfirmed-recency.json`, `unconfirmed-posthoc.json` |
+
+**Population:**
+- **Pass 1** (12 min, 68 MiB) found exactly 13,683 unconfirmed rows, all flagged
+  unconfirmed only.
+- Their senders, after removing 107 Phase 12.1 victims and 2 protected wallets, are **507
+  U victims**.
+- **Pass 2** (22 min) stored 1,362,584 rows touching those victims, about 2,700 per victim.
+
+**Eligibility: only 7 episodes.**
+
+| Exclusion | Victims |
+|---|---|
+| paid address planted no earlier transfer | 499 |
+| single candidate | 1 |
+| victim also had a confirmed payoff | 0 |
+| protected-entity overlap | 0 |
+
+**Pre-registered results:**
+
+| Test | Result | Decision |
+|---|---|---|
+| U-H1 | T0 0.714, B0 0.024, random 0.256; Δ +0.690 [0.357, 1.0]; p = 0.064; 7 episodes, 7 groups | inconclusive |
+| U-H2 | D = Δ_R − Δ_U = −0.309 [−0.628, 0.045] | *not implicated* by the letter of the rule, but driven by 7 episodes |
+| Conclusion | — | **inconclusive** |
+
+**Exploratory results (7 episodes):**
+- **Every one of the 7 paid lookalikes *fails* the source's rule** under both SR_any and
+  SR_latest. They planted only before the victim's intended transfer. Recency still ranks
+  them first in 5 of 7.
+- Within-episode permutation scores 0.248, close to random (0.256). Oldest-first scores 0.
+- Only 1 episode has at least 2 production warnings including the paid address, so the
+  operational comparison is uninformative.
+
+**Post-hoc diagnostic (not pre-registered)** on the 499 excluded victims:
+- in 488, the paid address **never** planted to the victim;
+- in 11, it planted only after the payment;
+- in 489, the paid address is nonetheless a detector-lookalike of an earlier intended
+  recipient;
+- in 284, other lookalikes had planted before the payment; in 215, none had.
+
+**What this shows.** The source's unconfirmed payoffs are overwhelmingly transfers to
+lookalike-shaped addresses *without any prior planting by that address*.
+
+So the confirmation step's main effect is to require a planting by the paid address before
+the payoff. The Phase 12.1 eligibility rule already requires that, for paid and rival
+candidates alike.
+
+On the timing question, the step leaves almost nothing to test: within rankable episodes,
+it acts on rival timing only as the H1 rule does, and H1 showed that rule barely selects.
+
+**What this does not show:**
+- It cannot tell whether those 488 transfers were poisoning losses whose planting the dump
+  lacks, deliberate payments, or source artifacts.
+- It does not make recency independently validated.
+
+**Cost:** 34 minutes for the two passes, and 225 s for the analysis at 167 MiB peak. 0 RPC
+requests, no download.
 
 ## Research output table
 
@@ -496,6 +551,7 @@ RPC budget, or the BSC payoff file, which requires download approval.
 | H2 | O-arch | 1,057 (1,049) | T − 1 | production warnings | OP0 0.267 | OP1 0.502 | +0.235 [0.208, 0.263] | operational replay diagnostic | source-selected stream, no signers | 13 s |
 | H3 | X-inc | 3 rankable | harm − 1 | production warnings, recorded streams | OP0: 1/3 first | OP1: 3/3 first | — | external source, descriptive (n = 3) | tiny n; detector developed on these fixtures | < 1 s |
 | E14 | P2 | 9 windows | window end | production warnings | — | — | warning set preserved 9/9 | operational diagnostic | no labels | 8 ms |
+| U-H1 (addendum §25a) | U, unconfirmed payoffs | 7 (7) | T − 1 | source plantings | B0 0.024 | T0 0.714 | +0.690 [0.357, 1.0] | inconclusive (n = 7); same source, label-uncertain | 499 of 507 victims unrankable (no prior planting by the paid address) | 34 min passes + 225 s |
 | Independent validation | — | — | — | — | — | — | — | **unsupported due to missing data** | — | — |
 
 ## Decision gates
