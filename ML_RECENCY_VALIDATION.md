@@ -541,6 +541,14 @@ it acts on rival timing only as the H1 rule does, and H1 showed that rule barely
 **Cost:** 34 minutes for the two passes, and 225 s for the analysis at 167 MiB peak. 0 RPC
 requests, no download.
 
+**Audit (Phase 12.3,
+[`docs/ml/amendment-12.2-unconfirmed-audit.md`](docs/ml/amendment-12.2-unconfirmed-audit.md)):**
+- The attrition is a complete partition: 616 senders → 507 victims → 499 + 1 + 7.
+- B0's 0.024 is (1/6)/7, the same tie-averaged metric as T0.
+- The exact p is 0.0625, not the Monte Carlo 0.064, and the bootstrap interval is not
+  meaningful at n = 7.
+- The decision is unchanged.
+
 ## Research output table
 
 | Analysis | Population | Episodes (groups) | Cutoff | Candidate set | Baseline | New | Difference [95% CI] | Status | Main bias limitation | Runtime |
