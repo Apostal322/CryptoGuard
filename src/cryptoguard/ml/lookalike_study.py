@@ -310,8 +310,8 @@ def coverage_symmetry(
     blocks: defaultdict[str, list[int]] = defaultdict(list)
     for r in lr.sqlite_rows(gpath):
         lines.add(r.line)
-        for a in {r.sender, r.receiver} & looks:
-            blocks[a].append(r.block)
+        for addr in {r.sender, r.receiver} & looks:
+            blocks[addr].append(r.block)
     for v in blocks.values():
         v.sort()
     con = sqlite3.connect(f"file:{gpath.as_posix()}?mode=ro", uri=True)
