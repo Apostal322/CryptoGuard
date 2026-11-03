@@ -9,6 +9,9 @@ docs/ml/protocol-12.3.md. Offline only: it never fetches chain data.
   outcome address. Then come the production order (OP0), the frozen recency order (OP1),
   lead times, alert burden and controlled perturbations.
 - ``report``: the per-case table.
+- ``resolve`` (Stage 2, amendment A1): a near-miss case's harmful transaction and lookalike,
+  found on chain by a rule frozen below before any request (``RESOLUTION_RULES``) from the
+  identifiers its source gave. The rule never scores similarity.
 
 Evidence levels are never pooled. Nothing here estimates precision, recall or a
 false-positive rate.
@@ -31,6 +34,9 @@ FROZEN_AT = "b3f66ae"
 MANIFEST = Path("docs/ml/incident-benchmark/candidates.json")
 # Newly recorded cases (Level I), kept apart from the packaged replay cases.
 NEW_CASES = Path("docs/ml/incident-benchmark/cases")
+STAGE2 = Path("docs/ml/incident-benchmark/stage2-candidates.json")  # as discovered
+RESOLVED = Path("docs/ml/incident-benchmark/stage2-resolved.json")  # written by ``resolve``
+AMENDMENT = "amendment-12.3-A1"
 WINDOW_BLOCKS = 21_600  # before and including the harmful block, as in the 4 replay cases
 ARCHIVE_BLOCKS = (15_053_226, 20_208_032)
 ARCHIVE_LAST_DATE = "2024-06-30"  # the archive's last block (~20.2M) is late June 2024
@@ -82,6 +88,117 @@ def load_manifest(path: Path = MANIFEST) -> CandidateManifest:
     if len(ids) != len(set(ids)):
         raise ValueError(f"{path}: duplicate case ids")
     return m
+
+
+def load_manifests(paths: Sequence[Path]) -> CandidateManifest:
+    """The candidates of every manifest that exists, merged; a case id may appear once."""
+    found = [load_manifest(path) for path in paths if path.exists()]
+    if not found:
+        raise FileNotFoundError(f"none of {[str(p) for p in paths]} exists")
+    merged = found[0].model_copy(update={"candidates": [c for m in found for c in m.candidates]})
+    ids = [c.case_id for c in merged.candidates]
+    if len(ids) != len(set(ids)):
+        raise ValueError("a case id appears in more than one manifest")
+    return merged
+
+
+# --- resolve (Stage 2, amendment A1) --------------------------------------------------------
+
+USDT = "0xdac17f958d2ee523a2206206994597c13d831ec7"
+# Frozen before any Stage 2 request. ``sender``/``recipient`` name identifier keys of the
+# case as discovered; dates are inclusive UTC days around the source's reported date.
+RESOLUTION_RULES: dict[str, dict[str, Any]] = {
+    "scamsniffer-763k-2025-02-20": {
+        "sender": "etherscan_filter_fadd",  # Etherscan's advanced filter: fadd is "from"
+        "recipient": "etherscan_filter_tadd",  # and tadd is "to"
+        "prefixes": [],
+        "token": None,
+        "since": "2025-02-19",
+        "until": "2025-02-21",
+    },
+    "webacy-6.88m-usdt-2025-09": {
+        "sender": "victim",
+        "recipient": None,
+        "prefixes": ["0x418e0ddb", "0x4186a058", "0x4186a666", "0x4186b115"],
+        "token": USDT,
+        "since": "2025-09-14",
+        "until": "2025-09-19",
+    },
+}
+
+
+def _utc(day: str, end: bool = False) -> int:
+    from datetime import UTC, datetime
+
+    return int(datetime.fromisoformat(day).replace(tzinfo=UTC).timestamp()) + (86_399 * end)
+
+
+def resolution_query(cand: Candidate) -> dict[str, Any]:
+    """The exact ``replay find-transfers`` query the frozen rule allows for this case."""
+    rule = RESOLUTION_RULES.get(cand.case_id)
+    if rule is None:
+        raise ValueError(f"{cand.case_id}: no pre-registered resolution rule")
+    ids = cand.identifiers
+
+    def key(name: str | None) -> str | None:
+        if name is None:
+            return None
+        value = ids.get(name)
+        if not value or not _ADDR.match(value):
+            raise ValueError(f"{cand.case_id}: identifier {name} is not a full address")
+        return value
+
+    return {
+        "sender": key(rule["sender"]),
+        "recipient": key(rule["recipient"]),
+        "recipient_prefixes": [x.lower() for x in rule["prefixes"]],
+        "token": rule["token"],
+        "since": _utc(rule["since"]),
+        "until": _utc(rule["until"], end=True),
+    }
+
+
+def resolve(cand: Candidate, found: Mapping[str, Any]) -> Candidate:
+    """The harmful transaction by the frozen rule: the oldest nonzero Transfer the query
+    returned whose transaction succeeded and was signed by the sender. Refuses a query that
+    differs from the rule, an incomplete scan, or no such transfer (no second rule is tried)."""
+    want = resolution_query(cand)
+    if dict(found.get("query") or {}) != want:
+        raise ValueError(f"{cand.case_id}: the query differs from the pre-registered rule")
+    if not found.get("scan_complete"):
+        raise ValueError(f"{cand.case_id}: not evaluable: the resolution scan is incomplete")
+    sender = str(want["sender"])
+    located = {str(x["transaction_hash"]).lower(): x for x in found.get("located") or []}
+    for m in found.get("transfers") or []:
+        rec = located.get(str(m["transaction_hash"]).lower())
+        if rec is None:
+            break  # beyond the located prefix: the rule stops rather than guess
+        to = str(m["to"]).lower()
+        paid = rec.get("found") and any(
+            str(tr["from"]).lower() == sender and str(tr["to"]).lower() == to
+            for tr in rec.get("transfers") or []
+        )
+        if paid and rec.get("succeeded") and str(rec.get("from") or "").lower() == sender:
+            rule = RESOLUTION_RULES[cand.case_id]
+            return cand.model_copy(
+                update={
+                    "identifiers": {
+                        "victim": sender,
+                        "lookalike": to,
+                        "intended": cand.identifiers.get("intended"),
+                        "planting_tx": None,
+                        "harm_tx": str(m["transaction_hash"]).lower(),
+                    },
+                    "identifier_status": f"resolved on chain ({AMENDMENT}): oldest nonzero "
+                    f"Transfer signed by {rule['sender']} "
+                    + (f"to {rule['recipient']}" if rule["recipient"] else "to a reported prefix")
+                    + f", {rule['since']}..{rule['until']} UTC",
+                }
+            )
+    raise ValueError(
+        f"{cand.case_id}: identifiers not confirmed on chain (no nonzero Transfer from the "
+        "sender, signed by it, among the located matches)"
+    )
 
 
 # --- verify -------------------------------------------------------------------------------
@@ -220,7 +337,14 @@ def verify(
     refs = reference_sets(poisoning_dir)
     out: list[dict[str, Any]] = []
     for cand in manifest.candidates:
-        row: dict[str, Any] = {"case_id": cand.case_id, "source": cand.source.url}
+        row: dict[str, Any] = {
+            "case_id": cand.case_id,
+            "source": cand.source.url,
+            # amendment A1: identifiers found by a frozen on-chain rule, not given verbatim
+            "identifier_source": "resolved"
+            if cand.identifier_status.startswith("resolved")
+            else "verbatim",
+        }
         if cand.synthetic:
             out.append(
                 row
@@ -339,7 +463,11 @@ def verify(
 
 
 def prepare(
-    cand: Candidate, located: Sequence[Mapping[str, Any]], *, title: str, first_report: str
+    cand: Candidate,
+    located: Sequence[Mapping[str, Any]] | Mapping[str, Any],
+    *,
+    title: str,
+    first_report: str,
 ) -> Any:
     """The replay manifest of a pre-registered case, from ``replay locate`` output for its
     harmful (and planting) transaction. The window is fixed by rule, never by inspection.
@@ -357,6 +485,9 @@ def prepare(
     ids = cand.identifiers
     if cand.synthetic or cand.chain_id != 1 or not _complete(ids):
         raise ValueError(f"{cand.case_id}: not a mainnet case with complete identifiers")
+    if isinstance(located, Mapping):  # ``replay find-transfers`` output carries its receipts
+        located = list(located.get("located") or [])
+    resolved = cand.identifier_status.startswith("resolved")
     by_tx = {str(x["transaction_hash"]).lower(): x for x in located}
     harm = by_tx.get(str(ids["harm_tx"]).lower())
     if harm is None or not harm.get("found"):
@@ -389,7 +520,7 @@ def prepare(
         category="address_poisoning",
         chain_id=1,
         summary=f"Pre-registered Phase 12.3 benchmark case ({cand.mechanism}); see "
-        "docs/ml/incident-benchmark/candidates.json.",
+        f"docs/ml/incident-benchmark/{RESOLVED.name if resolved else 'candidates.json'}.",
         first_public_report=date.fromisoformat(first_report),
         public_sources=[
             SourceRef(
@@ -397,8 +528,13 @@ def prepare(
                 title=title,
                 url=cand.source.url,
                 accessed=date.fromisoformat(first_report),
-                used_for="victim, lookalike, intended recipient, planting and harmful "
-                "transaction hashes",
+                used_for=(
+                    f"the reported addresses and dates; the harmful transaction was resolved "
+                    f"on chain by the rule frozen in {AMENDMENT}"
+                    if resolved
+                    else "victim, lookalike, intended recipient, planting and harmful "
+                    "transaction hashes"
+                ),
             )
         ],
         victim=to_checksum_address(victim),
@@ -473,11 +609,16 @@ def ranking(warnings: Sequence[Any], target: str, cutoff: int) -> dict[str, Any]
     s0: dict[str, float] = {w.suspect.lower(): _pack(baseline_score(w)) for w in warnings}
     s1: dict[str, float] = {w.suspect.lower(): _pack(recency_score(w, cutoff)) for w in warnings}
     shown = rank_warnings(list(warnings), cutoff)
+    r0, r1 = expected_rank(s0, target), expected_rank(s1, target)
     return {
         "k": k,
         "target_warned": True,
-        "OP0_expected_rank": expected_rank(s0, target),
-        "OP1_expected_rank": expected_rank(s1, target),
+        "OP0_expected_rank": r0,
+        "OP1_expected_rank": r1,
+        # amendment A1: comparable across k; 0 is first, 1 is last; None when k == 1
+        "OP0_normalized_rank": round((r0 - 1) / (k - 1), 4) if k > 1 else None,
+        "OP1_normalized_rank": round((r1 - 1) / (k - 1), 4) if k > 1 else None,
+        "paired_difference_OP0_minus_OP1": r0 - r1,
         "random_expected_rank": (k + 1) / 2,
         "OP0_top1": round(lr.top1(s0, target, k), 4),
         "OP1_top1": round(lr.top1(s1, target, k), 4),
@@ -552,6 +693,13 @@ def run_case(case: Any, level: str = "III") -> dict[str, Any]:
         },
         "leakage_checks_passed": all(ch.passed for ch in rep.leakage_checks),
     }
+    # amendment A1 (scoring side only; the detector never sees these):
+    seen = [tr for tr in fx.transfers if tr.block_number <= c and target in _parties(tr)]
+    out["cluster_signers"] = sorted(
+        {tr.tx_sender.lower() for tr in seen if tr.tx_sender} - {m.victim.lower()}
+    )
+    first = min((tr.block_number for tr in seen), default=None)
+    out["lead_possibly_censored"] = None if first is None else first - fx.from_block < DAY
     variants: dict[str, Any] = {}
     for name, (f, cut, vis) in _variants(fx, c).items():
         if cut < fx.from_block:
@@ -584,6 +732,78 @@ def run_case(case: Any, level: str = "III") -> dict[str, Any]:
     return out
 
 
+def _parties(tr: Any) -> set[str]:
+    return {tr.sender.lower(), tr.recipient.lower()}
+
+
+def sign_test_p(better: int, worse: int) -> float:
+    """Exact one-sided sign test: P(at least ``better`` of ``better + worse`` | p = 1/2)."""
+    from math import comb
+
+    n = better + worse
+    return sum(comb(n, i) for i in range(better, n + 1)) / (1 << n)
+
+
+def amended_gate_h(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Gate H under amendment A1: cases linked by a shared planting signer (pre-cutoff,
+    from the fixture) form one cluster with one vote; below 6 untied clusters the result is
+    DESCRIPTIVE; PASS needs at least 10 rankable clusters, more better than worse, and an
+    exact one-sided sign test p < 0.05. A case without a known signer is its own cluster
+    and is counted as linkage unknown."""
+    rankable = [
+        r
+        for r in results
+        if r["ranking"]["primary"].get("target_warned") and r["ranking"]["primary"]["k"] >= 2
+    ]
+    parent = list(range(len(rankable)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    owner: dict[str, int] = {}
+    for i, r in enumerate(rankable):
+        for s in r.get("cluster_signers") or []:
+            if s in owner:
+                parent[root(i)] = root(owner[s])
+            else:
+                owner[s] = i
+    clusters: dict[int, list[float]] = {}
+    for i, r in enumerate(rankable):
+        clusters.setdefault(root(i), []).append(
+            r["ranking"]["primary"]["OP0_expected_rank"]
+            - r["ranking"]["primary"]["OP1_expected_rank"]
+        )
+    votes = {"better": 0, "equal": 0, "worse": 0}
+    for diffs in clusters.values():
+        b, w = sum(d > 0 for d in diffs), sum(d < 0 for d in diffs)
+        votes["better" if b > w else "worse" if w > b else "equal"] += 1
+    untied = votes["better"] + votes["worse"]
+    p = sign_test_p(votes["better"], votes["worse"]) if untied >= 6 else None
+    if not rankable:
+        status = "NOT EVALUATED"
+    elif untied < 6:
+        status = "DESCRIPTIVE"
+    elif votes["worse"] > votes["better"]:
+        status = "FAIL"
+    elif len(clusters) >= 10 and votes["better"] > votes["worse"] and p is not None and p < 0.05:
+        status = "PASS"
+    else:
+        status = "NOT PASSED"
+    return {
+        "rule": AMENDMENT,
+        "rankable_cases": len(rankable),
+        "clusters": len(clusters),
+        "linkage_unknown_cases": sum(not r.get("cluster_signers") for r in rankable),
+        "cluster_votes": votes,
+        "sign_test_p_one_sided": p,
+        "status": status,
+        "lead_possibly_censored_cases": sum(bool(r.get("lead_possibly_censored")) for r in results),
+    }
+
+
 def _summary(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     rankable = [
         r
@@ -609,6 +829,7 @@ def _summary(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "OP1_vs_OP0": paired,
         "OP0_top1_cases": sum(r["ranking"]["primary"]["OP0_top1"] == 1.0 for r in rankable),
         "OP1_top1_cases": sum(r["ranking"]["primary"]["OP1_top1"] == 1.0 for r in rankable),
+        "gate_H_amended": amended_gate_h(results),
     }
 
 
@@ -629,9 +850,13 @@ def run(
     admitted = {v["case_id"] for v in verified if v["tier"] == "A"}
     by_fixture = {v["case_id"]: v for v in verified}
     skipped: list[dict[str, str]] = []
+    not_recorded: list[str] = []  # amendment A1: pre-registered, no complete window
+    new_ids = {x.manifest.case_id for x in load_new_cases()}
     tier_a = []
     for c in cases:
         if c.fixture is None or not c.fixture.transfer_scan_complete:
+            if c.manifest.case_id in new_ids:
+                not_recorded.append(c.manifest.case_id)
             continue
         cid = c.manifest.case_id
         if cid not in admitted:
@@ -642,7 +867,9 @@ def run(
         else:
             tier_a.append(c)
     results = [
-        run_case(c, str(by_fixture[c.manifest.case_id].get("level") or "III")) for c in tier_a
+        run_case(c, str(by_fixture[c.manifest.case_id].get("level") or "III"))
+        | {"identifier_source": by_fixture[c.manifest.case_id].get("identifier_source")}
+        for c in tier_a
     ]
     peak = peak_rss_bytes()
     return {
@@ -652,7 +879,11 @@ def run(
         "evidence_level": "levels are reported separately and never pooled",
         "cases": results,
         "not_computed": skipped,
+        "new_cases_not_recorded": not_recorded,
         "summary_level_I": _summary([r for r in results if r["level"] == "I"]),
+        "summary_level_I_verbatim_only": _summary(
+            [r for r in results if r["level"] == "I" and r["identifier_source"] == "verbatim"]
+        ),
         "summary_level_III": _summary([r for r in results if r["level"] == "III"]),
         "background_alert_burden": background(blind),
         "resources": {
@@ -697,4 +928,14 @@ def report(verified: Sequence[Mapping[str, Any]], result: Mapping[str, Any]) -> 
             f"{cell(p.get('OP0_expected_rank'))} | {cell(p.get('OP1_expected_rank'))} | "
             f"{cell(p.get('random_expected_rank'))} |"
         )
+    lines.append("")
+    for level in ("I", "III"):
+        g = result.get(f"summary_level_{level}", {}).get("gate_H_amended")
+        if g:
+            lines.append(
+                f"Gate H, Level {level} ({g['rule']}): {g['status']}; {g['rankable_cases']} "
+                f"rankable cases in {g['clusters']} clusters; cluster votes {g['cluster_votes']}"
+            )
+    if result.get("new_cases_not_recorded"):
+        lines.append(f"Pre-registered, not recorded: {', '.join(result['new_cases_not_recorded'])}")
     return "\n".join(lines) + "\n"

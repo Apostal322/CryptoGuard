@@ -341,7 +341,7 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
             print(f"{case.manifest.case_id}  [{status}]  {case.manifest.title}")
         return 0
 
-    if args.replay_command == "locate":
+    if args.replay_command in ("locate", "find-transfers"):
         return _locate_command(args, settings)
 
     if args.replay_command == "record":
@@ -487,7 +487,7 @@ def _locate_command(args: argparse.Namespace, settings: Settings) -> int:
     from cryptoguard.blockchain.budget import BudgetExhaustedError, budgeted_transport
     from cryptoguard.blockchain.provider import build_rpc_provider
     from cryptoguard.core.config import validate_rpc_url
-    from cryptoguard.replay.record import locate_transaction
+    from cryptoguard.replay.record import find_transfers, locate_transaction
 
     ledger = _replay_ledger(args)
     rpc_settings = settings.model_copy(
@@ -498,14 +498,31 @@ def _locate_command(args: argparse.Namespace, settings: Settings) -> int:
         }
     )
 
-    async def run() -> list[dict[str, Any]]:
+    async def run() -> Any:
         provider = build_rpc_provider(rpc_settings, transport=budgeted_transport(ledger))
         before = ledger.used()
         try:
+            if args.replay_command == "find-transfers":
+                return await find_transfers(
+                    provider,
+                    sender=args.sender,
+                    recipient=args.recipient,
+                    recipient_prefixes=tuple(args.recipient_prefix),
+                    token=args.token,
+                    since=_utc_day(args.since),
+                    until=_utc_day(args.until) + 86_399,
+                    chunk_blocks=args.chunk_blocks,
+                    locate_first=args.locate_first,
+                )
             return [await locate_transaction(provider, h) for h in args.tx_hash]
         finally:
             await provider.aclose()
-            ledger.note(f"replay locate {len(args.tx_hash)} tx: {ledger.used() - before} reserved")
+            what = (
+                f"find-transfers from {args.sender}"
+                if args.replay_command == "find-transfers"
+                else f"locate {len(args.tx_hash)} tx"
+            )
+            ledger.note(f"replay {what}: {ledger.used() - before} reserved")
 
     try:
         found = asyncio.run(run())
@@ -519,6 +536,13 @@ def _locate_command(args: argparse.Namespace, settings: Settings) -> int:
     else:
         print(text)
     return 0
+
+
+def _utc_day(day: str) -> int:
+    """Midnight UTC of a YYYY-MM-DD date, as a Unix timestamp."""
+    from datetime import UTC, datetime
+
+    return int(datetime.fromisoformat(day).replace(tzinfo=UTC).timestamp())
 
 
 def _background_command(args: argparse.Namespace, settings: Settings) -> int:
@@ -873,6 +897,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_locate.add_argument("--chain-id", type=int, default=1)
     p_locate.add_argument("--out", metavar="PATH", help="write the JSON here")
     _add_rpc_budget(p_locate, per_run_help="most requests this run may reserve")
+    p_find = replay_sub.add_parser(
+        "find-transfers",
+        help="find a pre-registered case's harmful transfer from reported addresses and dates",
+    )
+    p_find.add_argument("--sender", required=True, help="the reported victim (Transfer from)")
+    p_find.add_argument("--recipient", help="the reported recipient (Transfer to), if given")
+    p_find.add_argument(
+        "--recipient-prefix",
+        action="append",
+        default=[],
+        help="keep only recipients starting with this reported prefix (repeatable)",
+    )
+    p_find.add_argument("--token", help="limit to one token contract")
+    p_find.add_argument("--since", required=True, help="first UTC day, YYYY-MM-DD")
+    p_find.add_argument("--until", required=True, help="last UTC day (inclusive), YYYY-MM-DD")
+    p_find.add_argument("--chunk-blocks", type=int, default=100)
+    p_find.add_argument("--locate-first", type=int, default=10)
+    p_find.add_argument("--rpc-url", required=True)
+    p_find.add_argument("--chain-id", type=int, default=1)
+    p_find.add_argument("--out", metavar="PATH", help="write the JSON here")
+    _add_rpc_budget(p_find, per_run_help="most requests this run may reserve")
     p_sample = replay_sub.add_parser(
         "sample-background", help="draw unlabelled background wallets (seeded) from an RPC"
     )

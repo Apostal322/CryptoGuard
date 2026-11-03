@@ -167,6 +167,8 @@ reaches its cap is *not evaluable: budget*, and its leftover requests are not re
 | webacy-6.88m | timestamp bisection (≤ 60), then USDT Transfer logs filtered on `from = victim` over about 43,200 blocks (≤ 480) | probably busy: 3,000 | **3,540** | about 1,500 |
 | **Stage 2a total** | | | **5,840** | **about 2,250** |
 
+**Revised in Step 0, before any request:** the caps are **2,400 / 3,600 / 6,000**, as given in `preregistration-stage2a.md` §2. The resolution caps above left out the chain check, the head read and up to 10 receipt reads; the resolution steps are now 400 and 600.
+
 **Stage 2b (user-sourced cases).** These need full identifiers including the harm tx, so
 `locate` takes at most 20 requests each.
 - **Per case:** 20 for locate plus a 2,000 recording cap.
@@ -176,9 +178,9 @@ reaches its cap is *not evaluable: budget*, and its leftover requests are not re
 **Cumulative:**
 - **Spent:** 475 (Stage 1).
 - **Proposed:**
-  - Stage 2a: 5,840 at most, about 2,250 expected;
+  - Stage 2a: 6,000 at most (revised), about 2,250 expected;
   - Stage 2b: 14,000 at most, about 6,800 expected.
-- **Total:** at most 20,315, about 9,500 expected.
+- **Total:** at most 20,475, about 9,500 expected.
 
 **The fail-closed cap introduces a bias.** It drops busy wallets, so the evaluated sample leans
 towards quiet wallets, where the detector's job is easier. The number of cases dropped at the
@@ -234,7 +236,7 @@ It is mock-tested like the Stage 0 tools, and nothing else is added.
 
 ## 8. Recommended Stage 2 execution plan
 
-**Step 0: no RPC; this approval is for code and documents.**
+**Step 0: no RPC; this approval is for code and documents.** Done: `../amendment-12.3-A1.md`, `replay find-transfers` and `ml incident-benchmark resolve`, and `preregistration-stage2a.md`.
 1. Commit the protocol amendment of §7, before any Stage 2 request:
    - DESCRIPTIVE below 6 untied cases;
    - cluster-level sign test;
@@ -251,7 +253,7 @@ It is mock-tested like the Stage 0 tools, and nothing else is added.
    A resolution that fails ends that case (*identifiers not confirmed on chain*), with no
    retry under another rule.
 
-**Step 1: Stage 2a, needs approval of a 5,840 cap.**
+**Step 1: Stage 2a, needs approval of a 6,000 cap** (revised in Step 0).
 - Sequence per case: resolve → `prepare` → `record` → offline `verify / run / report`.
 - One ledger per stage. One restart per step after a transport error.
 - Runs only after the same bounded resource preflight as Stage 1.

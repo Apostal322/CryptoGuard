@@ -373,3 +373,109 @@ def test_stage_1_pilot_case_is_frozen_and_reproduces_exactly() -> None:
         4.0,
         2.0,
     )
+
+
+def _stage2(**over: Any) -> ib.Candidate:
+    return ib.Candidate.model_validate(
+        cand(
+            case_id="webacy-6.88m-usdt-2025-09",
+            identifiers={"victim": "0x" + "e" * 40, "lookalike": None},
+            identifier_status="partial",
+        )
+        | over
+    )
+
+
+def _found(c: ib.Candidate, **over: Any) -> dict[str, Any]:
+    v, look = "0x" + "e" * 40, "0x4186a058" + "0" * 32
+    harm = "0x" + "1" * 64
+    base: dict[str, Any] = {
+        "query": ib.resolution_query(c),
+        "scan_complete": True,
+        "transfers": [{"transaction_hash": harm, "to": look}],
+        "located": [
+            {
+                "transaction_hash": harm,
+                "found": True,
+                "succeeded": True,
+                "from": v,
+                "transfers": [{"from": v, "to": look, "token": ib.USDT, "value_base_units": "5"}],
+            }
+        ],
+    }
+    return base | over
+
+
+def test_resolve_follows_only_the_frozen_rule() -> None:
+    c = _stage2()
+    done = ib.resolve(c, _found(c))
+    assert done.identifiers["harm_tx"] == "0x" + "1" * 64
+    assert done.identifiers["lookalike"] == "0x4186a058" + "0" * 32
+    assert done.identifier_status.startswith("resolved on chain (amendment-12.3-A1)")
+    other_dates = _found(c) | {"query": ib.resolution_query(c) | {"until": 0}}
+    with pytest.raises(ValueError, match="differs from the pre-registered rule"):
+        ib.resolve(c, other_dates)
+    with pytest.raises(ValueError, match="scan is incomplete"):
+        ib.resolve(c, _found(c, scan_complete=False))
+    signed_by_attacker = _found(c)
+    signed_by_attacker["located"][0]["from"] = "0x" + "a" * 40
+    with pytest.raises(ValueError, match="identifiers not confirmed on chain"):
+        ib.resolve(c, signed_by_attacker)
+    with pytest.raises(ValueError, match="no pre-registered resolution rule"):
+        ib.resolution_query(_stage2(case_id="unknown-case"))
+
+
+def _ranked(better: bool | None, signers: list[str]) -> dict[str, Any]:
+    r1 = {True: 1.0, False: 3.0, None: 2.0}[better]
+    return {
+        "ranking": {
+            "primary": {
+                "target_warned": True,
+                "k": 3,
+                "OP0_expected_rank": 2.0,
+                "OP1_expected_rank": r1,
+            }
+        },
+        "cluster_signers": signers,
+        "lead_possibly_censored": False,
+    }
+
+
+def test_amended_gate_h_is_descriptive_below_six_clusters_and_votes_by_cluster() -> None:
+    assert ib.amended_gate_h([_ranked(True, ["0xs"])])["status"] == "DESCRIPTIVE"
+    # ten cases, all better, but sharing one signer: one cluster, one vote
+    same = ib.amended_gate_h([_ranked(True, ["0xs"]) for _ in range(10)])
+    assert (same["clusters"], same["cluster_votes"]["better"], same["status"]) == (
+        1,
+        1,
+        "DESCRIPTIVE",
+    )
+    distinct = ib.amended_gate_h([_ranked(True, [f"0x{i}"]) for i in range(10)])
+    assert distinct["status"] == "PASS"
+    assert distinct["sign_test_p_one_sided"] == pytest.approx(1 / 1024)
+    unknown = ib.amended_gate_h([_ranked(True, []) for _ in range(10)])
+    assert (unknown["clusters"], unknown["linkage_unknown_cases"]) == (10, 10)
+    mixed = [_ranked(True, [f"0x{i}"]) for i in range(7)] + [
+        _ranked(False, [f"0xw{i}"]) for i in range(3)
+    ]
+    assert ib.amended_gate_h(mixed)["status"] == "NOT PASSED"  # p = 0.172
+    assert ib.sign_test_p(9, 1) == pytest.approx(11 / 1024)
+
+
+def test_manifests_merge_and_reject_duplicate_case_ids(tmp_path: Path) -> None:
+    def write(name: str, ids: list[str]) -> Path:
+        p = tmp_path / name
+        body = {
+            "schema_version": "incident-candidates/1",
+            "protocol": "p",
+            "discovery": {},
+            "candidates": [cand(case_id=i) for i in ids],
+        }
+        p.write_text(json.dumps(body), encoding="utf-8")
+        return p
+
+    a, b = write("a.json", ["x"]), write("b.json", ["y"])
+    merged = ib.load_manifests([a, b, tmp_path / "missing.json"])
+    assert [c.case_id for c in merged.candidates] == ["x", "y"]
+    with pytest.raises(ValueError, match="more than one manifest"):
+        ib.load_manifests([a, write("c.json", ["x"])])

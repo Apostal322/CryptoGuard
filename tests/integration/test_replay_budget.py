@@ -133,6 +133,18 @@ async def test_locate_reads_block_parties_and_transfers(tmp_path: Path) -> None:
     [
         ["replay", "record", "usdt-50m-poisoning-2025-12-19", "--rpc-url", "https://x.invalid"],
         ["replay", "locate", "0x" + "ab" * 32, "--rpc-url", "https://x.invalid"],
+        [
+            "replay",
+            "find-transfers",
+            "--sender",
+            "0x" + "ab" * 20,
+            "--since",
+            "2025-01-01",
+            "--until",
+            "2025-01-02",
+            "--rpc-url",
+            "https://x.invalid",
+        ],
         ["replay", "record-background", "--rpc-url", "https://x.invalid"],
         [
             "replay",
@@ -241,3 +253,99 @@ def test_stage_1_dry_run_prepare_record_verify(
     [row] = ib.verify(manifest_, Path("unused"), cases=[], new_cases=[case])
     assert (row["level"], row["tier"], row["verified"]) == ("I", "A", True)
     assert row["onchain"]["planting"] == "confirmed in the window"
+
+
+async def test_block_at_time_bisects_header_timestamps(tmp_path: Path) -> None:
+    from cryptoguard.replay.record import block_at_time
+
+    node = FakeNode()
+    node.head = 5_000  # FakeNode: timestamp = 1_700_000_000 + 12 * block
+    provider, counting = _provider(node, RequestLedger(tmp_path / "l.json", cap=100))
+    try:
+        ts = 1_700_000_000 + 12 * 1_234
+        assert await block_at_time(provider, ts, after=True) == 1_234
+        assert await block_at_time(provider, ts + 5, after=True) == 1_235
+        assert await block_at_time(provider, ts + 5, after=False) == 1_234
+    finally:
+        await provider.aclose()
+    assert counting.attempts <= 3 * (13 + 2)  # about log2(head) reads per call
+
+
+def test_stage_2a_dry_run_find_resolve_prepare_record_verify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A near-miss case on a mock node: the frozen rule finds the harmful transfer from the
+    two reported addresses, skips a counterfeit transfer the attacker signed "from" the
+    victim, and the case then records and verifies as Level I like any other."""
+    import json
+
+    from cryptoguard.ml import incident_benchmark as ib
+    from cryptoguard.replay.models import load_cases
+
+    node = FakeNode()
+    node.add_token(TOKEN)
+    node.head = 31_000
+    node.send_native(WALLET, REAL, 10**16, block=25_000)
+    node.add_transfer_log(TOKEN, WALLET, FAKE, 0, block=28_900, signer=ATTACKER_SIGNER)
+    fake_from_victim = node.add_transfer_log(
+        TOKEN, WALLET, FAKE, 115, block=29_000, signer=ATTACKER_SIGNER
+    )
+    theft = node.add_transfer_log(TOKEN, WALLET, FAKE, 1000, block=30_000, signer=WALLET)
+    monkeypatch.setattr(budget_mod.httpx, "AsyncHTTPTransport", node.transport)
+    rule = {
+        "sender": "etherscan_filter_fadd",
+        "recipient": "etherscan_filter_tadd",
+        "prefixes": [],
+        "token": None,
+        "since": "2023-11-18",  # blocks 22,134.. (FakeNode clock)
+        "until": "2023-11-19",
+    }
+    monkeypatch.setitem(ib.RESOLUTION_RULES, "dry-2a", rule)
+    cand = ib.Candidate.model_validate(
+        {
+            "case_id": "dry-2a",
+            "source": {"publisher": "p", "url": "https://example.org", "date": "2023-11-19"},
+            "chain_id": 1,
+            "mechanism": "unknown",
+            "identifiers": {
+                "etherscan_filter_fadd": WALLET.lower(),
+                "etherscan_filter_tadd": FAKE.lower(),
+            },
+            "identifier_status": "partial: roles not stated",
+            "fixture_case_id": None,
+            "synthetic": False,
+        }
+    )
+    ledger = tmp_path / "ledger.json"
+    url = ["--rpc-url", "https://rpc.example.invalid", "--ledger", str(ledger), "--cap", "3000"]
+    out = tmp_path / "found.json"
+    find = ["replay", "find-transfers", "--sender", WALLET, "--recipient", FAKE]
+    dates = ["--since", rule["since"], "--until", rule["until"], "--out", str(out)]
+    assert cli.main([*find, *dates, *url, "--max-requests", "300"]) == 0
+    found = json.loads(out.read_text(encoding="utf-8"))
+    assert found["scan_complete"]
+    assert [t["transaction_hash"] for t in found["transfers"]] == [
+        str(fake_from_victim["transactionHash"]),  # nonzero, but signed by the attacker
+        str(theft["transactionHash"]),
+    ]
+    done = ib.resolve(cand, found)
+    assert done.identifiers["harm_tx"] == str(theft["transactionHash"])
+    assert (done.identifiers["victim"], done.identifiers["lookalike"]) == (
+        WALLET.lower(),
+        FAKE.lower(),
+    )
+    m = ib.prepare(done, found, title="t", first_report="2026-11-03")
+    assert m.harm.block_number == 30_000
+    cases_dir = tmp_path / "cases"
+    (cases_dir / "dry-2a").mkdir(parents=True)
+    (cases_dir / "dry-2a" / "manifest.json").write_text(m.model_dump_json(indent=2))
+    assert cli.main(["replay", "record", "dry-2a", "--cases-dir", str(cases_dir), *url]) == 0
+    [case] = load_cases(cases_dir)
+    monkeypatch.setattr(ib, "reference_sets", lambda _d: {})
+    manifest_ = ib.CandidateManifest(
+        schema_version="incident-candidates/1", protocol="p", discovery={}, candidates=[done]
+    )
+    [row] = ib.verify(manifest_, Path("unused"), cases=[], new_cases=[case])
+    assert (row["level"], row["tier"], row["verified"]) == ("I", "A", True)
+    assert row["onchain"]["planting"] == "not reported"
+    assert RequestLedger(ledger, cap=3000).used() <= 3000

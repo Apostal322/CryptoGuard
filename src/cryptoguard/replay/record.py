@@ -180,3 +180,93 @@ async def locate_transaction(provider: RpcEthereumProvider, tx_hash: str) -> dic
         "succeeded": receipt.get("status") == "0x1",
         "transfers": transfers,
     }
+
+
+async def block_at_time(provider: RpcEthereumProvider, ts: int, *, after: bool) -> int:
+    """By bisection on header timestamps: the first block with timestamp >= ``ts`` (``after``)
+    or the last block with timestamp <= ``ts``. About log2(head) block reads."""
+    lo, hi = 0, await provider.block_number()
+    while lo < hi:
+        mid = (lo + hi + (0 if after else 1)) // 2
+        stamp = (await provider.get_block(mid)).timestamp
+        if after:
+            lo, hi = (mid + 1, hi) if stamp < ts else (lo, mid)
+        else:
+            lo, hi = (mid, hi) if stamp <= ts else (lo, mid - 1)
+    return lo
+
+
+async def find_transfers(
+    provider: RpcEthereumProvider,
+    *,
+    sender: str,
+    since: int,
+    until: int,
+    recipient: str | None = None,
+    recipient_prefixes: tuple[str, ...] = (),
+    token: str | None = None,
+    chunk_blocks: int = 100,
+    max_log_requests: int = 500,
+    locate_first: int = 10,
+) -> dict[str, Any]:
+    """ERC-20 Transfer logs from ``sender`` (to ``recipient``, if given) between two UTC
+    timestamps, filtered to nonzero values and to the given recipient prefixes, oldest first;
+    the first ``locate_first`` matches are read with ``locate_transaction``. Resolves a
+    pre-registered Stage 2 case's harmful transaction from the identifiers a source gave; it
+    never scores similarity, and the detector never sees its output."""
+    from cryptoguard.blockchain.abi import address_topic
+    from cryptoguard.blockchain.logscan import scan_logs
+
+    await provider.verify_chain()
+    start = await block_at_time(provider, since, after=True)
+    end = await block_at_time(provider, until, after=False)
+    topics: list[str | list[str] | None] = [TRANSFER_TOPIC, address_topic(sender)]
+    if recipient is not None:
+        topics.append(address_topic(recipient))
+    scan = await scan_logs(
+        provider,
+        topics=topics,
+        from_block=start,
+        to_block=end,
+        chunk_blocks=chunk_blocks,
+        max_requests=max_log_requests,
+        address=[token] if token else None,
+    )
+    prefixes = tuple(p.lower() for p in recipient_prefixes)
+    matches: list[dict[str, Any]] = []
+    for log in scan.logs:
+        if len(log.get("topics") or []) != 3:
+            continue
+        to = "0x" + log["topics"][2][-40:].lower()
+        value = int(log.get("data") or "0x0", 16)
+        if value == 0 or (prefixes and not to.startswith(prefixes)):
+            continue
+        matches.append(
+            {
+                "transaction_hash": str(log["transactionHash"]).lower(),
+                "block_number": int(log["blockNumber"], 16),
+                "log_index": int(log["logIndex"], 16),
+                "token": to_checksum_address(log["address"]),
+                "from": to_checksum_address(sender),
+                "to": to_checksum_address(to),
+                "value_base_units": str(value),
+            }
+        )
+    matches.sort(key=lambda m: (m["block_number"], m["log_index"]))
+    hashes = list(dict.fromkeys(m["transaction_hash"] for m in matches))[:locate_first]
+    return {
+        "query": {
+            "sender": sender.lower(),
+            "recipient": recipient.lower() if recipient else None,
+            "recipient_prefixes": list(prefixes),
+            "token": token.lower() if token else None,
+            "since": since,
+            "until": until,
+        },
+        "from_block": start,
+        "to_block": end,
+        "scan_complete": scan.complete,
+        "log_requests": scan.requests,
+        "transfers": matches,
+        "located": [await locate_transaction(provider, h) for h in hashes],
+    }

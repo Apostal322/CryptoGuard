@@ -132,13 +132,23 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ib = ml.add_parser(
         "incident-benchmark", help="Phase 12.3 independent incident benchmark (offline)"
     )
-    ib.add_argument("step", choices=("verify", "prepare", "run", "report"))
+    ib.add_argument("step", choices=("verify", "resolve", "prepare", "run", "report"))
     ib.add_argument("--case", help="prepare: the pre-registered case id")
-    ib.add_argument("--located", type=Path, help="prepare: `replay locate` JSON for the case")
+    ib.add_argument(
+        "--located", type=Path, help="prepare: `replay locate` or `find-transfers` JSON"
+    )
+    ib.add_argument("--found", type=Path, help="resolve: `replay find-transfers` JSON")
     ib.add_argument("--title", help="prepare: the case title")
     ib.add_argument("--first-report", help="prepare: ISO date of the first public report")
     ib.add_argument(
-        "--manifest", type=Path, default=Path("docs/ml/incident-benchmark/candidates.json")
+        "--manifest",
+        type=Path,
+        nargs="+",
+        default=[
+            Path("docs/ml/incident-benchmark/candidates.json"),
+            Path("docs/ml/incident-benchmark/stage2-resolved.json"),
+        ],
+        help="candidate manifests, merged (missing files are skipped)",
     )
     ib.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.3")
     iv = ml.add_parser("inventory", help="hash and describe every local research data file")
@@ -285,16 +295,48 @@ def run(args: argparse.Namespace) -> int:
         verified_path = args.out / "incident-verify.json"
         run_path = args.out / "incident-benchmark.json"
         if args.step == "verify":
-            rows = ib_.verify(ib_.load_manifest(args.manifest), ML_DIR / "poisoning")
+            rows = ib_.verify(ib_.load_manifests(args.manifest), ML_DIR / "poisoning")
             verified_path.write_text(json.dumps(rows, indent=1) + "\n", encoding="utf-8")
             for r in rows:
                 print(f"{r['case_id']:40} {r['tier']:18} {r['status']}")
+        elif args.step == "resolve":
+            if not (args.case and args.found):
+                print("resolve needs --case and --found.")
+                return 1
+            stage2 = ib_.load_manifest(ib_.STAGE2)
+            cand = next((c for c in stage2.candidates if c.case_id == args.case), None)
+            if cand is None:
+                print(f"{args.case} is not in {ib_.STAGE2}.")
+                return 1
+            out = (
+                ib_.load_manifest(ib_.RESOLVED)
+                if ib_.RESOLVED.exists()
+                else stage2.model_copy(
+                    update={
+                        "protocol": f"{ib_.PROTOCOL} with {ib_.AMENDMENT}",
+                        "discovery": {"resolved_from": str(ib_.STAGE2)},
+                        "candidates": [],
+                        "not_usable_sources": [],
+                    }
+                )
+            )
+            if any(c.case_id == args.case for c in out.candidates):
+                print(f"{args.case} is already resolved in {ib_.RESOLVED}; never overwritten.")
+                return 1
+            try:
+                done = ib_.resolve(cand, json.loads(args.found.read_text(encoding="utf-8")))
+            except ValueError as exc:
+                print(f"not resolved: {exc}")
+                return 1
+            out = out.model_copy(update={"candidates": [*out.candidates, done]})
+            ib_.RESOLVED.write_text(out.model_dump_json(indent=2) + "\n", encoding="utf-8")
+            print(f"Resolved {args.case}: harm {done.identifiers['harm_tx']} -> {ib_.RESOLVED}")
         elif args.step == "prepare":
             if not (args.case and args.located and args.title and args.first_report):
                 print("prepare needs --case, --located, --title and --first-report.")
                 return 1
             cand = next(
-                (c for c in ib_.load_manifest(args.manifest).candidates if c.case_id == args.case),
+                (c for c in ib_.load_manifests(args.manifest).candidates if c.case_id == args.case),
                 None,
             )
             if cand is None:

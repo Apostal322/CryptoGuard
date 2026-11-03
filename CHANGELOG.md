@@ -26,6 +26,22 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Incident recording, Stage 2 Step 0 (no RPC requests)
+- **Amendment 12.3-A1** (`docs/ml/amendment-12.3-A1.md`), frozen before any Stage 2 request:
+  - **R1, identifier resolution:** a frozen on-chain rule, with no similarity scoring.
+  - **R2, Gate H:** DESCRIPTIVE below 6 untied clusters; clusters are cases sharing a planting signer.
+  - **R3, added measures:** normalized ranks, the censoring flag, and cases not recorded.
+  - Level I is also summarized without resolved cases.
+- **Added:**
+  - `replay find-transfers`: capped; finds block bounds by header timestamps; reads receipts of the first 10 matches.
+  - `ml incident-benchmark resolve`;
+  - multi-manifest `verify` and `prepare`.
+  - All are tested on mock nodes only. The detector, OP0 and OP1 are unchanged, and the Stage 1 case reproduces exactly.
+- **Pre-registered:** Stage 2a (`docs/ml/incident-benchmark/preregistration-stage2a.md`):
+  - 2 cases;
+  - caps of 2,400 / 3,600 per case, 6,000 total;
+  - not approved.
+
 ### Incident recording, Stage 2 preparation (no RPC requests)
 - **Stage 1 audit:**
   - CI passed for `0aa1892`;
