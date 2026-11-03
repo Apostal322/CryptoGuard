@@ -297,44 +297,46 @@ def coverage_symmetry(
     the victim-side subset holds, for paid and rivals alike. The older subset's targeting
     is reported to show the asymmetry this pass removes."""
     import sqlite3
+    from bisect import bisect_right
 
     from cryptoguard.ml.tsuchiya_archive import load_targets
 
     manifest = load_targets(poisoning_dir / lr.RESEARCH_DIR / "graph_context_targets.json")
     old = json.loads((poisoning_dir / "archive_targets.json").read_text(encoding="utf-8"))
     old_lookalikes = set(old["groups"].get("payoff_lookalikes", ()))
+    # One sequential pass instead of two random lookups per candidate (same counts).
+    looks = {c for e in episodes for c in e.candidates}
+    lines: set[int] = set()
+    blocks: defaultdict[str, list[int]] = defaultdict(list)
+    for r in lr.sqlite_rows(gpath):
+        lines.add(r.line)
+        for a in {r.sender, r.receiver} & looks:
+            blocks[a].append(r.block)
+    for v in blocks.values():
+        v.sort()
     con = sqlite3.connect(f"file:{gpath.as_posix()}?mode=ro", uri=True)
     try:
         meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
         scanned = json.loads(meta["summary"])["target_manifest_sha256"]
-        acc: dict[str, Counter[str]] = {"paid": Counter(), "rival": Counter()}
-        rows_seen: dict[str, list[int]] = {"paid": [], "rival": []}
-        for e in episodes:
-            c = e.payoff_block - 1
-            by_l: defaultdict[str, list[lr.Row]] = defaultdict(list)
-            for r in e.plantings:
-                by_l[lr.lookalike_of(r, e.victim)].append(r)
-            for lk, rows in by_l.items():
-                side = "paid" if lk == e.paid else "rival"
-                a = acc[side]
-                a["candidates"] += 1
-                a["targeted_address"] += lk in manifest.addresses
-                a["targeted_in_old_subset"] += lk in old_lookalikes
-                a["planting_rows"] += len(rows)
-                a["planting_txs_targeted"] += sum(r.tx in manifest.txs for r in rows)
-                a["planting_rows_in_graph_db"] += sum(
-                    con.execute("SELECT 1 FROM transfers WHERE line = ?", (r.line,)).fetchone()
-                    is not None
-                    for r in rows
-                )
-                n = con.execute(
-                    "SELECT count(*) FROM transfers WHERE (sender = ? OR receiver = ?) "
-                    "AND block <= ?",
-                    (lk, lk, c),
-                ).fetchone()[0]
-                rows_seen[side].append(n)
     finally:
         con.close()
+    acc: dict[str, Counter[str]] = {"paid": Counter(), "rival": Counter()}
+    rows_seen: dict[str, list[int]] = {"paid": [], "rival": []}
+    for e in episodes:
+        c = e.payoff_block - 1
+        by_l: defaultdict[str, list[lr.Row]] = defaultdict(list)
+        for r in e.plantings:
+            by_l[lr.lookalike_of(r, e.victim)].append(r)
+        for lk, rows in by_l.items():
+            side = "paid" if lk == e.paid else "rival"
+            a = acc[side]
+            a["candidates"] += 1
+            a["targeted_address"] += lk in manifest.addresses
+            a["targeted_in_old_subset"] += lk in old_lookalikes
+            a["planting_rows"] += len(rows)
+            a["planting_txs_targeted"] += sum(r.tx in manifest.txs for r in rows)
+            a["planting_rows_in_graph_db"] += sum(r.line in lines for r in rows)
+            rows_seen[side].append(bisect_right(blocks.get(lk, []), c))
     out: dict[str, Any] = {"scan_used_this_manifest": scanned == manifest.sha256}
     for side, a in acc.items():
         n = a["candidates"]
@@ -413,13 +415,69 @@ def recency_gap_diagnostic(episodes: Sequence[lr.Episode]) -> dict[str, Any]:
 # --- the study ------------------------------------------------------------------------------
 
 
-def run(poisoning_dir: Path) -> dict[str, Any]:
+def comparable(report: Mapping[str, Any]) -> Any:
+    """A report without its timing fields, for exact old-vs-new comparisons."""
+
+    def strip(x: Any) -> Any:
+        if isinstance(x, Mapping):
+            return {k: strip(v) for k, v in x.items() if k != "seconds"}
+        if isinstance(x, list):
+            return [strip(v) for v in x]
+        return x
+
+    return strip({k: v for k, v in report.items() if k != "resources"})
+
+
+class Graphs:
+    """The study's graph indexes: preloaded in one sequential pass (default), or the
+    Phase 12.1 lazy per-address SQLite lookups (``lazy=True``, kept as the reference)."""
+
+    def __init__(
+        self,
+        gpath: Path,
+        episodes: Sequence[lr.Episode],
+        blind: frozenset[str],
+        *,
+        lazy: bool = False,
+    ) -> None:
+        self.gpath, self.blind, self.lazy = gpath, blind, lazy
+        t = time.perf_counter()
+        self.edges = (
+            None
+            if lazy
+            else lr.preload_graph(
+                lr.sqlite_rows(gpath),
+                {c for e in episodes for c in e.candidates},
+                {r.tx for e in episodes for r in e.plantings},
+                blind,
+            )
+        )
+        self.preload_seconds = round(time.perf_counter() - t, 2)
+
+    def full(self) -> lr.GraphIndex:
+        if self.edges is None:
+            return lr.sqlite_graph(self.gpath, exclude=self.blind)
+        return self.edges.index()
+
+    def dropped(self, share: float, seed: int) -> lr.GraphIndex:
+        if self.edges is None:
+            return lr.sqlite_graph(self.gpath, keep=lr.graph_keep(share, seed), exclude=self.blind)
+        return self.edges.index(lr.graph_keep_edge(share, seed))
+
+    def before(self, c: int) -> lr.GraphIndex:
+        if self.edges is None:
+            return lr.sqlite_graph(self.gpath, keep=_before(c), exclude=self.blind)
+        return self.edges.index(lambda block, _line: block <= c)
+
+
+def run(poisoning_dir: Path, *, lazy_graph: bool = False) -> dict[str, Any]:
     t_start = time.perf_counter()
     episodes, exclusions = lr.load_episodes(poisoning_dir)
     gpath = poisoning_dir / lr.RESEARCH_DIR / lr.GRAPH_DB
     # Rows touching a frozen review wallet never enter the graph (protocol section 3).
     blind = lr.protected_wallets(poisoning_dir)
-    graph = lr.sqlite_graph(gpath, exclude=blind)
+    graphs = Graphs(gpath, episodes, blind, lazy=lazy_graph)
+    graph = graphs.full()
     tokens = lr.TokenIndex.build(episodes)
     grp, linkage = lr.protocol_groups(episodes)
     split = lr.temporal_split(episodes, grp)
@@ -580,7 +638,7 @@ def run(poisoning_dir: Path) -> dict[str, Any]:
         (
             "graph_drop_50",
             lr.View(),
-            lr.sqlite_graph(gpath, keep=lr.graph_keep(0.5, 0), exclude=blind),
+            graphs.dropped(0.5, 0),
             None,
         ),
     ]
@@ -607,7 +665,7 @@ def run(poisoning_dir: Path) -> dict[str, Any]:
     mismatches = 0
     for i in sample:
         c = episodes[i].payoff_block - 1
-        g_cut = lr.sqlite_graph(gpath, keep=_before(c), exclude=blind)
+        g_cut = graphs.before(c)
         if lr.candidate_features(episodes[i], lr.View(), g_cut, tokens) != feats[i]:
             mismatches += 1
     shuffled_within, shuffled_global = [], []
@@ -699,6 +757,8 @@ def run(poisoning_dir: Path) -> dict[str, Any]:
 
     peak = peak_rss_bytes()
     report["resources"] = {
+        "graph_mode": "lazy" if lazy_graph else "preloaded",
+        "graph_preload_seconds": graphs.preload_seconds,
         "feature_seconds_primary": round(feature_seconds, 2),
         "total_seconds": round(time.perf_counter() - t_start, 1),
         "peak_rss_mib": None if peak is None else round(peak / 2**20, 1),

@@ -110,6 +110,15 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ls.add_argument(
         "--graph-scan", action="store_true", help="first run the graph-context archive pass"
     )
+    ls.add_argument(
+        "--lazy-graph", action="store_true", help="Phase 12.1 per-address lookups (reference)"
+    )
+    rv = ml.add_parser(
+        "recency-validation", help="Phase 12.2 recency validation (aggregate output)"
+    )
+    rv.add_argument(
+        "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "recency-validation.json"
+    )
     iv = ml.add_parser("inventory", help="hash and describe every local research data file")
     iv.add_argument("--root", type=Path, default=Path("."))
     iv.add_argument("--out", type=Path, default=ML_DIR / "inventory.json")
@@ -208,10 +217,22 @@ def run(args: argparse.Namespace) -> int:
         poisoning = ML_DIR / "poisoning"
         if args.graph_scan:
             lookalike_ranking.graph_context_scan(args.data_dir, poisoning)
-        report = lookalike_study.run(poisoning)
+        report = lookalike_study.run(poisoning, lazy_graph=args.lazy_graph)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(report, indent=1, default=str) + "\n", encoding="utf-8")
         print(json.dumps(report["primary"], indent=1))
+        print(f"Wrote {args.out} (aggregate only; 0 RPC requests).")
+        return 0
+    if args.ml_command == "recency-validation":
+        import json
+
+        from cryptoguard.ml import recency_validation
+
+        report = recency_validation.run(ML_DIR / "poisoning")
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(report, indent=1, default=str) + "\n", encoding="utf-8")
+        for key in ("manipulation_check", "H1_symmetric_confirmation", "H2_production_warnings"):
+            print(key, json.dumps(report[key], indent=1))
         print(f"Wrote {args.out} (aggregate only; 0 RPC requests).")
         return 0
     if args.ml_command == "inventory":

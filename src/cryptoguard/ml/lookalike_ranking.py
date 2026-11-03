@@ -31,7 +31,7 @@ import math
 import sqlite3
 from bisect import bisect_right
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -255,6 +255,31 @@ def victim_of(row: Row) -> str | None:
 
 
 Edge = tuple[int, int, str]  # (block, line, victim)
+EdgeKeep = Callable[[int, int], bool]  # (block, line) -> keep
+
+
+def _lookalike_edge(r: Row, lookalike: str, exclude: frozenset[str]) -> tuple[bool, Edge] | None:
+    """``(is_payoff, edge)`` when row ``r`` is a typed edge of ``lookalike``. Shared by the
+    lazy and the preloaded index, so both build exactly the same edges."""
+    from cryptoguard.ml.tsuchiya_archive import PAYOFF, POISONING
+
+    v = victim_of(r)
+    if v is None or v == lookalike or r.sender in exclude or r.receiver in exclude:
+        return None
+    if r.flags & POISONING and lookalike_of(r, v) == lookalike:
+        return False, (r.block, r.line, v)
+    if r.flags & PAYOFF and r.sender == v and r.receiver == lookalike:
+        return True, (r.block, r.line, v)
+    return None
+
+
+def _tx_edge(r: Row, exclude: frozenset[str]) -> Edge | None:
+    from cryptoguard.ml.tsuchiya_archive import POISONING
+
+    v = victim_of(r)
+    if v is None or not r.flags & POISONING or r.sender in exclude or r.receiver in exclude:
+        return None
+    return (r.block, r.line, v)
 
 
 class GraphIndex:
@@ -282,36 +307,28 @@ class GraphIndex:
         self._l: dict[str, tuple[list[Edge], list[Edge]]] = {}
         self._tx: dict[str, list[Edge]] = {}
 
-    def _skip(self, r: Row) -> bool:
-        if r.sender in self._exclude or r.receiver in self._exclude:
-            return True
-        return self._keep is not None and not self._keep(r)
-
     def _edges(self, lookalike: str) -> tuple[list[Edge], list[Edge]]:
         if lookalike not in self._l:
-            from cryptoguard.ml.tsuchiya_archive import PAYOFF, POISONING
-
-            planted, paid = set(), set()
+            planted: set[Edge] = set()
+            paid: set[Edge] = set()
             for r in self._fetch_l(lookalike):
-                v = victim_of(r)
-                if v is None or v == lookalike or self._skip(r):
+                if self._keep is not None and not self._keep(r):
                     continue
-                if r.flags & POISONING and lookalike_of(r, v) == lookalike:
-                    planted.add((r.block, r.line, v))
-                elif r.flags & PAYOFF and r.sender == v and r.receiver == lookalike:
-                    paid.add((r.block, r.line, v))
+                e = _lookalike_edge(r, lookalike, self._exclude)
+                if e is not None:
+                    (paid if e[0] else planted).add(e[1])
             self._l[lookalike] = (sorted(planted), sorted(paid))
         return self._l[lookalike]
 
     def _tx_edges(self, tx: str) -> list[Edge]:
         if tx not in self._tx:
-            from cryptoguard.ml.tsuchiya_archive import POISONING
-
-            edges = set()
+            edges: set[Edge] = set()
             for r in self._fetch_tx(tx):
-                v = victim_of(r)
-                if v is not None and r.flags & POISONING and not self._skip(r):
-                    edges.add((r.block, r.line, v))
+                if self._keep is not None and not self._keep(r):
+                    continue
+                e = _tx_edge(r, self._exclude)
+                if e is not None:
+                    edges.add(e)
             self._tx[tx] = sorted(edges)
         return self._tx[tx]
 
@@ -345,6 +362,73 @@ def sqlite_graph(
         return [_row(t) for t in con.execute(_ROWS + " where tx = ?", (tx,))]
 
     return GraphIndex(fetch_l, fetch_tx, keep=keep, exclude=exclude)
+
+
+@dataclass(frozen=True)
+class PreloadedEdges:
+    """Every typed edge of a fixed set of lookalikes and planting txs, built in one
+    sequential pass. A lazy index does one random-access lookup per address instead: on the
+    research database that was 96 ms per lookalike and 512 ms per tx on a shared HDD, against
+    13 s for a sequential scan of all 1.3M rows."""
+
+    planted: dict[str, list[Edge]]
+    paid: dict[str, list[Edge]]
+    tx: dict[str, list[Edge]]
+
+    def index(self, keep: EdgeKeep | None = None) -> GraphIndex:
+        """A ``GraphIndex`` over these edges; ``keep`` filters on (block, line). Asking for an
+        address or tx outside the preloaded sets raises, rather than silently seeing none."""
+
+        def pick(edges: list[Edge]) -> list[Edge]:
+            return edges if keep is None else [e for e in edges if keep(e[0], e[1])]
+
+        g = GraphIndex(_unloaded, _unloaded)
+        g._l = {a: (pick(self.planted[a]), pick(self.paid[a])) for a in self.planted}
+        g._tx = {t: pick(e) for t, e in self.tx.items()}
+        return g
+
+
+def _unloaded(key: str) -> list[Row]:
+    raise KeyError(f"{key} is not in the preloaded graph")
+
+
+def preload_graph(
+    rows: Iterable[Row],
+    lookalikes: Iterable[str],
+    txs: Iterable[str],
+    exclude: frozenset[str] = frozenset(),
+) -> PreloadedEdges:
+    """One pass over ``rows``, with the lazy index's per-row edge rules."""
+    looks, tx_set = frozenset(lookalikes), frozenset(txs)
+    planted: dict[str, set[Edge]] = {a: set() for a in looks}
+    paid: dict[str, set[Edge]] = {a: set() for a in looks}
+    in_tx: dict[str, set[Edge]] = {t: set() for t in tx_set}
+    names: dict[str, str] = {}  # one string object per victim
+    for r in rows:
+        for lk in {r.sender, r.receiver} & looks:
+            e = _lookalike_edge(r, lk, exclude)
+            if e is not None:
+                b, line, v = e[1]
+                (paid if e[0] else planted)[lk].add((b, line, names.setdefault(v, v)))
+        if r.tx in tx_set:
+            te = _tx_edge(r, exclude)
+            if te is not None:
+                in_tx[r.tx].add((te[0], te[1], names.setdefault(te[2], te[2])))
+    return PreloadedEdges(
+        {a: sorted(v) for a, v in planted.items()},
+        {a: sorted(v) for a, v in paid.items()},
+        {t: sorted(v) for t, v in in_tx.items()},
+    )
+
+
+def sqlite_rows(path: Path) -> Iterator[Row]:
+    """Every row of a research database, in storage order (sequential I/O)."""
+    con = _connect(path)
+    try:
+        for t in con.execute(_ROWS + " order by line"):
+            yield _row(t)
+    finally:
+        con.close()
 
 
 def memory_graph(rows: Iterable[Row], exclude: frozenset[str] = frozenset()) -> GraphIndex:
@@ -390,6 +474,11 @@ def _dropped(line: int, fraction: float, seed: int) -> bool:
 def graph_keep(drop: float, seed: int = 0) -> Callable[[Row], bool]:
     """Row filter for graph robustness: drop a share of rows (seeded)."""
     return lambda r: not _dropped(r.line, drop, seed)
+
+
+def graph_keep_edge(drop: float, seed: int = 0) -> EdgeKeep:
+    """``graph_keep`` for a preloaded index: the same rows survive."""
+    return lambda _block, line: not _dropped(line, drop, seed)
 
 
 @dataclass

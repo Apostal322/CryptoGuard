@@ -271,6 +271,58 @@ def test_protected_overlap_is_direct_or_through_a_linkage_group() -> None:
     ]
 
 
+def test_preloaded_graph_equals_the_lazy_index_on_random_rows() -> None:
+    import random
+
+    rng = random.Random(7)
+    addrs = [f"0x{i:040x}" for i in range(1, 13)]
+    txs = [f"0x{i:064x}" for i in range(1, 9)]
+    flags = (ZERO, TINY, COUNTERFEIT, PAYOFF, INTENDED, ZERO | PAYOFF)
+    rows = [
+        row(
+            rng.randrange(100, 400),
+            rng.choice(addrs),
+            rng.choice(addrs),
+            rng.choice(flags),
+            tx=rng.choice(txs),
+            siv=rng.choice((True, False, None)),
+        )
+        for _ in range(600)
+    ]
+    rows += rows[:20]  # exact duplicates
+    exclude = frozenset(addrs[:2])
+    edges = lr.preload_graph(rows, addrs, txs, exclude)
+    for keep_row, keep_edge in (
+        (None, None),
+        (lr.graph_keep(0.5, 3), lr.graph_keep_edge(0.5, 3)),
+        (lambda r: r.block <= 250, lambda b, _l: b <= 250),
+    ):
+        by_addr: dict[str, list[lr.Row]] = {}
+        by_tx: dict[str, list[lr.Row]] = {}
+        for r in rows:
+            for a in {r.sender, r.receiver}:
+                by_addr.setdefault(a, []).append(r)
+            by_tx.setdefault(r.tx, []).append(r)
+        lazy = lr.GraphIndex(
+            lambda a, m=by_addr: m.get(a, []),
+            lambda t, m=by_tx: m.get(t, []),
+            keep=keep_row,
+            exclude=exclude,
+        )
+        pre = edges.index(keep_edge)
+        for cutoff in (150, 300, 399):
+            for since in (None, 200):
+                for a in addrs:
+                    assert pre.prior_victims(a, cutoff, since) == lazy.prior_victims(
+                        a, cutoff, since
+                    )
+                    assert pre.prior_payers(a, cutoff, since) == lazy.prior_payers(a, cutoff, since)
+            for tx in txs:
+                assert pre.tx_victims(tx, cutoff) == lazy.tx_victims(tx, cutoff)
+    with pytest.raises(KeyError):
+        edges.index().prior_victims("0x" + "9" * 40, 300)
+
+
 def test_token_index_negative_control() -> None:
     e1 = episode()
     e2 = replace(e1, victim=OTHER)
@@ -516,6 +568,39 @@ def test_study_runs_end_to_end_on_synthetic_data(
     assert report["methods"]["T0"]["all"]["top1"] == pytest.approx(15 / 29, abs=1e-4)
     assert report["methods"]["random"]["all"]["top1"] == 0.5
     assert report["resources"]["rpc_requests"] == 0
+    assert report["resources"]["graph_mode"] == "preloaded"
+    # Exactness: the Phase 12.1 lazy lookups give the same report.
+    lazy = ls.run(d, lazy_graph=True)
+    assert ls.comparable(lazy) == ls.comparable(report)
     gap = report["recency_gap_posthoc"]
     assert gap["paid_gap_blocks"]["max"] == 199.0  # (b + 299) - (b + 100), by design
     assert gap["paid_gap_over_30d"]["episodes"] == 0
+
+
+def test_recency_validation_runs_end_to_end_on_synthetic_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptoguard.ml import recency_validation as rv
+
+    d = _synthetic_dir(tmp_path)
+    protected = "0x" + f"{1:040x}"
+    monkeypatch.setattr(lr, "protected_wallets", lambda _d: frozenset({protected}))
+    monkeypatch.setattr(lr, "protected_entities", lambda _d: (frozenset({protected}), frozenset()))
+    report = rv.run(d)
+    assert report["episodes"] == 29
+    # Both lookalikes plant after the victim's intended transfer, so the symmetric rule keeps
+    # every candidate and H1 sees exactly the full sets.
+    assert report["manipulation_check"]["paid"]["SR_any_true_share"] == 1.0
+    h1 = report["H1_symmetric_confirmation"]
+    assert h1["episodes"] == 29
+    assert h1["T0_top1"] == report["R_all"]["T0_top1"]
+    assert h1["attenuation"] == 0.0
+    assert h1["decision"] in {"survives", "explained_or_null", "inconclusive"}
+    # Exact duplicates and same-block reordering cannot move recency.
+    e11 = report["E11_history_perturbations"]
+    assert e11["duplicate_rows"]["T0_top1"] == e11["primary_T0_top1"]
+    assert e11["reorder_within_block"]["T0_top1"] == e11["primary_T0_top1"]
+    assert report["E1_within_episode_permutation_top1"] == pytest.approx(0.5, abs=0.05)
+    bg = report["E14_background"]
+    assert bg["windows_warning_set_preserved"] == bg["windows"]
+    assert report["resources"]["rpc_requests"] == 0
