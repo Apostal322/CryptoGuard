@@ -5,7 +5,7 @@
 | Protocol (frozen before the code and the study) | [`docs/ml/protocol-12.4.md`](docs/ml/protocol-12.4.md), `3a79b74` |
 | Implementation (committed before the study ran) | `3917957` |
 | Study output (git-ignored) | `data/ml/research/phase12.4/observation-study.json` (`cryptoguard ml observation-study`) |
-| New RPC requests / downloads | **0** / none |
+| New RPC requests / downloads | **0** for the phase / none; plus **2** for the approved Q1 (§33) |
 
 ## 1. Executive summary
 
@@ -31,6 +31,8 @@ It also fetches ERC-721-shaped and malformed `Transfer` logs, then discards them
   - **C1** is C0's own rules applied to every observed class. On synthetic cases it recovers native-dust and ERC-721 lookalikes that C0 cannot see.
   - **C2** adds abstention and a **payment-time screen**. The screen flags both known thefts. That is a *development-case regression* result, not validation, because those cases motivated it. It flags 0 of 12 screened unlabelled payments in the background windows.
 - **A latent defect, fixed in a versioned path.** `wallet-history/1` reports inbound counts as observed zeros, although native inbound and ERC-721 were never collected: 109 values across 29 in-window queries. No published number used those counts.
+
+**Q1 (§33, 2 approved requests):** the paid address signed **exactly one transaction ever** before the theft, inside the recorded window. That transaction emitted no ERC-20 Transfer involving the victim. A planting signed by the lookalike itself, through a channel `observation/1` cannot see, is now a concrete possibility. It is not confirmed.
 
 **Classification:** confirmed observation improvement, verified on synthetic and mock data only. Also a limited mechanism improvement. For the real miss, the result is data-limited. H5 (ML contribution) was not evaluated, as pre-declared.
 
@@ -286,3 +288,35 @@ Of those, 26 tests are new: 22 synthetic and invariance tests, and 4 recorder te
 **Comparison it allows:** a first real `observation/2` window, where C1 can be compared with C0.
 
 **Limits:** it remains a development case, never validation. Independent validation still needs untouched incidents recorded with `observation/2` from the start.
+
+## 33. Addendum: Q1 result (2026-11-04, approved; 2 RPC requests)
+
+**What was asked:** `eth_getTransactionCount(0x804051b0…793375)` at two points:
+- block 21,869,296, the block before the recorded window;
+- block 21,890,896, the block before the theft.
+
+**How it ran:**
+- **Ledger:** `data/ml/rpc/ledger-q1.json`, with a cap of **2**. The ledger shows 2 requests, with no retry and no chain-id preflight.
+- **Endpoint:** `https://eth.drpc.org`.
+- **Output:** `data/ml/research/phase12.4/q1-nonce.json`, git-ignored.
+
+| Block | Nonce (post-state) |
+|---|---|
+| 21,869,296 (window start − 1) | **0** |
+| 21,890,896 (harm block − 1) | **1** |
+
+**What this establishes.** The paid address had never signed a transaction before the window. It signed **exactly one** in blocks 21,869,297–21,890,896, before the theft. This was February 2025, before EIP-7702, so no authorization tuple could have raised the nonce. The victim's ERC-20 scan of the same window is complete and holds no Transfer naming the address before the theft. So that one transaction emitted no standard ERC-20 Transfer to or from the victim.
+
+**What remains open.** The transaction's content is unknown. It is consistent with any of three possibilities:
+- **(a)** a native ETH send to the victim, nonzero dust or 0 ETH. `observation/1` sees neither.
+- **(b)** a contract call that emitted an ERC-721, ERC-1155 or malformed log involving the victim. `observation/1` discarded or never queried these.
+- **(c)** a transaction unrelated to the victim, such as funding or a planting on another wallet, with the victim copying the address through another channel.
+
+**The classification of the miss** moves from *unknown* to **"a self-signed transaction by the lookalike inside the window, of unobserved content"**. A planting through an unobserved channel is now a concrete possibility, but it is still not confirmed.
+
+**Cheapest next query (Q1b, not issued; needs approval).** Bisect the paid address's nonce over blocks 21,869,297–21,890,896 to find that one transaction's block, then read the block's transactions. About 15 `eth_getTransactionCount` calls plus 1 `eth_getBlockByNumber`, so **about 16 requests**.
+- **If** it is a native send to the victim, cause (a) is confirmed. It is then a gap that `observation/2` closes for nonzero values, or only partly for 0 ETH.
+- **Otherwise**, one receipt read (1 request) separates (b) from (c).
+
+**Still a development case.** Whatever Q1b shows, this case remains a development case for any method built since.
+
