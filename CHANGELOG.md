@@ -42,7 +42,11 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   - C2 adds abstention and a payment-time screen;
   - `wallet-history/2-scoped` never reports unobserved inbound as zero (109 false zeros under `/1`; no published number used them).
 - **Study:** `cryptoguard ml observation-study`. Report: `ML_OBSERVATION_COMPLETENESS.md`.
-- **Q1** (2 approved RPC requests): the Stage 2a paid address signed exactly one transaction before the theft, inside the window, and it emitted no ERC-20 Transfer with the victim. Its content is unknown. Q1b (about 16 requests) is proposed.
+- **Q1** (2 approved RPC requests): the Stage 2a paid address signed exactly one transaction before the theft, inside the window.
+- **Q1b** (17 approved RPC requests): that transaction was a **native ETH dust transfer, 10¹² wei, to the victim**, 357 blocks before the theft.
+  - The Stage 2a miss is a confirmed recorder omission, the class `observation/2` adds.
+  - In a development reconstruction (in memory), C1 flags the paid address 357 blocks early.
+  - Not validation: the record was found by an outcome-directed query.
 - **Unchanged:** the production detector and its findings.
 
 ### Incident recording, Stage 2a (1,433 RPC requests of an approved 6,000)

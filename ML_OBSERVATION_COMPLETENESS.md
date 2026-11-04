@@ -5,7 +5,7 @@
 | Protocol (frozen before the code and the study) | [`docs/ml/protocol-12.4.md`](docs/ml/protocol-12.4.md), `3a79b74` |
 | Implementation (committed before the study ran) | `3917957` |
 | Study output (git-ignored) | `data/ml/research/phase12.4/observation-study.json` (`cryptoguard ml observation-study`) |
-| New RPC requests / downloads | **0** for the phase / none; plus **2** for the approved Q1 (§33) |
+| New RPC requests / downloads | **0** for the phase / none; plus **2** for the approved Q1 (§33) and **17** for the approved Q1b (§34) |
 
 ## 1. Executive summary
 
@@ -31,6 +31,8 @@ It also fetches ERC-721-shaped and malformed `Transfer` logs, then discards them
   - **C1** is C0's own rules applied to every observed class. On synthetic cases it recovers native-dust and ERC-721 lookalikes that C0 cannot see.
   - **C2** adds abstention and a **payment-time screen**. The screen flags both known thefts. That is a *development-case regression* result, not validation, because those cases motivated it. It flags 0 of 12 screened unlabelled payments in the background windows.
 - **A latent defect, fixed in a versioned path.** `wallet-history/1` reports inbound counts as observed zeros, although native inbound and ERC-721 were never collected: 109 values across 29 in-window queries. No published number used those counts.
+
+**Q1b (§34, 17 approved requests) settles the miss.** The paid lookalike's only transaction before the theft was a **native ETH dust transfer of 10¹² wei to the victim**. It came 357 blocks (4,320 s) before the theft, and `observation/1` cannot see it. The miss is therefore a **confirmed recorder omission**. With that one record added in memory, C1 flags the paid address 357 blocks early. That is a development-case reconstruction, not validation.
 
 **Q1 (§33, 2 approved requests):** the paid address signed **exactly one transaction ever** before the theft, inside the recorded window. That transaction emitted no ERC-20 Transfer involving the victim. A planting signed by the lookalike itself, through a channel `observation/1` cannot see, is now a concrete possibility. It is not confirmed.
 
@@ -63,7 +65,7 @@ Source: the recorded fixture `67e44177…`. Times are block-header timestamps (U
 - the theft transfer in the fixture;
 - the six theft receipts in `data/ml/research/stage2a/…/found.json`.
 
-**Classification of the miss: unknown.** Each possible cause, and its status:
+**Classification of the miss, from local data alone: unknown.** It was later settled by Q1b (§34) as a confirmed native-dust omission. Each possible cause, and its status from local data alone:
 - **Confirmed recorder omissions** that could explain it:
   - inbound native ETH, nonzero or zero;
   - ERC-721 or ERC-1155 plantings;
@@ -265,7 +267,7 @@ Of those, 26 tests are new: 22 synthetic and invariance tests, and 4 recorder te
 
 ## 30. Negative findings
 
-1. The real miss cannot be explained from the data recorded.
+1. The real miss cannot be explained from the data recorded. It took 19 targeted requests (§33–34) to explain it.
 2. C1 adds nothing on any existing real window.
 3. No ML model is justified by the available data.
 4. C1's mirrored `zero_value_in` rule adds non-lookalike candidates.
@@ -319,4 +321,47 @@ Of those, 26 tests are new: 22 synthetic and invariance tests, and 4 recorder te
 - **Otherwise**, one receipt read (1 request) separates (b) from (c).
 
 **Still a development case.** Whatever Q1b shows, this case remains a development case for any method built since.
+
+## 34. Addendum: Q1b result (2026-11-04, approved; 17 RPC requests)
+
+**How it ran:**
+- **Ledger:** `data/ml/rpc/ledger-q1b.json`, with a cap of **17**.
+- **First attempt:** 1 request, which failed. The provider could not be reached because outbound connectivity was down: direct TLS failed to every host, while the local HTTPS proxy recovered later.
+- **The one permitted restart:** 16 requests. That was 15 nonce probes, bisecting blocks 21,869,297–21,890,896, plus 1 `eth_getBlockByNumber`.
+- **Receipt:** skipped, to stay within the cap.
+- **Output:** `data/ml/research/phase12.4/q1b-transaction.json`, git-ignored.
+
+| Field | Value |
+|---|---|
+| Transaction | `0xf4530315e9248c4a677987a5f32797b0dbc17a12ff713c96421e4e8d9b0b2b83` |
+| Block, index, time | 21,890,540, index 150, 2025-02-20 22:28:35 UTC (header timestamp) |
+| From → to | `0x804051b0…793375` (the paid lookalike, its nonce 0) → `0xf6b1539c…b6e4` (the victim) |
+| Value, input | `0xe8d4a51000` = 1,000,000,000,000 wei (0.000001 ETH), empty input: a plain native transfer |
+| Receipt status | **not read**. Two reasons say it executed: the transaction was included, and a plain value transfer to an account without code (the victim's code is `0x` in the fixture; February 2025 is before EIP-7702) cannot revert. Its effect on the victim's balance was not read. |
+
+**Chronology, completed:**
+
+| Block | Event |
+|---|---|
+| 21,890,495 | The reference payment, in token. |
+| 21,890,508 | 600 ETH to the reference. |
+| **21,890,540** | **Native dust planting from the later-paid lookalike: the earliest planting.** |
+| 21,890,558 | The first fake-token lookalike. |
+| 21,890,871 | The second fake-token lookalike. |
+| 21,890,897 | The theft. |
+
+**Classification of the Phase 12.3 miss:** a **confirmed recorder omission** (category T1, inbound native ETH, nonzero). The planting is a class that `observation/1` never collects and `observation/2` does. The original Phase 12.3 result, the frozen fixture `67e44177…` and its regression test are unchanged.
+
+**Development-case reconstruction.** The fixture was taken in memory with this one record added as `native_inbound`, with `succeeded` left unknown, and evaluated at cutoff (21,890,897, 0):
+- **C0:** the 2 fake-token lookalikes. The paid address is not seen.
+- **C1:** the same 2, **plus the paid address**:
+  - rule `lookalike_in`, kind native;
+  - imitates the reference `0x80404f3e…793375`, with affix 4 + 6;
+  - **357 blocks, 4,320 s, before the theft**.
+
+**What this does and does not show.** The record was retrieved by a query directed at the outcome address, so this is **not** a blind recording.
+- **It shows** that the miss came from observation, not from the rules. C0's own rules, applied to the missing record, recover the address.
+- **The wallet-centric path** that would find the same transfer without knowing the outcome is `observation/2` balance bisection. The mock tests verify that path. It has not been run on this real window, which needs Q2, about 1,100 requests, not approved.
+- **The case stays a development case.** This is a development-case regression success, not independent validation.
+- **The production detector would still not flag it.** It is unchanged and reads no native inbound. Feeding `observation/2` native inbound to the detector is a production change that needs its own approval and evaluation, including the zero-value volume risk in §21.
 

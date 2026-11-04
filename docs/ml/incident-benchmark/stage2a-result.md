@@ -123,3 +123,5 @@ wallets using CryptoGuard live. That is a hypothesis for the product, not a meas
 `cryptoguard ml incident-benchmark verify`, then `run` and `report`, each with `--out
 data/ml/research/stage2a`. The default manifests are `candidates.json` and
 `stage2-resolved.json`.
+
+**Update, 2026-11-04 (forward pointer; the result above is unchanged).** The native-ETH hypothesis in §3 was confirmed by an approved 17-request query. The paid lookalike sent the victim 10¹² wei at block 21,890,540, 357 blocks before the theft, in a class `observation/1` does not record. See `ML_OBSERVATION_COMPLETENESS.md` §34.
