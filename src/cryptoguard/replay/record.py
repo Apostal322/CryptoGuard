@@ -40,6 +40,14 @@ METHOD = [
     "Wallet code at the window start and one block before the harmful block (eth_getCode).",
     "Timestamps of all referenced blocks (eth_getBlockByNumber).",
 ]
+METHOD_V2 = [
+    *METHOD,
+    "observation/2: ERC-721-shaped Transfer logs from the same scans, kept as records; "
+    "malformed Transfer-topic logs counted.",
+    "observation/2: native ETH received, by balance bisection (eth_getBalance) over runs "
+    "without own transactions, senders read from the increase blocks (eth_getBlockByNumber), "
+    "unexplained increases kept as unattributed; see services/native_inbound.py.",
+]
 
 
 async def record_fixture(
@@ -49,6 +57,7 @@ async def record_fixture(
     chunk_blocks: int = 100,
     max_log_requests: int = 2_000,
     max_sender_lookups: int = 500,
+    observation: int = 1,
 ) -> ReplayFixture:
     return await record_window(
         provider,
@@ -60,6 +69,7 @@ async def record_fixture(
         chunk_blocks=chunk_blocks,
         max_log_requests=max_log_requests,
         max_sender_lookups=max_sender_lookups,
+        observation=observation,
     )
 
 
@@ -76,9 +86,13 @@ async def record_window(
     max_sender_lookups: int = 500,
     all_timestamps: bool = True,
     max_wallet_transactions: int = 10_000,
+    observation: int = 1,
 ) -> ReplayFixture:
     """Record one wallet's observations in ``[start, end]``. With ``all_timestamps=False``
-    only the window's first and last block timestamps are read (analyses use block time)."""
+    only the window's first and last block timestamps are read (analyses use block time).
+    ``observation=2`` also records native ETH received, ERC-721-shaped transfers and a
+    per-category coverage (``replay.observation``); 1, the default, records exactly what
+    every existing fixture holds."""
     wallet = to_checksum_address(wallet)
     await provider.verify_chain()
 
@@ -121,9 +135,19 @@ async def record_window(
         str(block): "0x" + (await provider.get_code(wallet, block)).hex()
         for block in (start, end - 1)
     }
+    extension = (
+        await _observation_v2(provider, wallet, start, end, transfers, transactions, code)
+        if observation == 2
+        else {}
+    )
+    extra_blocks = {r.block_number for r in extension.get("native_inbound") or []} | {
+        r.block_number for r in extension.get("nft_transfers") or []
+    }
     blocks = sorted(
         (
-            {t.block_number for t in transfers.transfers} | {t.block_number for t in transactions}
+            {t.block_number for t in transfers.transfers}
+            | {t.block_number for t in transactions}
+            | extra_blocks
             if all_timestamps
             else set()
         )
@@ -142,12 +166,120 @@ async def record_window(
         rpc_requests=provider.client.metrics.requests,
         transfer_scan_complete=transfers.complete,
         sender_lookups_skipped=transfers.sender_lookups_skipped,
-        method=METHOD,
+        method=METHOD_V2 if observation == 2 else METHOD,
         wallet_code_hex=code,
         block_timestamps=timestamps,
         transfers=[RecordedTransfer.from_event(t) for t in transfers.transfers],
         wallet_transactions=transactions,
+        **extension,
     )
+
+
+async def _observation_v2(
+    provider: RpcEthereumProvider,
+    wallet: str,
+    start: int,
+    end: int,
+    transfers: Any,
+    transactions: list[RecordedTransaction],
+    code: dict[str, str],
+) -> dict[str, Any]:
+    """The ``observation/2`` fields: native ETH received, ERC-721-shaped transfers kept as
+    records, discarded-log counts, and the coverage of every category."""
+    from cryptoguard.core.hexutil import parse_hash32, parse_quantity
+    from cryptoguard.replay.models import (
+        RecordedNativeInbound,
+        RecordedNftTransfer,
+        UnattributedInbound,
+    )
+    from cryptoguard.replay.observation import (
+        OBSERVATION_V2,
+        CategoryCoverage,
+        ObservationCoverage,
+        Status,
+        legacy_coverage,
+    )
+    from cryptoguard.services.native_inbound import locate_native_inbound
+
+    plain = all(v == "0x" for v in code.values()) if code else None
+    found = await locate_native_inbound(
+        provider,
+        wallet,
+        from_block=start,
+        to_block=end,
+        own_tx_blocks=[t.block_number for t in transactions],
+        wallet_is_plain_eoa=plain,
+    )
+    nfts = []
+    for log in transfers.erc721_logs:
+        topics = log["topics"]
+        nfts.append(
+            RecordedNftTransfer(
+                token=to_checksum_address(log["address"]),
+                sender=to_checksum_address("0x" + topics[1][-40:]),
+                recipient=to_checksum_address("0x" + topics[2][-40:]),
+                token_id=str(int(topics[3], 16)),
+                block_number=parse_quantity(log["blockNumber"]),
+                block_hash=parse_hash32(log["blockHash"]),
+                transaction_hash=parse_hash32(log["transactionHash"]),
+                transaction_index=parse_quantity(log["transactionIndex"]),
+                log_index=parse_quantity(log["logIndex"]),
+            )
+        )
+    scan: Status = "complete" if transfers.complete else "partial"
+    counts = dict(transfers.log_counts)
+    nonzero = [x for x in found.inbound if x.value > 0]
+    zero = [x for x in found.inbound if x.value == 0]
+    native: Status = found.status  # type: ignore[assignment]
+    unattributed: Status = found.unattributed_status  # type: ignore[assignment]
+    categories = dict(legacy_coverage(_Counts(transfers, transactions)).categories)
+    categories |= {
+        "erc721_transfer_logs": CategoryCoverage(status=scan, count=len(nfts)),
+        "malformed_transfer_logs": CategoryCoverage(
+            status=scan, count=counts.get("malformed", 0), note="counted, not decoded"
+        ),
+        "native_inbound_external": CategoryCoverage(
+            status=native, count=len(nonzero), note=found.note
+        ),
+        "native_inbound_zero_value": CategoryCoverage(
+            status="unsupported" if native == "unsupported" else "partial",
+            count=len(zero),
+            note="moves no balance: seen only in blocks read for other reasons",
+        ),
+        "native_inbound_unattributed": CategoryCoverage(
+            status=unattributed, count=len(found.unattributed), note="sender unknown without traces"
+        ),
+    }
+    return {
+        "observation": ObservationCoverage(schema_version=OBSERVATION_V2, categories=categories),
+        "native_inbound": [
+            RecordedNativeInbound(
+                transaction_hash=x.transaction_hash,
+                block_number=x.block_number,
+                transaction_index=x.transaction_index,
+                sender=x.sender,
+                value=str(x.value),
+                succeeded=x.succeeded,
+            )
+            for x in found.inbound
+        ],
+        "unattributed_inbound": [
+            UnattributedInbound(block_number=u.block_number, value=str(u.value))
+            for u in found.unattributed
+        ],
+        "nft_transfers": nfts,
+        "discarded_log_counts": {k: v for k, v in counts.items() if k != "erc20"},
+    }
+
+
+class _Counts:
+    """The fields ``legacy_coverage`` reads, from a recording in progress."""
+
+    def __init__(self, transfers: Any, transactions: list[RecordedTransaction]) -> None:
+        self.transfer_scan_complete = transfers.complete
+        self.sender_lookups_skipped = transfers.sender_lookups_skipped
+        self.transfers = transfers.transfers
+        self.wallet_transactions = transactions
 
 
 async def locate_transaction(provider: RpcEthereumProvider, tx_hash: str) -> dict[str, Any]:

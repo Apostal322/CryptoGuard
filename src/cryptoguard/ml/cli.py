@@ -129,6 +129,11 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ur.add_argument(
         "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "unconfirmed-recency.json"
     )
+    ob = ml.add_parser(
+        "observation-study",
+        help="Phase 12.4 observation coverage and candidate discovery (offline, no RPC)",
+    )
+    ob.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.4")
     ib = ml.add_parser(
         "incident-benchmark", help="Phase 12.3 independent incident benchmark (offline)"
     )
@@ -177,6 +182,20 @@ def run(args: argparse.Namespace) -> int:
     from cryptoguard.ml import ml_available
 
     # Pure-Python commands: no ml extra needed.
+    if args.ml_command == "observation-study":
+        import json
+
+        from cryptoguard.ml import observation_study
+
+        result = observation_study.main(ML_DIR / "poisoning", args.out)
+        summary = {
+            r["case_id"]: {v: r["variants"][v]["distinct_lookalikes"] for v in ("C0", "C1", "C2")}
+            | {"screen_flagged": r["payment_screen_unlabelled"]["flagged"]}
+            for r in result["windows"]
+        }
+        print(json.dumps({"windows": summary, "resources": result["resources"]}, indent=1))
+        print(f"Wrote {args.out / 'observation-study.json'}")
+        return 0
     if args.ml_command == "poisoning-report":
         from cryptoguard.ml.poisoning_report import build, write
 

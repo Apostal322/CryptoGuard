@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from cryptoguard.blockchain.erc20 import TransferEvent
 from cryptoguard.detectors.poisoning import NativeSend
+from cryptoguard.replay.observation import ObservationCoverage
 
 CASES_PACKAGE = "cryptoguard.replay.cases"
 
@@ -142,6 +143,58 @@ class RecordedTransfer(BaseModel):
         )
 
 
+class RecordedNativeInbound(BaseModel):
+    """A top-level transaction another account signed that sent ETH (possibly 0) to the
+    wallet (``observation/2``). ``succeeded`` is the receipt status; None = not read."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    transaction_hash: str
+    block_number: int
+    transaction_index: int
+    sender: str
+    value: str
+    succeeded: bool | None
+
+
+class UnattributedInbound(BaseModel):
+    """A balance increase in one block that no successful external transaction to the
+    wallet explains: an internal transfer, a withdrawal or a fee credit. The sender is
+    unknown without traces (``observation/2``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    block_number: int
+    value: str
+
+
+class RecordedNftTransfer(BaseModel):
+    """An ERC-721-shaped Transfer log (4 topics, no data) to or from the wallet."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str
+    sender: str
+    recipient: str
+    token_id: str
+    block_number: int
+    block_hash: str
+    transaction_hash: str
+    transaction_index: int
+    log_index: int
+
+
+# ``observation/2`` additions. A fixture without them serializes exactly as before, so every
+# recorded ``observation/1`` fixture keeps its bytes and its hash.
+EXTENSION_FIELDS = (
+    "observation",
+    "native_inbound",
+    "unattributed_inbound",
+    "nft_transfers",
+    "discarded_log_counts",
+)
+
+
 class ReplayFixture(BaseModel):
     """Chain data recorded once from an RPC provider; the only input replay detectors see."""
 
@@ -162,9 +215,18 @@ class ReplayFixture(BaseModel):
     block_timestamps: dict[str, int]
     transfers: list[RecordedTransfer]
     wallet_transactions: list[RecordedTransaction]
+    observation: ObservationCoverage | None = None
+    native_inbound: list[RecordedNativeInbound] | None = None
+    unattributed_inbound: list[UnattributedInbound] | None = None
+    nft_transfers: list[RecordedNftTransfer] | None = None
+    discarded_log_counts: dict[str, int] | None = None  # Transfer-topic logs not decoded
 
     def canonical_bytes(self) -> bytes:
-        return json.dumps(self.model_dump(mode="json"), sort_keys=True, indent=1).encode()
+        dump = self.model_dump(mode="json")
+        for key in EXTENSION_FIELDS:
+            if dump[key] is None:
+                del dump[key]
+        return json.dumps(dump, sort_keys=True, indent=1).encode()
 
     def sha256(self) -> str:
         return hashlib.sha256(self.canonical_bytes()).hexdigest()

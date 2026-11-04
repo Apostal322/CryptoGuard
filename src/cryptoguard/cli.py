@@ -364,7 +364,9 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
             provider = build_rpc_provider(record_settings, transport=budgeted_transport(ledger))
             before = ledger.used()
             try:
-                fixture = await record_fixture(provider, manifest, chunk_blocks=args.chunk_blocks)
+                fixture = await record_fixture(
+                    provider, manifest, chunk_blocks=args.chunk_blocks, observation=args.observation
+                )
             except BudgetExhaustedError as exc:  # fail closed: no partial fixture is written
                 ledger.note(f"replay record {manifest.case_id}: stopped at the cap ({exc})")
                 raise
@@ -887,6 +889,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_record.add_argument("--chunk-blocks", type=int, default=100)
     p_record.add_argument(
         "--cases-dir", help="read the manifest from and write the fixture to this case folder"
+    )
+    p_record.add_argument(
+        "--observation",
+        type=int,
+        choices=(1, 2),
+        default=1,
+        help="2 also records native ETH received, ERC-721 transfers and per-category coverage",
     )
     _add_rpc_budget(p_record, per_run_help="most requests this window may reserve")
     p_locate = replay_sub.add_parser(
