@@ -109,25 +109,30 @@ def _window(case_id: str, population: str, fixture: Any, cutoff: tuple[int, int]
         "abstained": sum(s.flagged is None for s in screens),
         "flagged_recipients": sorted({s.recipient for s in screens if s.flagged}),
     }
-    targets = {c.lookalike for c in variants["C1"]["_result"].candidates} | {r for r, _, _ in pays}
+    # H3 at each query's own position (in-window): every C1 candidate and every payment
+    queries = [
+        (c.lookalike, (c.position[0], c.position[1])) for c in variants["C1"]["_result"].candidates
+    ]
+    queries += [(r, p) for r, p, _ in pays]
     differ = 0
-    for r in sorted(targets):
-        from dataclasses import asdict
+    targets = sorted(set(queries))
+    from dataclasses import asdict
 
-        from cryptoguard.ml.history import events_from_fixture, history_features
+    from cryptoguard.ml.history import events_from_fixture, history_features
 
-        events, window = events_from_fixture(fixture)
+    events, window = events_from_fixture(fixture)
+    for r, (block, tx_index) in targets:
         v1 = asdict(
             history_features(
                 events,
                 window,
                 recipient=r,
-                block=cutoff[0],
-                tx_index=cutoff[1],
+                block=block,
+                tx_index=tx_index,
                 boundary="pre_execution",
             )
         )
-        v2 = cd.scoped_history(fixture, recipient=r, block=cutoff[0], tx_index=cutoff[1])
+        v2 = cd.scoped_history(fixture, recipient=r, block=block, tx_index=tx_index)
         differ += sum(1 for k in cd.INBOUND_DEPENDENT if v1[k] is not None and v2[k] is None)
     row["h3_inbound_features_numeric_in_v1_undefined_in_scoped"] = differ
     row["h3_feature_rows"] = len(targets)

@@ -26,6 +26,24 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Observation completeness and candidate discovery, Phase 12.4 (no RPC requests)
+- **Protocol 12.4** (`docs/ml/protocol-12.4.md`) was frozen before the code and the study.
+- **Audit:** `observation/1` never observed inbound native ETH, zero-value native transactions, internal transfers or ERC-1155. It also fetched ERC-721-shaped and malformed `Transfer` logs and discarded them, without keeping their counts.
+- **Added `observation/2`** (opt-in: `replay record --observation 2`):
+  - native ETH received, by balance bisection;
+  - unattributed credits;
+  - ERC-721 records and malformed-log counts;
+  - per-category coverage (`replay/observation.py`).
+
+  Existing fixtures keep their bytes and hashes.
+- **Added shadow `poisoning-candidate-discovery/1`** (`ml/candidate_discovery.py`):
+  - C0 is frozen;
+  - C1 applies C0's rules to every observed class;
+  - C2 adds abstention and a payment-time screen;
+  - `wallet-history/2-scoped` never reports unobserved inbound as zero (109 false zeros under `/1`; no published number used them).
+- **Study:** `cryptoguard ml observation-study`. Report: `ML_OBSERVATION_COMPLETENESS.md`.
+- **Unchanged:** the production detector and its findings.
+
 ### Incident recording, Stage 2a (1,433 RPC requests of an approved 6,000)
 - **Case 1, `scamsniffer-763k-2025-02-20`:**
   - resolved on chain by the frozen rule, recorded, and frozen by test;

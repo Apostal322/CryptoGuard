@@ -212,7 +212,8 @@ def test_case_e_missing_history_abstains_instead_of_claiming_no_references() -> 
     )
     res = found(fx, "C2")
     assert res.lookalikes == set()
-    assert res.abstain is not None and "not evidence of no earlier recipients" in res.abstain
+    assert res.abstain is not None
+    assert "not evidence of no earlier recipients" in res.abstain
     assert cd.screen_payment(fx, recipient=LOOK_TOKEN, cutoff=END).flagged is None
     partial = fixture(complete=False)
     assert found(partial, "C2").abstain is not None
@@ -385,3 +386,26 @@ def test_a_reverted_own_send_still_counts_as_a_reference() -> None:
         }
     )
     assert cd.screen_payment(fx, recipient=LOOK_NATIVE, cutoff=END).flagged is True
+
+
+def test_frozen_items_are_caught_in_every_observed_class() -> None:
+    from cryptoguard.ml.observation_study import touches_frozen_any
+
+    clean = fixture(native=[native_in(LOOK_NATIVE, 1, block=1200)])
+    assert not touches_frozen_any(clean, (frozenset({SHORT}), frozenset()))
+    assert touches_frozen_any(clean, (frozenset({LOOK_NATIVE}), frozenset()))  # native sender
+    paid = fixture(reference=False).model_copy(
+        update={
+            "wallet_transactions": [
+                RecordedTransaction(
+                    transaction_hash=_tx(9),
+                    block_number=1100,
+                    transaction_index=0,
+                    nonce=0,
+                    to=SHORT,
+                    value="1",
+                )
+            ]
+        }
+    )
+    assert touches_frozen_any(paid, (frozenset({SHORT}), frozenset()))  # native recipient

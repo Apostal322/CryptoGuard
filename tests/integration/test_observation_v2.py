@@ -37,6 +37,7 @@ async def _no_sleep(_: float) -> None:
 
 
 def _provider(node: FakeNode, tmp: Path) -> tuple[RpcEthereumProvider, RequestLedger]:
+    tmp.mkdir(parents=True, exist_ok=True)
     ledger = RequestLedger(tmp / "ledger.json", cap=5_000)
     client = JsonRpcClient(
         "https://rpc.example.invalid",
@@ -93,7 +94,6 @@ def _incident() -> FakeNode:
 
 
 async def _record(node: FakeNode, tmp: Path, observation: int) -> tuple[ReplayFixture, int]:
-    tmp.mkdir(parents=True, exist_ok=True)
     provider, ledger = _provider(node, tmp)
     try:
         fx = await record_window(
@@ -161,7 +161,8 @@ async def test_end_to_end_original_versus_extended_observation(tmp_path: Path) -
     v2, used2 = await _record(node, tmp_path / "b", 2)
 
     # observation/1 is exactly what every existing fixture holds
-    assert v1.observation is None and v1.native_inbound is None
+    assert v1.observation is None
+    assert v1.native_inbound is None
     assert b'"native_inbound"' not in v1.canonical_bytes()
     assert used2 > used1  # the extension costs requests, all through the ledger
     # observation/2 states what it saw and what it could not

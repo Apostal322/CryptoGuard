@@ -204,7 +204,7 @@ uv run cryptoguard replay run --write-report EVALUATION.md
 # Re-record a fixture (needs historical logs + state, e.g. https://eth.drpc.org). Every live
 # replay command needs a request ledger and an approved cap; retries count, and a run that
 # reaches the cap writes nothing:
-uv run cryptoguard replay record <case-id> --rpc-url <archive-capable RPC> --ledger <file> --cap <n>
+uv run cryptoguard replay record <case-id> --rpc-url <archive-capable RPC> --ledger <file> --cap <n> [--observation 2]
 uv run cryptoguard replay find-transfers --sender <addr> [--recipient <addr>] --since <day> --until <day> --rpc-url <RPC> --ledger <file> --cap <n>
 # Evaluate the experimental analyses too (incidents + background wallets; analytics extra):
 uv run --extra analytics cryptoguard replay run --analytics --write-report EVALUATION.md
