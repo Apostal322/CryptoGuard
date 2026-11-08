@@ -26,6 +26,18 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Phase 12.5: ML-driven candidate discovery and evidence-aware ranking (no RPC requests)
+- **Protocol 12.5** (`docs/ml/protocol-12.5.md`) was frozen before any new outcome. The code was committed before the outcome run.
+- **Primary pre-registered ML test** (`planting-mechanism-next/1`, a self-supervised proxy on 1,067 archive episodes): **not supported.**
+  - The fixed logistic regression's test log loss is 1.945, against 0.200 for victim-prefix frequency, because of strong temporal covariate shift.
+  - Its macro-F1 is higher (0.323 against 0.284).
+- **Semantic channel** (exploratory, development split): no gain over recency, at −0.009 [−0.022, +0.005].
+- **MAD temporal anomaly:** analytically equivalent to recency (1,056 of 1,056 episodes).
+- **Development cases:** recency and similarity disagree; descriptive only.
+- **Added:** `poisoning-candidate-features/1` (value/status pairs, never zero for unobserved), and an offline shadow ranking `poisoning-candidate-ranking/1` (research CLI only).
+- **Fixed:** a quadratic scan in candidate features. Ranking 1,000 flood candidates went from 424 s to about 2 s, with identical outputs.
+- **Report:** `ML_CANDIDATE_DISCOVERY_RESEARCH.md`.
+
 ### Phase 12.4 final validation of observation/2 (no RPC requests)
 - **Balance-bisection audit:**
   - **Fixed:** with matching sums, success was inferred. A reverted inbound plus an internal credit of exactly the same value in the same block would be misattributed. `observation/2` now reads a receipt for every nonzero inbound.
