@@ -8,9 +8,13 @@ without an own transaction finds every block whose balance increased; that block
 transaction list then names the external senders (``tx.to == wallet``, nonzero value).
 
 Exact accounting per increase block: the successful external inbound values must sum to
-the increase. Any remainder is **unattributed** (an internal transfer from contract
-execution, a validator withdrawal, a fee-recipient credit): its sender is unknown without
-traces, and it is recorded as such, never as a transfer from anyone.
+the increase. With ``read_receipts`` (what ``observation/2`` uses) every nonzero inbound
+transaction's receipt is read, so success is observed, never inferred. Without it, success
+is inferred from an exact sum, which a reverted inbound plus an internal credit of exactly
+the same value in the same block would fool. Any remainder is **unattributed** (an
+internal transfer from contract execution, a validator withdrawal, a fee-recipient credit):
+its sender is unknown without traces, and it is recorded as such, never as a transfer from
+anyone.
 
 What this cannot see, stated in the coverage:
 
@@ -77,6 +81,7 @@ async def locate_native_inbound(
     own_tx_blocks: Sequence[int],
     wallet_is_plain_eoa: bool | None,
     max_change_blocks: int = DEFAULT_MAX_CHANGE_BLOCKS,
+    read_receipts: bool = False,
 ) -> NativeInboundDiscovery:
     wallet = to_checksum_address(wallet)
     if wallet_is_plain_eoa is not True:
@@ -136,7 +141,7 @@ async def locate_native_inbound(
     for block, delta in sorted(increases):
         txs = await _inbound_txs(provider, wallet, block, counts)
         paid = [t for t in txs if t.value > 0]
-        if sum(t.value for t in paid) != delta:  # some may have reverted: read the receipts
+        if read_receipts or sum(t.value for t in paid) != delta:  # observe, or resolve a gap
             paid = [await _with_status(provider, t, counts) for t in paid]
             txs = [t for t in txs if t.value == 0] + paid
         explained = sum(t.value for t in paid if t.succeeded is not False)

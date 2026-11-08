@@ -209,6 +209,7 @@ async def _observation_v2(
         to_block=end,
         own_tx_blocks=[t.block_number for t in transactions],
         wallet_is_plain_eoa=plain,
+        read_receipts=True,  # success observed, never inferred
     )
     nfts = []
     for log in transfers.erc721_logs:

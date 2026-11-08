@@ -207,3 +207,42 @@ async def test_a_dust_planting_after_the_cutoff_is_not_seen(tmp_path: Path) -> N
 
 def _unused(*_: Any) -> None:  # keep imports explicit for readers
     return None
+
+
+def test_record_window_cli_is_outcome_blind_and_never_overwrites(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from cryptoguard import cli
+    from cryptoguard.blockchain import budget as budget_mod
+
+    node = _incident()
+    monkeypatch.setattr(budget_mod.httpx, "AsyncHTTPTransport", node.transport)
+    out = tmp_path / "blind" / "fixture.json"
+    argv = [
+        "replay",
+        "record-window",
+        "--wallet",
+        WALLET,
+        "--chain-id",
+        "1",
+        "--from-block",
+        str(START),
+        "--to-block",
+        str(END),
+        "--out",
+        str(out),
+        "--rpc-url",
+        "https://rpc.example.invalid",
+        "--ledger",
+        str(tmp_path / "ledger.json"),
+        "--cap",
+        "500",
+    ]
+    assert cli.main(argv) == 0
+    fx = ReplayFixture.model_validate_json(out.read_text(encoding="utf-8"))
+    assert fx.observation is not None  # observation/2 is the default here
+    assert DUST in {n.sender.lower() for n in fx.native_inbound or []}
+    assert RequestLedger(tmp_path / "ledger.json", cap=500).used() == fx.rpc_requests
+    assert cli.main(argv) == 1  # never overwritten
+    for flag in ("--case", "--manifest", "--harm", "--attacker", "--cases-dir"):
+        assert flag not in " ".join(argv)  # the command has no outcome input at all

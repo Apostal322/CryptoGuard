@@ -398,6 +398,9 @@ def _replay_command(args: argparse.Namespace, settings: Settings) -> int:
             return 2
         return 0
 
+    if args.replay_command == "record-window":
+        return _record_window_command(args, settings)
+
     if args.replay_command in ("sample-background", "record-background"):
         return _background_command(args, settings)
 
@@ -545,6 +548,67 @@ def _utc_day(day: str) -> int:
     from datetime import UTC, datetime
 
     return int(datetime.fromisoformat(day).replace(tzinfo=UTC).timestamp())
+
+
+def _record_window_command(args: argparse.Namespace, settings: Settings) -> int:
+    """Outcome-blind recording: the only inputs are the wallet, the chain, the block window
+    and the collection settings. No manifest is read, so no victim label, attacker address or
+    transaction hash can reach the recorder. Fails closed at the cap; never overwrites."""
+    from pathlib import Path
+
+    from cryptoguard.blockchain.budget import BudgetExhaustedError, budgeted_transport
+    from cryptoguard.blockchain.provider import build_rpc_provider
+    from cryptoguard.core.config import validate_rpc_url
+    from cryptoguard.replay.record import record_window
+
+    out = Path(args.out)
+    if out.exists():
+        print(f"error: {out} exists; it is never overwritten", file=sys.stderr)
+        return 1
+    if args.from_block > args.to_block:
+        print("error: --from-block is after --to-block", file=sys.stderr)
+        return 1
+    ledger = _replay_ledger(args)
+    rpc_settings = settings.model_copy(
+        update={
+            "rpc_url": SecretStr(validate_rpc_url(args.rpc_url)),
+            "chain_id": args.chain_id,
+            "rpc_max_concurrency": 2,
+        }
+    )
+    case_id = f"window-{args.wallet.lower()[:10]}-{args.from_block}-{args.to_block}"
+
+    async def run() -> Any:
+        provider = build_rpc_provider(rpc_settings, transport=budgeted_transport(ledger))
+        before = ledger.used()
+        try:
+            return await record_window(
+                provider,
+                case_id=case_id,
+                chain_id=args.chain_id,
+                wallet=args.wallet,
+                start=args.from_block,
+                end=args.to_block,
+                chunk_blocks=args.chunk_blocks,
+                observation=args.observation,
+            )
+        finally:
+            await provider.aclose()
+            ledger.note(f"replay record-window {case_id}: {ledger.used() - before} reserved")
+
+    try:
+        fixture = asyncio.run(run())
+    except BudgetExhaustedError as exc:
+        print(f"{case_id}: not evaluable: budget ({exc}); no fixture written", file=sys.stderr)
+        return 2
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(fixture.canonical_bytes() + b"\n")
+    print(
+        f"Recorded {len(fixture.transfers)} transfers, {len(fixture.wallet_transactions)} wallet "
+        f"transactions, {len(fixture.native_inbound or [])} native inbound "
+        f"({fixture.rpc_requests} RPC requests) to {out}"
+    )
+    return 0
 
 
 def _background_command(args: argparse.Namespace, settings: Settings) -> int:
@@ -938,6 +1002,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_sample.add_argument("--window-blocks", type=int, default=21_601)
     p_sample.add_argument("--max-nonce-delta", type=int, default=100)
     _add_rpc_budget(p_sample, per_run_help="most requests this run may reserve")
+    p_win = replay_sub.add_parser(
+        "record-window",
+        help="record one wallet window, outcome-blind (wallet, chain and blocks only)",
+    )
+    p_win.add_argument("--wallet", required=True)
+    p_win.add_argument("--chain-id", type=int, default=1)
+    p_win.add_argument("--from-block", type=int, required=True)
+    p_win.add_argument("--to-block", type=int, required=True)
+    p_win.add_argument("--observation", type=int, choices=(1, 2), default=2)
+    p_win.add_argument("--chunk-blocks", type=int, default=100)
+    p_win.add_argument("--out", required=True, help="fixture path (never overwritten)")
+    p_win.add_argument("--rpc-url", required=True)
+    _add_rpc_budget(p_win, per_run_help="most requests this run may reserve")
     p_bg = replay_sub.add_parser(
         "record-background", help="record fixtures for background wallets that have none"
     )

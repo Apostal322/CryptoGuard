@@ -8,7 +8,12 @@ Protocol 12.4 compares three variants on one wallet window, at one cutoff:
   ``untrusted_token_in``, ``dust_in``) applied to every class the window actually observed:
   ERC-20 transfers, and with ``observation/2`` also native ETH received and ERC-721-shaped
   transfers. No rule is new, so C1 minus C0 is what the extra observations buy.
-- **C2**: C1 plus two semantic rules motivated by the Stage 2a miss (``motivated-by: P3``):
+- **C2**: the warning-facing variant. C1 plus two safeguards: a native observation becomes a
+  candidate only when its sender imitates one of the wallet's own references (anyone can
+  send a wallet 0 ETH, so zero-value or stranger native transfers alone are never a
+  candidate), and candidates are aggregated to one per lookalike with an event count. C1
+  keeps C0's rules unchanged and is a coverage measurement, not a warning list. C2 also adds
+  two semantic rules motivated by the Stage 2a miss (``motivated-by: P3``):
   *abstention* (when the wallet's references are not fully observed, say so instead of
   reporting "no candidate") and a *payment-time screen* (``screen_payment``): at the moment
   the wallet signs a payment, its recipient is checked against the wallet's own earlier
@@ -188,6 +193,7 @@ class DiscoveryCandidate:
     position: tuple[int, int, int]
     affix: tuple[int, int] | None
     description: str = "suspicious lookalike candidate"
+    events: int = 1  # C2 aggregates one candidate per lookalike; others list each event
 
 
 @dataclass(frozen=True)
@@ -288,6 +294,7 @@ def discover(fixture: Any, *, cutoff: tuple[int, int], variant: Variant = "C1") 
     )
     abstain = None
     if variant == "C2":
+        found = _c2_safeguards(found)
         if not cov.complete(*REFERENCE_CATEGORIES):
             abstain = "insufficient history: the wallet's own references are not fully observed"
         elif not chosen:
@@ -298,6 +305,30 @@ def discover(fixture: Any, *, cutoff: tuple[int, int], variant: Variant = "C1") 
     return DiscoveryResult(
         DISCOVERY_VERSION, variant, cutoff, found, coverage, missing, abstain, unattributed
     )
+
+
+def _c2_safeguards(found: list[DiscoveryCandidate]) -> list[DiscoveryCandidate]:
+    """Drop native candidates that imitate no reference, then keep one candidate per
+    lookalike (its earliest evidence, every method seen, and the number of events)."""
+    kept = [c for c in found if c.kind != "native" or c.imitated is not None]
+    by_lookalike: dict[str, DiscoveryCandidate] = {}
+    for c in kept:  # chain order: the first occurrence is the earliest evidence
+        first = by_lookalike.get(c.lookalike)
+        if first is None:
+            by_lookalike[c.lookalike] = c
+            continue
+        methods = tuple(dict.fromkeys(first.methods + c.methods))
+        by_lookalike[c.lookalike] = DiscoveryCandidate(
+            lookalike=first.lookalike,
+            imitated=first.imitated or c.imitated,
+            methods=methods,
+            kind=first.kind,
+            evidence=first.evidence,
+            position=first.position,
+            affix=first.affix or c.affix,
+            events=first.events + 1,
+        )
+    return list(by_lookalike.values())
 
 
 def _c0(

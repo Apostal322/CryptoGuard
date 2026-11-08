@@ -26,6 +26,14 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Phase 12.4 final validation of observation/2 (no RPC requests)
+- **Balance-bisection audit:**
+  - **Fixed:** with matching sums, success was inferred. A reverted inbound plus an internal credit of exactly the same value in the same block would be misattributed. `observation/2` now reads a receipt for every nonzero inbound.
+  - **Adversarial tests:** several inbound transfers in one block, an inbound followed by an equal spend, an internal credit beside an external inbound, reverted and successful inbound together, a missed own-transaction block, truncation, own transactions at the window edges, a self-transfer, outside-window inbound, the minimum cost, and a seeded randomized oracle.
+- **C2, the warning-facing shadow variant:** a native observation is a candidate only when its sender imitates one of the wallet's own references, and there is one candidate per lookalike, with an event count. In a test, 1,000 zero-value strangers produce 0 C2 candidates. C1 stays a coverage measurement. The production detector reads no native inbound.
+- **Added `replay record-window`:** outcome-blind recording, taking only the wallet, chain, block window and settings; it never overwrites.
+- **Pre-registered:** the outcome-blind replay of the Stage 2a window (`docs/ml/incident-benchmark/preregistration-blind-v2.md`). Cap requested: 2,500. Not approved.
+
 ### Observation completeness and candidate discovery, Phase 12.4 (no RPC requests)
 - **Protocol 12.4** (`docs/ml/protocol-12.4.md`) was frozen before the code and the study.
 - **Audit:** `observation/1` never observed inbound native ETH, zero-value native transactions, internal transfers or ERC-1155. It also fetched ERC-721-shaped and malformed `Transfer` logs and discarded them, without keeping their counts.

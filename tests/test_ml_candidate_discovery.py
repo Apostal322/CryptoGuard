@@ -409,3 +409,42 @@ def test_frozen_items_are_caught_in_every_observed_class() -> None:
         }
     )
     assert touches_frozen_any(paid, (frozenset({SHORT}), frozenset()))  # native recipient
+
+
+def test_zero_value_native_floods_cannot_become_unrestricted_warnings() -> None:
+    """Anyone can send a wallet 0 ETH. C1 (coverage measurement, C0's rules unchanged)
+    lists each such event; C2 (warning-facing) keeps only native senders that imitate one of
+    the wallet's own references, one candidate per lookalike; the production detector reads
+    no native inbound at all."""
+    from cryptoguard.detectors.poisoning import PoisoningConfig
+    from cryptoguard.replay.engine import Visibility, detector_outputs
+
+    strangers = [
+        native_in("0x" + f"{i:040x}", 0, block=1200 + i % 700, tx=10_000 + i) for i in range(1000)
+    ]
+    lookalike = [native_in(LOOK_NATIVE, 0, block=1300 + i, tx=20_000 + i) for i in range(3)]
+    fx = fixture(native=strangers + lookalike)
+    c1 = found(fx, "C1")
+    assert len(c1.candidates) == 1003  # listed, never weighted: a volume measurement
+    c2 = found(fx, "C2")
+    [only] = c2.candidates
+    assert (only.lookalike, only.imitated, only.events) == (LOOK_NATIVE, REF, 3)
+    assert only.position == (1300, 0, -1)  # the earliest evidence is kept
+    full = Visibility.ERC20_PLUS_WALLET_TRANSACTIONS
+    cfg = PoisoningConfig()
+    legacy = fx.model_copy(update={"native_inbound": None, "observation": None})
+    assert detector_outputs(fx, 2000, full, cfg) == detector_outputs(legacy, 2000, full, cfg)
+
+
+def test_c2_keeps_one_candidate_per_lookalike_across_classes() -> None:
+    fx = fixture(
+        [
+            transfer(LOOK_TOKEN, VICTIM, 0, block=1300, signer=ATTACKER),
+            transfer(LOOK_TOKEN, VICTIM, 0, block=1310, signer=ATTACKER, log=3),
+        ],
+        native=[native_in(LOOK_TOKEN, 0, block=1320)],
+    )
+    assert len(found(fx, "C1").candidates) == 3
+    [c] = found(fx, "C2").candidates
+    assert (c.lookalike, c.events, c.position[0]) == (LOOK_TOKEN, 3, 1300)
+    assert c.methods == ("zero_value_in", "lookalike_in")
