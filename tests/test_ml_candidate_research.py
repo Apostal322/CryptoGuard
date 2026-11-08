@@ -261,3 +261,20 @@ def test_robustness_transforms_never_add_candidates() -> None:
     assert res["no_native"]["removed"] == 1  # LOOK_NATIVE is no longer observable
     assert "native_inbound_external" in res["no_native"]["not_complete"]
     assert res["no_reference_history"]["abstain"] is not None
+
+
+def test_ranking_builds_observations_once_not_per_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression for the quadratic scan (424 s for 1,000 flood candidates before the fix)."""
+    calls = {"n": 0}
+    real = cd.observations
+
+    def counting(fx: object) -> list[cd.Observation]:
+        calls["n"] += 1
+        return real(fx)
+
+    monkeypatch.setattr(cd, "observations", counting)
+    ranked = cf.rank(cr.flood_fixture(500, 50), (8_001, 0))
+    assert len(ranked) == 50
+    assert calls["n"] == 2  # once for C2 discovery, once for the feature context

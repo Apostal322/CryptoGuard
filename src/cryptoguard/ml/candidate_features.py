@@ -44,16 +44,41 @@ def _count(n: int, complete: bool) -> FeatureValue:
     return FeatureValue(float(n), "observed" if n else "zero_observed")
 
 
+@dataclass(frozen=True)
+class _Context:
+    """One window's observations before the cutoff, indexed once (no per-candidate scan)."""
+
+    cov: Any
+    by_party: dict[str, list[cd.Observation]]
+    chosen: list[cd.Observation]
+    by_signer: dict[str, set[str]]
+
+    @classmethod
+    def build(cls, fixture: Any, cutoff: tuple[int, int]) -> _Context:
+        obs = [o for o in cd.observations(fixture) if (o.block, o.tx_index) < cutoff]
+        by_party: dict[str, list[cd.Observation]] = {}
+        by_signer: dict[str, set[str]] = {}
+        for o in obs:
+            by_party.setdefault(o.counterparty, []).append(o)
+            if o.signer:
+                by_signer.setdefault(o.signer, set()).add(o.counterparty)
+        chosen = [o for o in obs if o.direction == "out" and o.wallet_signed is True]
+        return cls(coverage_of(fixture), by_party, chosen, by_signer)
+
+
 def candidate_features(
-    fixture: Any, candidate: cd.DiscoveryCandidate, cutoff: tuple[int, int]
+    fixture: Any,
+    candidate: cd.DiscoveryCandidate,
+    cutoff: tuple[int, int],
+    context: _Context | None = None,
 ) -> dict[str, FeatureValue]:
     """Features of one candidate from observations strictly before ``cutoff``."""
-    cov = coverage_of(fixture)
-    obs = [o for o in cd.observations(fixture) if (o.block, o.tx_index) < cutoff]
+    ctx = context or _Context.build(fixture, cutoff)
+    cov = ctx.cov
     look = candidate.lookalike
-    mine = [o for o in obs if o.counterparty == look]
+    mine = ctx.by_party.get(look, [])
     refs_complete = cov.complete(*cd.REFERENCE_CATEGORIES)
-    chosen = [o for o in obs if o.direction == "out" and o.wallet_signed is True]
+    chosen = ctx.chosen
     matched = {o.counterparty for o in chosen if similar(look, o.counterparty)}
     first = mine[0] if mine else None
     f: dict[str, FeatureValue] = {}
@@ -137,7 +162,7 @@ def candidate_features(
     if not signers:
         f["signer_reuse_in_window"] = FeatureValue(None, "unknown")
     else:
-        others = {o.counterparty for o in obs if o.signer in signers and o.counterparty != look}
+        others = {p for s in signers for p in ctx.by_signer.get(s, set())} - {look}
         f["signer_reuse_in_window"] = FeatureValue(
             float(len(others)), "observed" if others else "zero_observed"
         )
@@ -182,7 +207,8 @@ def _ranks(scores: Mapping[str, tuple[float, ...]]) -> dict[str, float]:
 def rank(fixture: Any, cutoff: tuple[int, int]) -> list[RankedCandidate]:
     """The offline shadow ranking of a window's C2 candidates at ``cutoff``."""
     res = cd.discover(fixture, cutoff=cutoff, variant="C2")
-    feats = {c.lookalike: candidate_features(fixture, c, cutoff) for c in res.candidates}
+    ctx = _Context.build(fixture, cutoff)
+    feats = {c.lookalike: candidate_features(fixture, c, cutoff, ctx) for c in res.candidates}
 
     def val(c: str, k: str) -> float:
         v = feats[c][k].value
