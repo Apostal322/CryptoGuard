@@ -5,7 +5,7 @@
 | Protocol (frozen before the code and the study) | [`docs/ml/protocol-12.4.md`](docs/ml/protocol-12.4.md), `3a79b74` |
 | Implementation (committed before the study ran) | `3917957` |
 | Study output (git-ignored) | `data/ml/research/phase12.4/observation-study.json` (`cryptoguard ml observation-study`) |
-| New RPC requests / downloads | **0** for the phase / none; plus **2** for the approved Q1 (§33) and **17** for the approved Q1b (§34) |
+| New RPC requests / downloads | **0** for the phase / none; plus **2** (Q1, §33), **17** (Q1b, §34) and **1,299** (blind `observation/2` replay, §35), all separately approved |
 
 ## 1. Executive summary
 
@@ -364,4 +364,66 @@ Of those, 26 tests are new: 22 synthetic and invariance tests, and 4 recorder te
 - **The wallet-centric path** that would find the same transfer without knowing the outcome is `observation/2` balance bisection. The mock tests verify that path. It has not been run on this real window, which needs Q2, about 1,100 requests, not approved.
 - **The case stays a development case.** This is a development-case regression success, not independent validation.
 - **The production detector would still not flag it.** It is unchanged and reads no native inbound. Feeding `observation/2` native inbound to the detector is a production change that needs its own approval and evaluation, including the zero-value volume risk in §21.
+
+## 35. Final validation: outcome-blind `observation/2` replay (2026-11-08/09; approved cap 2,500)
+
+**Pre-registration:** `docs/ml/incident-benchmark/preregistration-blind-v2.md`, frozen in `368f652` before any request.
+
+**Command:** `replay record-window`. Its only inputs were the victim's address, chain 1, blocks 21,869,297–21,890,897, and `observation/2`. It read no manifest, so the paid address and the hashes never reached the recorder.
+
+**Ledger:** `data/ml/rpc/ledger-blind-v2.json`, **1,299 of 2,500**.
+
+| Attempt | Requests | Outcome |
+|---|---|---|
+| 1 | 596 | Provider rate limit on `eth_getTransactionCount`, after 3 retries. No fixture written (fail closed). |
+| The one permitted restart | 703 | Complete. Fixture `data/ml/research/phase12.4/blind-v2/fixture.json`, canonical SHA-256 `19c2cd75…b0fe`. |
+
+**Preflight.** Before attempt 1, the bounded resource check passed on its 4th try: 2.08 GiB free, CPU 19 %. The disk queue was high, but the recorder writes one small ledger record per request. Before the restart, five checks were made. Three failed, with 0.26–0.88 GiB free, and the 5th passed with 1.63 GiB free and CPU 7 %. No other process was touched.
+
+**Verification** (criteria fixed in the pre-registration):
+
+| ID | Result |
+|---|---|
+| V1 | **PASS.** `native_inbound` holds `0xf4530315…2b83`: sender `0x804051b0…793375`, block 21,890,540, index 150, 1,000,000,000,000 wei, `succeeded` true **read from the receipt**. |
+| V2 | **PASS.** `native_inbound_external` is `complete` (2 transfers). |
+| V3 | **PASS.** The ERC-20 transfers (9) and wallet transactions (12) match the frozen `observation/1` fixture identity for identity. |
+| V4 | **PASS.** At cutoff (21,890,897, 0):<br>• **C0:** the 2 fake-token lookalikes, identical to C0 on the frozen fixture.<br>• **C1:** adds **exactly one** candidate, the paid address (`lookalike_in`, native, affix 4 + 6 to `0x80404f3e…`, block 21,890,540: **357 blocks, 4,320 s, before the theft**).<br>• **C2:** the same 3 lookalikes, one candidate each, with no abstention and the paid address imitating `0x80404f3e…`.<br>• **Removed:** nothing. **Duplicates:** none. |
+| V5 | **PASS.** `detector_outputs` is identical at H − 1 and at H on the `/2` fixture and its `/1` projection. |
+
+**The other native inbound** was 7.83 ETH from `0x28c6c062…1d60`. It imitates no reference, so it is correctly not a candidate in C1 or C2.
+
+**The other categories:**
+- **Absent:** no unattributed credits, no ERC-721-shaped logs and no malformed logs. The classes `observation/1` discarded were empty in this window.
+- **Partial, as designed:** unattributed credits (12 own-transaction blocks) and zero-value native.
+- **Unsupported:** internal transfers.
+- **Not collected:** ERC-1155.
+
+**Cost.** The complete attempt took 703 requests. The `/1` recording of the same window, made earlier, took 645. So the `observation/2` additions cost on the order of 60 requests here: 2 increase blocks, plus balance reads at 13 run edges, block reads and receipts. That is well below the pre-registered estimate of about 1,050, which assumed about 20 increase blocks. The failed first attempt shows that the free endpoint's rate limit, not the method, is the main cost risk.
+
+**What this is.** A **development-case regression success**: the wallet-centric recorder, run blind on the real window, independently found the planting that `observation/1` missed. And C0's own rules, applied to that observation, flag the address that was later paid. It is **not** independent validation, because this case and its planting were known before the run.
+
+### Decision
+
+**`observation/2` is sufficiently correct for broader offline research** within its declared scope: nonzero native ETH received by wallets without code, together with ERC-721-shaped records, malformed-log counts and per-category coverage. That conclusion rests on four pieces of evidence:
+- the audit, which found and fixed the success-inference weakness;
+- 12 adversarial tests, including a randomized oracle;
+- the synthetic mechanism suite;
+- one real blind window that passed every pre-registered check.
+
+**Still unverified:**
+1. **Zero-value native transactions** (a 0-ETH planting). The method cannot see them, and no real case exercised them.
+2. **Internal transfers.** Traces are needed.
+3. **ERC-1155** is not queried.
+4. **Wallets with code or EIP-7702 delegations.** They are declared `unsupported`, and one delegated and revoked inside a window would go undetected.
+5. **Busy wallets:** cost and rate-limit behaviour. This window had 2 increase blocks.
+6. **More than one real window.** n = 1, and it is a known case.
+
+**Needed before any production integration:**
+- **(a)** `observation/2` recordings of several **untouched** incidents, recorded blind from the start under a pre-registration;
+- **(b)** a volume study of C2 on `observation/2` background windows, as unlabelled alerts per wallet-day, never called a false-positive rate;
+- **(c)** a separately pre-registered and approved detector change that reads native inbound as a planting signal. It must require a lookalike and exclude zero-value-only evidence, and it must pass replay regression on every fixture.
+- **(d)** a cost and latency profile for live monitoring, where per-block inbound reading is simpler than bisection;
+- **(e)** handling for wallets with code.
+
+Until then the production detector stays unchanged and does not read native inbound.
 

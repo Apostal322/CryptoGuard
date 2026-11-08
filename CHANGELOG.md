@@ -32,7 +32,13 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   - **Adversarial tests:** several inbound transfers in one block, an inbound followed by an equal spend, an internal credit beside an external inbound, reverted and successful inbound together, a missed own-transaction block, truncation, own transactions at the window edges, a self-transfer, outside-window inbound, the minimum cost, and a seeded randomized oracle.
 - **C2, the warning-facing shadow variant:** a native observation is a candidate only when its sender imitates one of the wallet's own references, and there is one candidate per lookalike, with an event count. In a test, 1,000 zero-value strangers produce 0 C2 candidates. C1 stays a coverage measurement. The production detector reads no native inbound.
 - **Added `replay record-window`:** outcome-blind recording, taking only the wallet, chain, block window and settings; it never overwrites.
-- **Pre-registered:** the outcome-blind replay of the Stage 2a window (`docs/ml/incident-benchmark/preregistration-blind-v2.md`). Cap requested: 2,500. Not approved.
+- **Blind replay** (1,299 of an approved 2,500 RPC requests; one rate-limited attempt plus the one restart): `replay record-window` was given only the victim, chain and window. It independently recorded the native dust planting, with its identity, sender, value, block and success read from the receipt.
+  - **C0:** 2 lookalikes.
+  - **C1:** adds exactly the paid address, 357 blocks before the theft.
+  - **Production detector:** unchanged.
+  - **V1–V5:** all passed.
+  - **Classification:** a development-case regression, not validation.
+  - **Decision** (`ML_OBSERVATION_COMPLETENESS.md` §35): `observation/2` is sufficient for offline research within its scope. Production integration needs untouched incidents, a volume study and a separately approved detector change.
 
 ### Observation completeness and candidate discovery, Phase 12.4 (no RPC requests)
 - **Protocol 12.4** (`docs/ml/protocol-12.4.md`) was frozen before the code and the study.

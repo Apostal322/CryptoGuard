@@ -2,7 +2,7 @@
 
 **Frozen:** 2026-11-08, in the commit that adds this file. That is before any request for this replay.
 
-**Status:** **not approved.** It runs only after the user approves a new request cap. Earlier caps are exhausted and do not carry over.
+**Status:** run on 2026-11-08/09 under an approved 2,500 cap. It used 1,299 requests: attempt 1 hit a rate limit after 596 and wrote no fixture, and the one restart used 703. **V1–V5 all passed.** See `ML_OBSERVATION_COMPLETENESS.md` §35. This file was not changed before or during the run.
 
 **Governing rules:** `docs/ml/protocol-12.4.md`, and `ML_OBSERVATION_COMPLETENESS.md` §33–34.
 
