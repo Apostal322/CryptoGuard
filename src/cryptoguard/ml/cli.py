@@ -129,6 +129,17 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ur.add_argument(
         "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "unconfirmed-recency.json"
     )
+    rs = ml.add_parser(
+        "reliability-study",
+        help="Phase 12.6 signer provenance, evidence groups and spam resilience (offline)",
+    )
+    rs.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.6")
+    rs.add_argument(
+        "--episode-cache",
+        type=Path,
+        default=ML_DIR / "research" / "phase12.5" / "episodes.jsonl",
+        help="the Phase 12.5 archive episode cache (development split used only)",
+    )
     cr = ml.add_parser(
         "candidate-research",
         help="Phase 12.5 candidate discovery and ranking research (offline, no RPC)",
@@ -195,6 +206,16 @@ def run(args: argparse.Namespace) -> int:
     from cryptoguard.ml import ml_available
 
     # Pure-Python commands: no ml extra needed.
+    if args.ml_command == "reliability-study":
+        import json
+
+        from cryptoguard.ml import reliability_study
+
+        result = reliability_study.main(ML_DIR / "poisoning", args.out, args.episode_cache)
+        brief = {k: result[k] for k in ("rsig_consistency", "resources")}
+        print(json.dumps(brief, indent=1, default=str))
+        print(f"Wrote {args.out / 'reliability-study.json'}")
+        return 0
     if args.ml_command == "candidate-research":
         import json
 
