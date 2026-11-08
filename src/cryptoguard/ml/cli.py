@@ -129,6 +129,19 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ur.add_argument(
         "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "unconfirmed-recency.json"
     )
+    cr = ml.add_parser(
+        "candidate-research",
+        help="Phase 12.5 candidate discovery and ranking research (offline, no RPC)",
+    )
+    cr.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.5")
+    cr.add_argument("--rebuild-cache", action="store_true", help="re-read the archive subset")
+    rk = ml.add_parser(
+        "candidate-ranking",
+        help="offline shadow ranking of one recorded window (research only, no RPC)",
+    )
+    rk.add_argument("--fixture", type=Path, required=True)
+    rk.add_argument("--cutoff-block", type=int, required=True)
+    rk.add_argument("--cutoff-index", type=int, default=0)
     ob = ml.add_parser(
         "observation-study",
         help="Phase 12.4 observation coverage and candidate discovery (offline, no RPC)",
@@ -182,6 +195,25 @@ def run(args: argparse.Namespace) -> int:
     from cryptoguard.ml import ml_available
 
     # Pure-Python commands: no ml extra needed.
+    if args.ml_command == "candidate-research":
+        import json
+
+        from cryptoguard.ml import candidate_research
+
+        result = candidate_research.main(ML_DIR / "poisoning", args.out, args.rebuild_cache)
+        print(json.dumps(result["summary"], indent=1, default=str))
+        print(f"Wrote {args.out / 'candidate-research.json'}")
+        return 0
+    if args.ml_command == "candidate-ranking":
+        import json
+
+        from cryptoguard.ml import candidate_features
+        from cryptoguard.replay.models import ReplayFixture
+
+        fixture = ReplayFixture.model_validate_json(args.fixture.read_text(encoding="utf-8"))
+        ranked = candidate_features.rank(fixture, (args.cutoff_block, args.cutoff_index))
+        print(json.dumps(candidate_features.serialize(ranked), indent=1, default=str))
+        return 0
     if args.ml_command == "observation-study":
         import json
 
