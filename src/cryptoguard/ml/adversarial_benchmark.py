@@ -995,3 +995,104 @@ def main(
         json.dumps(result, indent=1, sort_keys=True, default=str) + "\n", encoding="utf-8"
     )
     return result
+
+
+# --- post-hoc checks (added after the negative controls flagged benchmark design bias) -------
+
+POSTHOC_METHODS = ("B0", "B3", "B4", "B5", "B6", "P1", "A-laminf", "A-nomech", "NC-revrec")
+
+
+def adaptive_scenario(
+    m: int,
+    *,
+    same_reference: bool = False,
+    decoy_time: str = "newer",
+    decoy_mechanism: str = "native",
+    target_reference: int = 0,
+    target_index: int = 0,
+) -> Scenario:
+    """F7 (decoys on the other references) or F6 (``same_reference``) with the design
+    choices the pre-registered grid fixed now varied by an adaptive attacker: decoys older
+    than the target, decoys sharing the target's mechanism (zero-value spoofs), the target
+    on any of the five references, and a target address that does not sort first."""
+    refs = references()
+    r_t = refs[target_reference]
+    t = rs.lookalike(target_index, prefix=4, suffix=4, ref=r_t)
+    pool = [r_t] if same_reference else [r for r in refs if r != r_t]
+    decoys = _decoys(m, 4, 4, pool, start=5_000)
+
+    def blk(i: int) -> int:
+        return 1_600 + i % 400 if decoy_time == "older" else _block(i)
+
+    tr: list[Any] = [(W, t, 0, 2_000, ATTACKER, USDT, 0)]
+    nat: list[Any] = []
+    for i, d in enumerate(decoys):
+        if decoy_mechanism == "spoof":
+            tr.append((W, d, 0, blk(i), ATTACKER, USDT, 1 + i % 50))
+        else:
+            nat.append((d, 1, blk(i), True))
+    fx = _fixture(refs, transfers=tr, native=nat)
+    return Scenario("adaptive", m, fx, (t.lower(),), r_t.lower())
+
+
+def _mean_exposure(cell: dict[str, Any], meth: str) -> float:
+    vals: dict[int, float] = cell["methods"][meth]["exposure"]
+    return round(sum(vals.values()) / len(vals), 4)
+
+
+def posthoc_checks(m_grid: Sequence[int] = (10, 100, 1_000)) -> dict[str, Any]:
+    """Exploratory and post hoc: each variant is averaged over m and K like the grid."""
+    variants: dict[str, dict[str, Any]] = {
+        "F7_as_registered": {},
+        "F7_decoys_older": {"decoy_time": "older"},
+        "F7_decoys_share_mechanism": {"decoy_mechanism": "spoof"},
+        "F7_target_address_not_first": {"target_index": 0x7_777_777},
+        "F6_target_address_not_first": {"same_reference": True, "target_index": 0x7_777_777},
+        **{f"F7_target_on_R{j + 1}": {"target_reference": j} for j in range(5)},
+    }
+    out: dict[str, Any] = {}
+    for name, kw in variants.items():
+        acc: dict[str, list[float]] = {m: [] for m in POSTHOC_METHODS}
+        for m in m_grid:
+            cell = run_cell(adaptive_scenario(m, **kw))
+            for meth in POSTHOC_METHODS:
+                acc[meth].append(_mean_exposure(cell, meth))
+        out[name] = {meth: round(sum(v) / len(v), 4) for meth, v in acc.items()}
+    refs_avg = {
+        meth: round(sum(out[f"F7_target_on_R{j + 1}"][meth] for j in range(5)) / 5, 4)
+        for meth in POSTHOC_METHODS
+    }
+    out["F7_averaged_over_target_reference"] = refs_avg
+    # H4 with 200 seeds: is the 10-seed deviation sampling noise?
+    seeds = tuple(range(200))
+    h4 = []
+    for m in (10, 100):
+        sc = scenario("F6_equal_similarity_same_reference", m)
+        groups = list(ce.build(sc.fixture, cutoff=END).groups)
+        t = sc.relevant[0]
+        ranks = [
+            next(
+                i + 1
+                for i, g in enumerate(ar.order(groups, ar.Selector("P1", seed=s)))
+                if g.lookalike == t
+            )
+            for s in seeds
+        ]
+        for k in K_GRID:
+            if m < k:
+                continue
+            p = sum(1 for r in ranks if r <= k) / len(ranks)
+            theory = min(1.0, k / (m + 1))
+            se = math.sqrt(theory * (1 - theory) / len(ranks))
+            h4.append(
+                {
+                    "m": m,
+                    "K": k,
+                    "theory": round(theory, 4),
+                    "observed_200_seeds": round(p, 4),
+                    "se": round(se, 4),
+                }
+            )
+    out["H4_200_seeds"] = h4
+    out["label"] = "post hoc, exploratory: added after NC-revrec and B3 scored unexpectedly high"
+    return out

@@ -138,6 +138,11 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         "--no-ltr", action="store_true", help="skip the archive learning-to-rank study"
     )
     adv.add_argument("--perf-max", type=int, default=100_000, help="largest performance population")
+    adv.add_argument(
+        "--posthoc",
+        action="store_true",
+        help="only the post-hoc design-bias checks (writes posthoc-checks.json)",
+    )
     rs = ml.add_parser(
         "reliability-study",
         help="Phase 12.6 signer provenance, evidence groups and spam resilience (offline)",
@@ -220,6 +225,14 @@ def run(args: argparse.Namespace) -> int:
 
         from cryptoguard.ml import adversarial_benchmark
 
+        if args.posthoc:
+            checks = adversarial_benchmark.posthoc_checks()
+            args.out.mkdir(parents=True, exist_ok=True)
+            (args.out / "posthoc-checks.json").write_text(
+                json.dumps(checks, indent=1, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            print(f"Wrote {args.out / 'posthoc-checks.json'}")
+            return 0
         result = adversarial_benchmark.main(
             ML_DIR / "poisoning", args.out, ltr=not args.no_ltr, perf_max=args.perf_max
         )
