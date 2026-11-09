@@ -650,3 +650,14 @@ one-sided α = 0.05).
 | J Production isolation | **PASS** | detector unchanged (tested) |
 | K Reproducibility | **PASS** | the rerun at `0968ff8` reproduced every registered number |
 | L Independent validation | **BLOCKED BY DATA** | no untouched incidents |
+
+## Validation
+
+| Check | Result |
+|---|---|
+| `ruff check .` / `ruff format --check .` / `mypy src` | clean / 298 files formatted / clean (155 files) |
+| Full suite | **1,051 passed, 0 failed**, 4 deselected (6 min 45 s); 52 new tests in `tests/test_ml_adversarial_ranking.py` |
+| Package | `uv build --offline`, `scripts/inspect_dist.py` OK (wheel 192 files, sdist 403) |
+| Frozen cohorts | sheet and key hashes unchanged (`a0ec4b6e…`, `407b412f…`, `121c112d…`, `f333386d…`) |
+| Incident fixtures | untouched (no data file modified) |
+| CI | recorded in the PR #1 description |
