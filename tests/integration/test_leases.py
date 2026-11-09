@@ -40,12 +40,16 @@ def _contend(url: str, start: float, results: mp.Queue) -> None:  # runs in a ch
         results.put(("error", f"{type(exc).__name__}: {exc}"))
 
 
-CRASH_TTL = 8.0  # generous: process teardown on a loaded machine can take seconds
+CRASH_TTL = 3_600.0  # expiry is probed with explicit clock values, so no real wait depends on it
+CRASHED_HOLDING = 17  # the child took the lease and died without releasing it
+CHILD_GOT_NONE = 3  # the child could not take the lease (a test-setup failure)
+# An exception in the child exits with code 1: distinct from both, so a child failure is never
+# mistaken for the crash under test.
 
 
 def _crash_holding_lease(url: str) -> None:  # child: take the lease, then die without release
-    LeaseStore(_repo(url)).acquire(KEY, CRASH_TTL)
-    os._exit(1)
+    lease = LeaseStore(_repo(url)).acquire(KEY, CRASH_TTL)
+    os._exit(CRASHED_HOLDING if lease is not None else CHILD_GOT_NONE)
 
 
 @pytest.fixture
@@ -106,19 +110,45 @@ def test_lease_of_a_crashed_process_is_recovered_after_expiry(db_url: str) -> No
     ctx = mp.get_context("spawn")
     p = ctx.Process(target=_crash_holding_lease, args=(db_url,))
     p.start()
-    p.join(timeout=60)
-    assert p.exitcode == 1
+    p.join(timeout=180)  # spawn start-up alone took up to 11 s under CPU contention
+    if p.is_alive():
+        p.kill()
+        pytest.fail("the child did not finish within 180 s")
+    assert p.exitcode == CRASHED_HOLDING, f"child exit code {p.exitcode} (1: it raised)"
     store = LeaseStore(_repo(db_url))
     held = store.holder(KEY)
     assert held is not None  # the dead owner never released it
-    # Judge "still held" against the lease's own expiry, not against how fast the OS tore the
-    # child down (a 1 s lease made this flaky under load: it expired before the check).
-    if datetime.now(UTC) < held.expires_at - timedelta(seconds=1):
-        assert store.acquire(KEY, 30) is None
-    time.sleep(max(0.0, (held.expires_at - datetime.now(UTC)).total_seconds()) + 0.3)
-    recovered = store.acquire(KEY, 30)
+    # Expiry is judged with explicit clock values, so these assertions always run and cannot
+    # race the scheduler (the earlier version skipped "still held" when the check came late).
+    tick = timedelta(microseconds=1)
+    assert store.acquire(KEY, 30, now=datetime.now(UTC)) is None  # held, by real time too
+    assert store.acquire(KEY, 30, now=held.expires_at - tick) is None  # held until expiry
+    assert store.acquire(KEY, 30, now=held.expires_at) is None  # not yet free at the instant
+    assert store.holder(KEY) == held  # failed attempts changed nothing
+    recovered = store.acquire(KEY, 30, now=held.expires_at + tick)
     assert recovered is not None
     assert recovered.generation == 2
+    assert recovered.owner != held.owner
+
+
+def test_expiry_boundary_never_has_two_owners(db_url: str) -> None:
+    """At the expiry instant the old owner is already fenced out and nobody can take over yet;
+    one microsecond later the takeover succeeds. No instant has two valid owners."""
+    repo = _repo(db_url)
+    store = LeaseStore(repo)
+    tick = timedelta(microseconds=1)
+    first = store.acquire(KEY, 10, now=datetime(2026, 1, 1, tzinfo=UTC))
+    assert first is not None
+    exp = first.expires_at
+    with repo._sessions() as session, session.begin():
+        LeaseStore.check(session, first, now=exp - tick)  # still valid just before
+    for at in (exp, exp + tick):
+        with repo._sessions() as session, session.begin(), pytest.raises(LeaseLostError):
+            LeaseStore.check(session, first, now=at)
+    assert store.acquire(KEY, 10, now=exp) is None
+    second = store.acquire(KEY, 10, now=exp + tick)
+    assert second is not None
+    assert second.generation == 2
 
 
 def test_stale_worker_is_fenced_out_and_cannot_release_the_new_lease(db_url: str) -> None:

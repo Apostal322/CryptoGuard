@@ -138,7 +138,7 @@ def test_summary_discloses_truncation_and_keeps_everything() -> None:
     res = ce.build(fx, cutoff=END)
     s = ce.summarize(res, 10)
     assert (s["total_groups"], s["shown"], s["truncated"]) == (25, 10, True)
-    assert len(s["hidden_identities"]) == 15
+    assert (s["hidden_count"], s["next_offset"]) == (15, 10)
     assert "not assessed as safe" in s["note"]
     assert len(res.groups) == 25  # the display budget deletes nothing
     assert ce.summarize(ce.build(fx, cutoff=END), 10) == s  # deterministic

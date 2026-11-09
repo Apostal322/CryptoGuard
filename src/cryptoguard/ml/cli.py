@@ -133,7 +133,7 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         "reliability-study",
         help="Phase 12.6 signer provenance, evidence groups and spam resilience (offline)",
     )
-    rs.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.6")
+    rs.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.6.1")
     rs.add_argument(
         "--episode-cache",
         type=Path,

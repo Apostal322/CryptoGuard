@@ -1,6 +1,8 @@
-"""Phase 12.6 offline study (protocol 12.6): signer provenance, evidence groups, bounded
-summaries, spam resilience, robust proxy features and cost. No RPC; frozen-overlap windows
-are never computed on; the 12.5 proxy test split is never used.
+"""Phase 12.6 / 12.6.1 offline study (protocol 12.6): signer provenance, evidence groups,
+bounded summaries, spam resilience, robust proxy features and cost; 12.6.1 adds the signer
+guard matrix, the authorization audit, reliability/suspicion separation, the 10,000-candidate
+adversarial suite and bounded-summary scaling to 100,000. No RPC; frozen-overlap windows are
+never computed on; the 12.5 proxy test split is never used.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from typing import Any
 from cryptoguard.ml import candidate_discovery as cd
 from cryptoguard.ml import candidate_evidence as ce
 
-STUDY_VERSION = "reliability-study/1"
+STUDY_VERSION = "reliability-study/2"
 USDT = "0xdac17f958d2ee523a2206206994597c13d831ec7"
 FAKE = "0x" + "f" * 40
 WALLET = "0x" + "c" * 40
@@ -46,7 +48,7 @@ def wallet_fixture(
     wallet_txs: Sequence[tuple[str, int, int]] = (),
     ref_block: int = 1_100,
     refs_complete: bool = True,
-    code: str = "0x",
+    code: str | dict[str, str] = "0x",
 ) -> Any:
     """Synthetic window. The wallet pays REF (wallet-signed, in its signed set) at
     ``ref_block``. ``transfers``: (sender, recipient, value, block, signer, token, tx_index);
@@ -123,14 +125,15 @@ def wallet_fixture(
         )
     nat = [
         RecordedNativeInbound(
-            transaction_hash=h("native", s, v, b, ok),
+            # the occurrence index keeps repeated identical transfers distinct transactions
+            transaction_hash=h("native", s, v, b, ok, j),
             block_number=b,
             transaction_index=1,
             sender=s,
             value=str(v),
             succeeded=ok,
         )
-        for s, v, b, ok in native
+        for j, (s, v, b, ok) in enumerate(native)
     ]
     status = "complete" if refs_complete else "partial"
     cats = {
@@ -156,7 +159,7 @@ def wallet_fixture(
         transfer_scan_complete=True,
         sender_lookups_skipped=0,
         method=["synthetic"],
-        wallet_code_hex={"1000": code},
+        wallet_code_hex={"1000": code} if isinstance(code, str) else dict(code),
         block_timestamps={},
         transfers=rows,
         wallet_transactions=txs,
@@ -278,11 +281,9 @@ def run_scenarios(k: int = 10) -> dict[str, Any]:
             "evidence_records": res.evidence_records,
             "summary_shown": summary["shown"],
             "truncated": summary["truncated"],
-            "hidden": len(summary["hidden_identities"]),
+            "hidden": summary["hidden_count"],
             "by_level": summary["by_level"],
-            "strong_rank": None
-            if strong is None
-            else next((i + 1 for i, g in enumerate(res.groups) if g.lookalike == strong), None),
+            "strong_rank": None if strong is None else ce.rank_of(res, strong),
             "strong_in_top_k": None if strong is None else strong in top,
             "abstain": res.abstain,
             "deterministic": summary == again,
@@ -405,8 +406,10 @@ def _evidence_unsafe(res: ce.EvidenceResult, condition: str) -> int:
                 and r.emitter is None
             ):
                 n += 1
-            if "spoofed_out" in r.mechanisms and r.signer_status == "unknown":
+            if "spoofed_out" in r.mechanisms and r.signer_status in ("unknown", "conflicting"):
                 n += 1
+            if "spoofed_out" in r.mechanisms and not r.value_zero:
+                n += 1  # value moved: whether the wallet authorized it is not observed
             if r.level == "directly_verified" and r.kind == "native" and r.receipt == "unknown":
                 n += 1
     return n
@@ -446,7 +449,8 @@ def spam_stability(
     res = ce.build(spammed, cutoff=cutoff)
     groups = list(res.groups)
     orders = {
-        "evidence_aware": [g.lookalike for g in groups],
+        "evidence_aware": [g.lookalike for g in sorted(groups, key=ce.evidence_order_key)],
+        "presentation": [g.lookalike for g in groups],
         "recency_only": [
             g.lookalike
             for g in sorted(groups, key=lambda g: (tuple(-x for x in g.last_position), g.lookalike))
@@ -455,7 +459,9 @@ def spam_stability(
             g.lookalike for g in sorted(groups, key=lambda g: (-(g.affix or 0), g.lookalike))
         ],
     }
-    before = [g.lookalike for g in base.groups if g.lookalike in real]
+    before = [
+        g.lookalike for g in sorted(base.groups, key=ce.evidence_order_key) if g.lookalike in real
+    ]
     out: dict[str, Any] = {"real_candidates": len(real), "spam": n, "k": k}
     for name, order in orders.items():
         kept = [x for x in order[:k] if x in real]
@@ -577,6 +583,416 @@ def scaling(sizes: Sequence[int] = (10, 100, 1_000, 10_000)) -> list[dict[str, A
     return out
 
 
+# --- 12.6.1: signer guard matrix and authorization audit ------------------------------------
+
+ATTACKER = "0x" + "a1" * 20
+STRONG = lookalike(0, prefix=5, suffix=5)
+
+
+def _with(fx: Any, **update: Any) -> Any:
+    return fx.model_copy(update=update)
+
+
+def _signed_status(fx: Any, status: str, count: int | None = None) -> Any:
+    from cryptoguard.replay.observation import CategoryCoverage
+
+    cov = fx.observation.model_copy(deep=True)
+    cov.categories["wallet_signed_transactions"] = CategoryCoverage(
+        status=status,
+        count=count,
+    )
+    return _with(fx, observation=cov)
+
+
+def _probe(
+    fx: Any, cutoff: tuple[int, int], party: str, tx_hash: str | None = None
+) -> dict[str, Any]:
+    """What the evidence model says about the wallet's outgoing event(s) to ``party``."""
+    res = ce.build(fx, cutoff=cutoff)
+    out: dict[str, Any] = {
+        "absence_inference": res.absence_inference,
+        "blocked_by": list(res.absence_blocked_by),
+        "observed_before_cutoff": False,
+    }
+    group = next((g for g in res.groups if g.lookalike == party.lower()), None)
+    recs = [
+        r
+        for r in (group.evidence if group else ())
+        if r.direction == "out" and (tx_hash is None or r.identity.startswith(f"tx:{tx_hash}"))
+    ]
+    if recs:
+        r = recs[-1]
+        out |= {
+            "observed_before_cutoff": True,
+            "evidence": True,
+            "signer_status": r.signer_status,
+            "mechanisms": list(r.mechanisms),
+            "authorization": r.authorization,
+            "level": r.level,
+            "missing": list(r.missing),
+        }
+        return out
+    signed = {t.transaction_hash.lower() for t in fx.wallet_transactions}
+    for o in cd.observations(fx):
+        if (
+            o.direction == "out"
+            and o.counterparty == party.lower()
+            and (o.block, o.tx_index) < cutoff
+        ):
+            if tx_hash is not None and o.tx_hash.lower() != tx_hash:
+                continue
+            status, _, _ = ce._signer(o, fx.wallet.lower(), signed, res.absence_inference)
+            out |= {"observed_before_cutoff": True, "evidence": False, "signer_status": status}
+    return out
+
+
+def signer_matrix() -> dict[str, dict[str, Any]]:
+    """Each condition of the 12.6.1 audit on a synthetic window: whether R-SIG may infer
+    "not signed by the wallet", what it says about the probe event, and why."""
+    from cryptoguard.replay.models import RecordedTransaction
+
+    spoof = (WALLET, STRONG, 0, 2_000, None, USDT, 0)
+    pull = (WALLET, STRONG, 10**6, 2_000, None, USDT, 0)
+    base = wallet_fixture(transfers=[spoof])
+    rows: dict[str, dict[str, Any]] = {}
+    rows["complete_history_zero_value"] = _probe(base, END, STRONG)
+    rows["complete_history_value_moved_trusted_token"] = _probe(
+        wallet_fixture(transfers=[pull]), END, STRONG
+    )
+    rows["complete_history_value_moved_untrusted_token"] = _probe(
+        wallet_fixture(transfers=[(WALLET, STRONG, 10**6, 2_000, None, FAKE, 0)]), END, STRONG
+    )
+    capped = _with(base, sender_lookups_skipped=600)
+    rows["signer_lookups_capped_at_500"] = _probe(capped, END, STRONG)
+    rows["signed_set_truncated"] = _probe(_signed_status(base, "truncated"), END, STRONG)
+    rows["signed_set_partial_recording"] = _probe(_signed_status(base, "partial"), END, STRONG)
+    rows["signed_set_count_mismatch"] = _probe(_signed_status(base, "complete", 5), END, STRONG)
+    gap = wallet_fixture(transfers=[spoof], wallet_txs=[(REF, 10**15, 1_200), (REF, 10**15, 1_300)])
+    txs = list(gap.wallet_transactions)
+    txs[-1] = txs[-1].model_copy(update={"nonce": txs[-1].nonce + 1})
+    rows["missing_page_or_7702_authorization_nonce_gap"] = _probe(
+        _with(gap, wallet_transactions=txs), END, STRONG
+    )
+    rows["legacy_fixture_without_documented_bisection"] = _probe(
+        _with(base, observation=None), END, STRONG
+    )
+    rows["code_deployed_inside_window_before_cutoff"] = _probe(
+        _with(base, wallet_code_hex={"1000": "0x", "1500": "0x6080"}), END, STRONG
+    )
+    rows["code_only_after_cutoff_not_used"] = _probe(
+        _with(base, wallet_code_hex={"1000": "0x", "9500": "0x6080"}), END, STRONG
+    )
+    rows["code_unknown_at_window_start"] = _probe(
+        _with(base, wallet_code_hex={"1500": "0x"}), END, STRONG
+    )
+    rows["eip7702_delegation_at_window_start"] = _probe(
+        _with(base, wallet_code_hex={"1000": "0xef0100" + "ab" * 20}), END, STRONG
+    )
+    rows["smart_wallet"] = _probe(_with(base, wallet_code_hex={"1000": "0x6080"}), END, STRONG)
+    # the wallet signs a call to a router, which pulls the tokens with transferFrom
+    router = wallet_fixture(transfers=[pull])
+    pulled = router.transfers[-1]
+    call = RecordedTransaction(
+        transaction_hash=pulled.transaction_hash,
+        block_number=pulled.block_number,
+        transaction_index=pulled.transaction_index,
+        nonce=1,
+        to="0x" + "7a" * 20,
+        value="0",
+    )
+    rows["contract_interaction_wallet_signed"] = _probe(
+        _with(router, wallet_transactions=[*router.wallet_transactions, call]), END, STRONG
+    )
+    # same block: the wallet's own transaction and a foreign spoof, either side of a cutoff
+    same = wallet_fixture(
+        transfers=[
+            (WALLET, STRONG, 0, 2_000, None, USDT, 0),
+            (WALLET, REF, 5, 2_000, None, USDT, 2),
+        ]
+    )
+    own = same.transfers[-1]
+    same = _with(
+        same,
+        wallet_transactions=[
+            *same.wallet_transactions,
+            RecordedTransaction(
+                transaction_hash=own.transaction_hash,
+                block_number=2_000,
+                transaction_index=2,
+                nonce=1,
+                to=USDT,
+                value="0",
+            ),
+        ],
+    )
+    rows["same_block_spoof_before_own_tx"] = _probe(same, (2_000, 1), STRONG)
+    own_hash = own.transaction_hash.lower()
+    rows["same_block_own_tx_after_cutoff_excluded"] = _probe(same, (2_000, 1), REF, own_hash)
+    rows["same_block_own_tx_included"] = _probe(same, END, REF, own_hash)
+    unknown_receipt = _with(
+        router,
+        wallet_transactions=[
+            *router.wallet_transactions,
+            call.model_copy(update={"value": "1", "succeeded": None}),
+        ],
+    )
+    rows["wallet_signed_with_unknown_receipt"] = _probe(unknown_receipt, END, STRONG)
+    conflict = wallet_fixture(transfers=[(WALLET, STRONG, 0, 2_000, ATTACKER, USDT, 0)])
+    hit = conflict.transfers[-1]
+    rows["looked_up_signer_contradicts_signed_set"] = _probe(
+        _with(
+            conflict,
+            wallet_transactions=[
+                *conflict.wallet_transactions,
+                call.model_copy(update={"transaction_hash": hit.transaction_hash}),
+            ],
+        ),
+        END,
+        STRONG,
+    )
+    return rows
+
+
+def signer_audit(windows: Sequence[tuple[str, Any, tuple[int, int]]]) -> dict[str, Any]:
+    """Real windows: is the absence inference allowed, and how many foreign-signed outgoing
+    events moved value (the authorization question)."""
+    per: dict[str, Any] = {}
+    totals = {"foreign_zero_value": 0, "foreign_value_trusted": 0, "foreign_value_untrusted": 0}
+    c1_overclaims = 0
+    from cryptoguard.ml.payments import TRUSTED_TOKENS
+
+    for name, fx, cut in windows:
+        res = ce.build(fx, cutoff=cut)
+        w = fx.wallet.lower()
+        signed = {t.transaction_hash.lower() for t in fx.wallet_transactions}
+        counts = dict.fromkeys(totals, 0)
+        for t in fx.transfers:
+            if t.sender.lower() != w or (t.block_number, t.transaction_index) >= cut:
+                continue
+            foreign = (t.tx_sender is not None and t.tx_sender.lower() != w) or (
+                t.tx_sender is None
+                and res.absence_inference
+                and t.transaction_hash.lower() not in signed
+            )
+            if not foreign:
+                continue
+            if int(t.value) == 0:
+                counts["foreign_zero_value"] += 1
+            elif t.token.lower() in TRUSTED_TOKENS:
+                counts["foreign_value_trusted"] += 1
+            else:
+                counts["foreign_value_untrusted"] += 1
+        c1 = cd.discover(fx, cutoff=cut, variant="C1")
+        over = sum(
+            1
+            for c in c1.candidates
+            if "spoofed_out" in c.methods
+            and any(
+                t.transaction_hash.lower() == c.evidence.split(":")[1] and int(t.value) > 0
+                for t in fx.transfers
+            )
+        )
+        c1_overclaims += over
+        for k in totals:
+            totals[k] += counts[k]
+        per[name] = {
+            "absence_inference": res.absence_inference,
+            "blocked_by": list(res.absence_blocked_by),
+            **counts,
+            "c1_spoof_claims_on_value_moved": over,
+            "evidence_spoof_claims_on_value_moved": sum(
+                1
+                for g in res.groups
+                for r in g.evidence
+                if "spoofed_out" in r.mechanisms and not r.value_zero
+            ),
+        }
+    return {"windows": per, "totals": totals, "c1_spoof_claims_on_value_moved": c1_overclaims}
+
+
+# --- 12.6.1: reliability is not suspicion ---------------------------------------------------
+
+
+def separation(fixture: Any, cutoff: tuple[int, int]) -> dict[str, Any]:
+    """Does removing information (receipts, token identity, signers) move any kept candidate
+    in the presentation order? It must not: the order reads no support level."""
+    base = ce.build(fixture, cutoff=cutoff)
+    order = [g.lookalike for g in base.groups]
+    obs = cd.observations(fixture)
+    out: dict[str, Any] = {}
+    for what in ("receipt", "token", "signer"):
+        res = ce.build(fixture, cutoff=cutoff, observations=ce.mask(obs, what))
+        now = [g.lookalike for g in res.groups]
+        kept = [x for x in order if x in set(now)]
+        out[what] = {
+            "kept": len(kept),
+            "relative_order_unchanged": kept == [x for x in now if x in set(kept)],
+            "levels_changed": sum(
+                1
+                for a, b in zip(
+                    sorted(base.groups, key=lambda g: g.lookalike),
+                    sorted(res.groups, key=lambda g: g.lookalike),
+                    strict=False,
+                )
+                if a.lookalike == b.lookalike and a.level != b.level
+            ),
+        }
+    return out
+
+
+# --- 12.6.1: adversarial suite at 10,000 and bounded-summary scaling -------------------------
+
+
+def adversarial_fixtures(n: int = 10_000) -> dict[str, tuple[Any, str]]:
+    """name -> (fixture, the high-relevance lookalike). Every flood is ``n`` events."""
+    cheap = [lookalike(i + 1) for i in range(n)]
+    spoof = (WALLET, STRONG, 0, 2_000, ATTACKER, USDT, 0)
+    unsigned = (WALLET, STRONG, 0, 2_000, None, USDT, 0)
+    dust = [(w, 1, 3_000 + i % 5_000, True) for i, w in enumerate(cheap)]
+    refs = [lookalike(i, prefix=0, suffix=0, ref="0x" + f"{i + 7:040x}") for i in range(50)]
+    per_ref = n // len(refs)
+    return {
+        "cheap_lookalikes": (wallet_fixture(transfers=[spoof], native=dust), STRONG),
+        "repeated_dust_one_lookalike": (
+            wallet_fixture(
+                transfers=[spoof], native=[(cheap[0], 1, 3_000 + i % 5_000, True) for i in range(n)]
+            ),
+            STRONG,
+        ),
+        "fake_token_flood": (
+            wallet_fixture(
+                transfers=[spoof]
+                + [
+                    (w, WALLET, 10**18, 3_000 + i % 5_000, None, FAKE, 0)
+                    for i, w in enumerate(cheap)
+                ]
+            ),
+            STRONG,
+        ),
+        "missing_signer_information": (wallet_fixture(transfers=[unsigned], native=dust), STRONG),
+        "partial_historical_coverage": (
+            wallet_fixture(transfers=[unsigned], native=dust, refs_complete=False),
+            STRONG,
+        ),
+        "multiple_reference_recipients": (
+            wallet_fixture(
+                transfers=[spoof],
+                wallet_txs=[(r, 10**15, 1_200 + i) for i, r in enumerate(refs)],
+                native=[
+                    (lookalike(j + 1, ref=r), 1, 3_000 + (i * per_ref + j) % 5_000, True)
+                    for i, r in enumerate(refs)
+                    for j in range(per_ref)
+                ],
+            ),
+            STRONG,
+        ),
+        "multiple_candidate_mechanisms": (
+            wallet_fixture(
+                transfers=[spoof, (STRONG, WALLET, 0, 2_050, None, USDT, 0)],
+                native=[(STRONG, 1, 2_100, True), *dust],
+            ),
+            STRONG,
+        ),
+        "identical_similarity_ties": (
+            wallet_fixture(
+                transfers=[spoof],
+                native=[
+                    (lookalike(i + 1, prefix=5, suffix=5), 1, 3_000 + i % 50, True)
+                    for i in range(n)
+                ],
+            ),
+            STRONG,
+        ),
+        "recency_manipulation": (
+            wallet_fixture(transfers=[spoof], native=[(w, 1, 9_000, True) for w in cheap]),
+            STRONG,
+        ),
+    }
+
+
+def adversarial(n: int = 10_000, k: int = 10) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for name, (fx, strong) in adversarial_fixtures(n).items():
+        res, sec, mib = _measure(partial(ce.build, fx, cutoff=END))
+        again = ce.build(fx, cutoff=END)
+        rank = ce.rank_of(res, strong)
+        summary = ce.summarize(res, k)
+        found = None
+        if rank is not None:  # reach it through the bounded page interface only
+            pg = ce.page(res, offset=rank - 1, limit=1, expect_digest=summary["result_digest"])
+            found = pg["items"][0]["identity"].endswith(strong)
+        g = next(g for g in res.groups if g.lookalike == strong) if rank else None
+        out[name] = {
+            "flood_events": n,
+            "groups": len(res.groups),
+            "evidence_records": res.evidence_records,
+            "strong_rank": rank,
+            "strong_rank_evidence_order": None
+            if rank is None
+            else 1 + sorted(res.groups, key=ce.evidence_order_key).index(g),
+            "strong_in_top_k": rank is not None and rank <= k,
+            "strong_reachable_by_page": found,
+            "strong_level": None if g is None else g.level,
+            "strong_mechanisms": None if g is None else list(g.mechanisms),
+            "strong_records": None if g is None else len(g.evidence),
+            "deterministic": ce.digest(res) == ce.digest(again),
+            "build_seconds": sec,
+            "peak_traced_mib": mib,
+            "summary_bytes": len(json.dumps(summary)),
+            "abstain": res.abstain is not None,
+        }
+    return out
+
+
+def summary_scaling(sizes: Sequence[int] = (1_000, 10_000, 100_000)) -> list[dict[str, Any]]:
+    """Bounded output at growing candidate counts. Observations are generated directly (one
+    small dataclass per event, no fixture models), so 100,000 candidates stay small."""
+    base_fx = wallet_fixture()
+    base = cd.observations(base_fx)
+    out = []
+    for n in sizes:
+        obs = base + [
+            cd.Observation(
+                "native",
+                "in",
+                lookalike(i + 1),
+                1,
+                2_000 + i // 20,
+                i % 20,
+                -1,
+                "0x" + f"{0xA0000000 + i:064x}",
+                lookalike(i + 1),
+                False,
+                None,
+                True,
+            )
+            for i in range(n)
+        ]
+        res, sec, mib = _measure(partial(ce.build, base_fx, cutoff=END, observations=obs))
+        summary, s_sec, _ = _measure(partial(ce.summarize, res, 10))
+        mid = ce.page(res, offset=n // 2, limit=10)
+        recs = ce.group_records(res, res.groups[0].identity)
+        t0 = time.perf_counter()
+        ce.digest(res)
+        out.append(
+            {
+                "candidates": n,
+                "groups": len(res.groups),
+                "build_seconds": sec,
+                "build_peak_traced_mib": mib,
+                "summary_seconds": s_sec,
+                "digest_seconds": round(time.perf_counter() - t0, 3),
+                "summary_bytes": len(json.dumps(summary)),
+                "page_bytes": len(json.dumps(mid)),
+                "group_records_bytes": len(json.dumps(recs)),
+                "hidden_count": summary["hidden_count"],
+                "truncated": summary["truncated"],
+            }
+        )
+        del obs, res, summary, mid, recs
+    return out
+
+
 # --- entry point ----------------------------------------------------------------------------
 
 
@@ -647,7 +1063,7 @@ def main(poisoning_dir: Path, out: Path, cache: Path) -> dict[str, Any]:
         git = None
     result: dict[str, Any] = {
         "study": STUDY_VERSION,
-        "protocol": "protocol-12.6",
+        "protocol": "protocol-12.6 (+ 12.6.1 amendment)",
         "evidence_version": ce.EVIDENCE_VERSION,
         "git": git,
         "rpc_requests": 0,
@@ -658,6 +1074,12 @@ def main(poisoning_dir: Path, out: Path, cache: Path) -> dict[str, Any]:
         "spam_stability": spam,
         "robust_proxy_dev": robust_proxy_dev(cache) if cache.exists() else "episode cache missing",
         "scaling": scaling(),
+        # 12.6.1
+        "signer_matrix": signer_matrix(),
+        "signer_audit": signer_audit(windows),
+        "separation": {n: separation(fx, cut) for n, fx, cut in windows if n in masks},
+        "adversarial_10k": adversarial(),
+        "summary_scaling": summary_scaling(),
     }
     peak = peak_rss_bytes()
     result["resources"] = {
