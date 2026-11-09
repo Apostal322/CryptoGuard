@@ -68,6 +68,10 @@ ORDER_NOTE = (
     "not a risk score or a probability; the support level is reported separately and never "
     "moves a candidate up or down"
 )
+RESEARCH_ORDER_NOTE = (
+    "a research selection order (see order and order_config); not a risk score or a "
+    "probability; the support level is reported separately and never moves a candidate"
+)
 MAX_PAGE = 1_000  # largest page a caller can request
 MAX_REFERENCES_SHOWN = 3  # per summary item; the full list is in the result
 DELEGATION_PREFIX = "0xef0100"  # EIP-7702 delegation designator
@@ -126,6 +130,8 @@ class EvidenceResult:
     coverage: dict[str, str]
     absence_inference: bool  # whether R-SIG could infer "not signed by the wallet"
     absence_blocked_by: tuple[str, ...]  # why not (empty when allowed)
+    order: str = "affix_then_recency"  # the ordering that produced ``groups``
+    order_config: str | None = None  # hash of that ordering's configuration (12.7 selectors)
 
 
 def absence_guard(
@@ -465,7 +471,9 @@ ORDERS: dict[str, Callable[[CandidateGroup], Any]] = {
 def digest(result: EvidenceResult) -> str:
     """A content digest of the full result (every group and record identity, in order), so a
     page can be checked against the result it was cut from."""
-    h = hashlib.sha256(f"{result.version}|{result.victim}|{result.cutoff}".encode())
+    h = hashlib.sha256(
+        f"{result.version}|{result.victim}|{result.cutoff}|{result.order}|{result.order_config}".encode()
+    )
     for g in result.groups:
         h.update(g.identity.encode())
         h.update(g.level.encode())
@@ -480,10 +488,30 @@ def _bounded(n: int, name: str) -> int:
     return n
 
 
-def _item(g: CandidateGroup, rank: int) -> dict[str, Any]:
+def bucket_of(g: CandidateGroup) -> str:
+    """The reference a group imitates best (ties: the smallest address), or, without a
+    reference, its mechanism signature. The number of reference buckets is bounded by the
+    victim's own payments, which an attacker cannot add to."""
+    if g.references:
+        return min(g.references, key=lambda r: (-(r[1] + r[2]), r[0]))[0]
+    return "mech:" + "+".join(g.mechanisms)
+
+
+def _bucket_sizes(result: EvidenceResult) -> dict[str, int]:
+    sizes: dict[str, int] = {}
+    for g in result.groups:
+        b = bucket_of(g)
+        sizes[b] = sizes.get(b, 0) + 1
+    return sizes
+
+
+def _item(g: CandidateGroup, rank: int, sizes: dict[str, int] | None = None) -> dict[str, Any]:
+    bucket = bucket_of(g)
     return {
         "rank": rank,
         "identity": g.identity,
+        "reference_bucket": bucket,
+        "bucket_size": None if sizes is None else sizes[bucket],
         "level": g.level,
         "mechanisms": list(g.mechanisms),
         "kinds": list(g.kinds),
@@ -512,11 +540,13 @@ def summarize(result: EvidenceResult, k: int = 10) -> dict[str, Any]:
         for m in g.mechanisms:
             by_mechanism[m] = by_mechanism.get(m, 0) + 1
     hidden = len(result.groups) - len(shown)
+    sizes = _bucket_sizes(result)
     return {
         "version": result.version,
         "cutoff": list(result.cutoff),
-        "order": "affix_then_recency",
-        "order_note": ORDER_NOTE,
+        "order": result.order,
+        "order_config": result.order_config,
+        "order_note": ORDER_NOTE if result.order == "affix_then_recency" else RESEARCH_ORDER_NOTE,
         "result_digest": digest(result),
         "total_groups": len(result.groups),
         "raw_events": result.raw_events,
@@ -531,7 +561,7 @@ def summarize(result: EvidenceResult, k: int = 10) -> dict[str, Any]:
         "absence_blocked_by": list(result.absence_blocked_by),
         "abstain": result.abstain,
         "note": HIDDEN_NOTE,
-        "top": [_item(g, i + 1) for i, g in enumerate(shown)],
+        "top": [_item(g, i + 1, sizes) for i, g in enumerate(shown)],
     }
 
 
@@ -553,12 +583,15 @@ def page(
         raise StaleResultError("the result changed since this digest was issued")
     items = result.groups[offset : offset + limit]
     end = offset + len(items)
+    sizes = _bucket_sizes(result)
     return {
-        "items": [_item(g, offset + i + 1) for i, g in enumerate(items)],
+        "items": [_item(g, offset + i + 1, sizes) for i, g in enumerate(items)],
         "total": len(result.groups),
         "limit": limit,
         "offset": offset,
         "next_offset": end if end < len(result.groups) else None,
+        "order": result.order,
+        "order_config": result.order_config,
         "result_digest": d,
     }
 

@@ -129,6 +129,15 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ur.add_argument(
         "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "unconfirmed-recency.json"
     )
+    adv = ml.add_parser(
+        "adversarial-ranking",
+        help="Phase 12.7 adversarial candidate exposure and learning-to-rank study (offline)",
+    )
+    adv.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.7")
+    adv.add_argument(
+        "--no-ltr", action="store_true", help="skip the archive learning-to-rank study"
+    )
+    adv.add_argument("--perf-max", type=int, default=100_000, help="largest performance population")
     rs = ml.add_parser(
         "reliability-study",
         help="Phase 12.6 signer provenance, evidence groups and spam resilience (offline)",
@@ -206,6 +215,18 @@ def run(args: argparse.Namespace) -> int:
     from cryptoguard.ml import ml_available
 
     # Pure-Python commands: no ml extra needed.
+    if args.ml_command == "adversarial-ranking":
+        import json
+
+        from cryptoguard.ml import adversarial_benchmark
+
+        result = adversarial_benchmark.main(
+            ML_DIR / "poisoning", args.out, ltr=not args.no_ltr, perf_max=args.perf_max
+        )
+        brief = {k: result[k] for k in ("resources",)} | {"H1": result["summary"].get("H1")}
+        print(json.dumps(brief, indent=1, default=str))
+        print(f"Wrote {args.out / 'adversarial-ranking.json'}")
+        return 0
     if args.ml_command == "reliability-study":
         import json
 
