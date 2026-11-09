@@ -26,6 +26,19 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Phase 12.7: adversarial candidate exposure and robust top-K selection (no RPC requests)
+- **Protocol 12.7** (`docs/ml/protocol-12.7.md`) was frozen before any selector, benchmark or learning-to-rank code existed. The code was committed before the measured run.
+- **`adversarial-selection/1`** (research only):
+  - baselines B0–B6;
+  - the proposed **P1**, work-weighted group-discounted selection: priority `4·affix − 4·j` per victim-reference bucket, keyed-hash ties, never reads time, support level or the oracle;
+  - a provable group displacement bound, independent of decoy count, with 0 violations.
+- **Synthetic grid** (16 families × decoys 0–10,000 × K 1–50): **H1 supported.** Mean Exposure@K is 0.773 for P1 vs 0.525 for B0, and P1 is ≥ B0 in 16 of 16 families.
+- **Negative controls exposed benchmark design bias.** Oldest-first and mechanism round-robin each fall from about 0.84–0.99 to 0.111 against an adaptive attacker (post hoc); P1 is unaffected.
+- **P1b (post hoc):** a flaw in P1's tie rule favoured flooded buckets, so P1b breaks ties by bucket hash instead. It reaches 0.813.
+- **Learning to rank** (12.1 development split; test split never computed): +0.289 top-1 over B0, but no gain over recency alone (+0.029, CI includes 0), and −0.169 adversarially. Gate G **FAIL**.
+- **Summary:** now carries the order label, config hash and reference-bucket sizes; still bounded at about 7.7 KB for 100,000 candidates. P1 orders 100,000 groups in 3.8 s.
+- **Report:** `ML_ADVERSARIAL_RANKING.md`. Independent validation is BLOCKED BY DATA.
+
 ### Phase 12.6.1: signer-recovery safety, bounded summaries, research reliability (no RPC requests)
 - **Correction:** R-SIG proves only that the wallet did not directly sign a transaction, never that it did not authorize the movement (an allowance, a permit or an EIP-7702 delegation). A value-moving foreign-signed transfer is now `foreign_initiated_out` with `authorization = unknown`; only zero-value ones are `spoofed_out`. On the real windows, 6 value-moving untrusted-token events are relabelled, the groups and levels are unchanged, and C1 still makes 6 such spoof claims.
 - **`absence_guard`:** the absence inference requires a complete, count-consistent, nonce-contiguous signed set, and code `0x` at every sample up to the cutoff (no EIP-7702 designator or contract code). Otherwise the signer stays unknown. 20 conditions are tested. The rule still agrees 18 of 18 on the real windows.
