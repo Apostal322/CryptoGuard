@@ -129,6 +129,16 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ur.add_argument(
         "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "unconfirmed-recency.json"
     )
+    ava = ml.add_parser(
+        "adaptive-validation",
+        help="Phase 12.7.1 debiased synthetic validation and adaptive attacker (offline)",
+    )
+    ava.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.7.1")
+    ava.add_argument(
+        "--manifest-only",
+        action="store_true",
+        help="generate the sealed scenario manifest without running any selector",
+    )
     adv = ml.add_parser(
         "adversarial-ranking",
         help="Phase 12.7 adversarial candidate exposure and learning-to-rank study (offline)",
@@ -220,6 +230,20 @@ def run(args: argparse.Namespace) -> int:
     from cryptoguard.ml import ml_available
 
     # Pure-Python commands: no ml extra needed.
+    if args.ml_command == "adaptive-validation":
+        import json
+
+        from cryptoguard.ml import adaptive_validation
+
+        result = adaptive_validation.main(
+            ML_DIR / "poisoning", args.out, manifest_only=args.manifest_only
+        )
+        brief = result.get("manifest") or {
+            "H1": result["E2"]["H1"]["verdict"],
+            "resources": result["resources"],
+        }
+        print(json.dumps(brief, indent=1, default=str))
+        return 0
     if args.ml_command == "adversarial-ranking":
         import json
 
