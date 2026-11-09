@@ -26,6 +26,17 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Phase 12.7.1: debiased validation of P1b against an adaptive adversary (no RPC requests)
+- **Protocol 12.7.1** (`docs/ml/protocol-12.7.1.md`) was frozen with the generator, the evaluation code and a sealed manifest (7,200 scenarios, 5,079,472 candidates) before any selector ran. P1 and P1b were frozen by source hash and config hash.
+- **New independent generator:** random addresses, references assigned by the pipeline's own `_match`, shuffled populations, balanced target age (8 relations), mechanism (5), reference and similarity, and a null family. Fidelity: 30 of 30 rebuilt scenarios matched.
+- **H1 not supported after debiasing (pre-registered):** P1b − B0 = −0.018 [−0.031, −0.004].
+  - Gains under other-group floods (+0.14), on reference-group exposure (+0.032) and on the shortcut-free subset (+0.054).
+  - Losses under own-group equal floods (F3 −0.12).
+  - Reference round-robin B4 edges P1b.
+- **Adaptive attacker:** 10 equal-tier lookalikes of the target's own reference displace the target under every method, P1b included (H2 not supported). The identifiability limit is demonstrated.
+- **The 12.7 theorem holds:** 0 breaks in 20,000 counterexample trials. Minimal counterexamples are documented.
+- **Report:** `ML_ADAPTIVE_RANKING_VALIDATION.md`. P1b is not promoted.
+
 ### Phase 12.7: adversarial candidate exposure and robust top-K selection (no RPC requests)
 - **Protocol 12.7** (`docs/ml/protocol-12.7.md`) was frozen before any selector, benchmark or learning-to-rank code existed. The code was committed before the measured run.
 - **`adversarial-selection/1`** (research only):

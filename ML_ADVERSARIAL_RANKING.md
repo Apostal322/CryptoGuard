@@ -16,6 +16,8 @@
   validation.
 - **[POST-HOC]:** added after seeing results. Exploratory.
 
+> **Phase 12.7.1 update.** On a debiased, sealed benchmark ([ML_ADAPTIVE_RANKING_VALIDATION.md](ML_ADAPTIVE_RANKING_VALIDATION.md)), P1b is **not supported**: P1b − B0 = −0.018 [−0.031, −0.004]. The gain reported below was largely produced by the age bias described in §20. This report is kept as written.
+
 ## 1. Executive summary
 
 **The problem.** The 12.6.1 presentation order (B0: similarity, then recency) is cheap to
