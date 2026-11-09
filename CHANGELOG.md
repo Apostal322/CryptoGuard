@@ -26,6 +26,21 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Phase 12.6: candidate reliability and signer provenance (no RPC requests)
+- **Protocol 12.6** (`docs/ml/protocol-12.6.md`) was frozen first. The code was committed before the measured run.
+- **Audit:** real recordings have complete outgoing-signer coverage (18 of 18). The Phase 12.5 "signer loss" result came from masking.
+- **Signer recovery (R-SIG):** an outgoing event absent from a code-less wallet's complete signed set was not signed by the wallet. The signer's address is never guessed. It matches the looked-up signer in 18 of 18 cases. With all signers masked, the real windows lose 0 candidates.
+- **`candidate-evidence/1`:**
+  - one group per (chain, victim, lookalike), keeping every record (the pilot's 9, where C2 kept 6);
+  - typed provenance;
+  - non-probabilistic levels;
+  - 0 unsafe inferences under masking (C1 makes 5 with token identity unknown);
+  - a bounded summary that discloses totals and truncation.
+- **12 adversarial scenarios:** zero-value floods produce 0 groups, and a strong candidate stays rank 1 among 2,001. Cost is linear: 10,000 groups in 1.8 s.
+- **H5 failed:** under cheap verified dust spam, a support-first order is beaten by similarity.
+- **Exploratory:** log-scaled proxy features beat raw ones on a development sub-split.
+- **Report:** `ML_CANDIDATE_RELIABILITY.md`.
+
 ### Phase 12.5: ML-driven candidate discovery and evidence-aware ranking (no RPC requests)
 - **Protocol 12.5** (`docs/ml/protocol-12.5.md`) was frozen before any new outcome. The code was committed before the outcome run.
 - **Primary pre-registered ML test** (`planting-mechanism-next/1`, a self-supervised proxy on 1,067 archive episodes): **not supported.**
