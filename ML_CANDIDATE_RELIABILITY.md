@@ -6,6 +6,7 @@
 | Code (committed before the measured run) | `8e59c9d` |
 | Study output (git-ignored) | `data/ml/research/phase12.6/reliability-study.json` (`cryptoguard ml reliability-study`) |
 | RPC requests / downloads | **0** / none |
+| Phase 12.6.1 addendum | §30–§39 (signer guards, authorization, bounded pages, lease test) |
 
 ## 1. Executive summary
 
@@ -16,6 +17,7 @@
 - One absent from a complete set, for a wallet without code, was **not** signed by it. The signer's address is never guessed.
 - **Result:** the rule matches the looked-up signer in **18 of 18** real cases, including 8 of 8 spoofs.
 - **With every signer masked,** the real windows lose **0** candidates and recover 4–5 signers each. Phase 12.5 lost them all.
+- **12.6.1 correction:** R-SIG proves only that the wallet did not *directly sign*, never that it did not *authorize* (allowance, permit, delegation), and it now runs only under `absence_guard` (§30–§31).
 
 **Evidence model, `candidate-evidence/1`.**
 - **One group per (chain, victim, lookalike)**, keeping **every** record. The pilot's 9 events become 6 groups with all 9 records; C2 had kept only one per group.
@@ -124,7 +126,7 @@
 **The summary holds:**
 - `total_groups`, `raw_events`, `evidence_records`;
 - `shown` (k = 10) and `truncated`;
-- `hidden_identities`;
+- `hidden_identities` (replaced in 12.6.1 by `hidden_count`, `next_offset`, a digest and page access, §32);
 - counts by level and by mechanism;
 - `abstain`;
 - the note that hidden candidates are not assessed as safe;
@@ -138,7 +140,7 @@
 
 **A display budget is not an evidence budget.** All groups and records stay in the result.
 
-**Measured cost of disclosure:** the hidden-identity list makes the summary O(n). It is 95.6 KB at 1,000 groups and 915 KB at 10,000 (§21). A UI may prefer counts plus a digest. The list is kept because the protocol requires it.
+**Measured cost of disclosure:** the hidden-identity list makes the summary O(n). It is 95.6 KB at 1,000 groups and 915 KB at 10,000 (§21). A UI may prefer counts plus a digest. The list is kept because the protocol requires it. **12.6.1:** removed; the summary is now 6.8 KB at any size (§32).
 
 ## 10. Adversarial spam results (synthetic, 12 scenarios; all deterministic)
 
@@ -276,7 +278,7 @@ Native volume on unlabelled wallets is still unmeasured, because P5 is `observat
 | Types | `uv run mypy src` | clean (153 files) |
 | Tests | `uv run pytest -q` | **950 passed, 1 failed**, 4 deselected (an 18-minute run on a heavily loaded machine) |
 
-**About the failure.** It was `tests/integration/test_leases.py::test_lease_of_a_crashed_process_is_recovered_after_expiry`, a timing-sensitive lease-expiry test whose own comment records load flakiness. It passed **3 of 3** reruns in isolation. Phase 12.6 changed no lease code: its only source changes are `ml/cli.py` and two new research modules.
+**About the failure.** It was `tests/integration/test_leases.py::test_lease_of_a_crashed_process_is_recovered_after_expiry`, a timing-sensitive lease-expiry test whose own comment records load flakiness. It passed **3 of 3** reruns in isolation. Phase 12.6 changed no lease code: its only source changes are `ml/cli.py` and two new research modules. **12.6.1:** investigated and fixed in the test (§37).
 
 There are 27 new tests in `tests/test_ml_candidate_evidence.py`.
 
@@ -309,7 +311,7 @@ CI is recorded in the PR #1 description.
 
 | Change | Category | Decision | Risk and evidence |
 |---|---|---|---|
-| R-SIG signer recovery | A/B, provenance | **Eligible for a separately approved production change.** Not integrated here: it would silently change production spoof signals for busy wallets. | 18 of 18 consistency; contract and EIP-7702 wallets excluded |
+| R-SIG signer recovery (see §39 for the 12.6.1 decision) | A/B, provenance | **Eligible for a separately approved production change.** Not integrated here: it would silently change production spoof signals for busy wallets. | 18 of 18 consistency; contract and EIP-7702 wallets excluded |
 | Evidence model and levels | B | research (shadow); integrate after a migration review | levels are not probabilities |
 | Unknown-signer outgoing lookalikes kept as partially supported | C | research only | never a spoof claim |
 | Bounded summary contract | E | research output; never suppresses production warnings | O(n) disclosure list |
@@ -329,3 +331,300 @@ CI is recorded in the PR #1 description.
 | Failure | The affix-first order does not keep the paid lookalike in the top 10 in more untied clusters than recency, under amendment A1's cluster sign test |
 
 Phase 12.7 is not started.
+
+---
+
+# Phase 12.6.1 addendum: signer-recovery safety, bounded summaries, research reliability
+
+| Item | Value |
+|---|---|
+| Amendment | [`docs/ml/amendment-12.6.1.md`](docs/ml/amendment-12.6.1.md), written with the code |
+| Code | `5a5e876` (`candidate-evidence/2`, `reliability-study/2`) |
+| Study output (git-ignored) | `data/ml/research/phase12.6.1/reliability-study.json`, run on `5a5e876` |
+| RPC requests / downloads | **0** / none |
+
+Sections 1–29 above are the Phase 12.6 record and stay as written. Where 12.6.1 corrects
+them, the correction is stated here and marked in place.
+
+## 30. Executive summary (12.6.1)
+
+**Correction to 12.6:** R-SIG had been used as if "not signed by the wallet" meant "not
+authorized by the wallet". It doesn't. An ERC-20 allowance, a permit or an EIP-7702 delegation
+lets someone else's transaction move the wallet's tokens, and a fabricated log needs no
+authorization at all.
+- **Now:** only a **zero-value** foreign-signed transfer is `spoofed_out` (nothing moved, so
+  no authorization question arises).
+- **Value moved:** the transfer is `foreign_initiated_out`, with `authorization = unknown`.
+- **Effect on the real windows:**
+  - All 8 real foreign-signed events are still evidence, in the same groups and at the same
+    levels.
+  - The 6 that moved value were called spoofs by C1/C0 and by `candidate-evidence/1`. All 6
+    came from untrusted token contracts and are now labelled `foreign_initiated_out` +
+    `untrusted_token_out`.
+  - None moved a trusted token.
+
+**Signer recovery is now guarded.** The absence inference runs only if the signed set is:
+- complete;
+- count-consistent;
+- nonce-contiguous;
+- inside the window;
+- from an account whose code is `0x` at every sample up to the cutoff.
+
+Otherwise the signer stays unknown. 20 conditions are tested (§31). The guard allows the
+inference on all 9 eligible real windows, and R-SIG still agrees with the looked-up signer
+in **18 of 18** cases.
+
+**The summary is bounded.** It is 6.8 KB at 1,000, 10,000 and 100,000 candidates. Under
+12.6, the hidden-identity list made it 915 KB at 10,000. Every group and record stays
+reachable through digest-checked offset/limit pages.
+
+**Support no longer orders candidates.** The presentation order is affix, then recency,
+then address. Masking receipts, token identity or signers changed the relative order of
+**0** kept candidates on the 3 real windows with candidates. H5's negative result is
+reproduced unchanged (§34).
+
+**Adversarial suite at 10,000 events per scenario:**
+- the high-relevance candidate is rank 1 in 8 of 9 scenarios;
+- in the ninth, 10,000 equally similar lookalikes planted later outrank it by recency (rank
+  10,001);
+- it stays reachable through the page interface in all 9;
+- output is deterministic everywhere;
+- each build takes about 2 s at about 17 MiB traced;
+- the whole study ran in 92 s at a 623 MiB RSS peak, mostly from the 100,000-candidate step.
+
+**Lease test:** the cause of the single 12.6 failure could not be attributed: only the
+failing test's name was kept, not its assertion. The test had three defects, all now fixed
+(§37): an ambiguous child exit code, an unbounded wait for the child, and lease checks tied
+to the wall clock. The rewritten test passed 15 of 15 runs under CPU contention.
+
+## 31. Signer-recovery audit (synthetic matrix)
+
+The probe is an outgoing USDT transfer from the wallet to a lookalike, whose signer was not
+looked up.
+
+| Condition | Absence inference | Probe result | Why |
+|---|---|---|---|
+| Complete history, zero value | allowed | `foreign_identity_unknown`, `spoofed_out`, authorization `not_required` | — |
+| Complete history, value moved, trusted token | allowed | `foreign_initiated_out`, authorization `unknown` | allowance, permit or delegation possible |
+| Complete history, value moved, untrusted token | allowed | `foreign_initiated_out` + `untrusted_token_out`, authorization `unknown` | — |
+| Signer lookups capped (600 skipped) | allowed | spoof recovered | the 500 cap limits lookups, not the signed set |
+| Signed set `truncated` | **blocked** | `unknown`, `unverified_out_lookalike` | incomplete source |
+| Signed set `partial` (partial recording) | **blocked** | same | incomplete source |
+| Stated count ≠ held (5 vs 1) | **blocked** | same | inconsistent source |
+| Nonce gap (missing page or EIP-7702 authorization) | **blocked** | same | a nonce was used with no recorded transaction |
+| Legacy fixture without documented nonce bisection | **blocked** | same | completeness claim unsupported |
+| Code deployed inside the window, before the cutoff | **blocked** | same | contract code |
+| Code only after the cutoff | allowed | spoof recovered | future samples are not used |
+| No code sample at the window start | **blocked** | same | code unknown |
+| EIP-7702 delegation designator at the window start | **blocked** | same | delegated execution |
+| Smart wallet (code) | **blocked** | same | never signs itself |
+| Wallet calls a router that pulls with `transferFrom` | allowed | `wallet`, not evidence | the outer transaction is in the signed set |
+| Same block: spoof before the wallet's own transaction | allowed | spoof recovered | identity is by hash, not order |
+| Same block: own transaction after the cutoff | allowed | not observed | the cutoff is `(block, tx index)` |
+| Same block: own transaction before the cutoff | allowed | `wallet`, not evidence | — |
+| Wallet-signed transaction with unknown receipt | allowed | `wallet`, not evidence | membership does not depend on the receipt |
+| Looked-up foreign signer, but the hash is in the signed set | allowed | `conflicting`, `unverified_out_lookalike` | never a spoof and never a reference |
+
+**Why these conditions suffice for recorder output.** The recorder (`replay/record.py`)
+refuses an incomplete nonce bisection. And an EIP-7702 authorization included in someone
+else's transaction increments the wallet's nonce with no wallet-signed transaction in that
+block, so `_read_transaction` raises and no fixture is written. The guard re-checks both
+from the stored data, so a fixture produced any other way is held to the same standard.
+
+**Limitation.** A signed set truncated at either end while still claiming `complete`, with a
+matching count, is not detectable from the fixture, because the boundary nonces are not
+stored. The guard relies on the recorder's guarantee there.
+
+**Real windows (`signer_audit`):**
+- Absence inference is allowed on 9 of 9 eligible windows; nonces are contiguous and code is
+  `0x` at every sample.
+- Foreign-signed outgoing events: 2 zero-value (pilot), 6 value-moving through untrusted
+  tokens (2 per development window), 0 value-moving through trusted tokens.
+- C1 spoof claims on value-moving transfers: **6**. `candidate-evidence/2`: **0**.
+
+## 32. Bounded summary and page access
+
+| Candidates | Build | Build peak (traced) | Summary | Summary JSON | Page of 10 | Group records page | Digest |
+|---|---|---|---|---|---|---|---|
+| 1,000 | 0.14 s | 1.1 MiB | 0.009 s | 6,807 B | 6,209 B | 743 B | 0.001 s |
+| 10,000 | 1.60 s | 13.2 MiB | 0.093 s | 6,812 B | 6,222 B | 743 B | 0.012 s |
+| 100,000 | 17.8 s | 137 MiB | 0.81 s | 6,817 B | 6,235 B | 743 B | 0.13 s |
+
+**Generation:** observations are generated directly, one small dataclass per event, with no
+fixture models.
+
+**What the summary contains:**
+- the top `k` (1 ≤ k ≤ 1,000);
+- `total_groups`, `hidden_count`, `truncated` and `next_offset`;
+- `result_digest`;
+- counts by level and by mechanism (fixed vocabularies);
+- `absence_inference` and its blockers;
+- at most 3 references per item, with `references_total`.
+
+**Access:**
+- `page(offset, limit, expect_digest)` follows the project's `items`/`total`/`limit`/`offset`
+  convention and refuses a stale digest;
+- `group_records(identity, offset, limit)` pages a single group's records.
+
+**Tests:**
+- pages cover every group exactly once, in order;
+- out-of-range `k`/`limit`/`offset` are refused;
+- the summary carries no floats;
+- every item says `legitimacy: not_assessed`.
+
+## 33. Evidence reliability versus suspiciousness
+
+| Requirement | How it holds | Test |
+|---|---|---|
+| A verified receipt does not raise suspicion | `presentation_key` never reads `level`; a verified older lookalike ranks below an unread newer one with the same affix | `test_a_verified_receipt_does_not_move_a_candidate_up` |
+| High evidence quality does not imply attack probability | levels stay categories; `explain` separates indicators, support and missing | `test_presentation_order_never_reads_the_support_level` |
+| Missing evidence is not suspicious | masking receipts, tokens or signers keeps the relative order (synthetic and real) | `test_missing_evidence_never_changes_the_order`; real windows below |
+| Similarity and time are separate from provenance | the order uses affix and recency; level is reported beside them | same |
+| Unknown legitimacy stays unknown | `legitimacy: not_assessed` on every item | `test_summary_items_are_bounded_and_carry_no_probability` |
+| No calibrated-probability claims | no float field in the summary; `order_note` says "not a risk score or a probability" | same |
+
+**Real windows:**
+
+| Window | Mask | Kept | Relative order unchanged | Levels changed |
+|---|---|---|---|---|
+| pilot | receipt / token / signer | 6 / 6 / 6 | yes / yes / yes | 0 / 0 / 0 |
+| ScamSniffer `/1` | receipt / token / signer | 2 / 2 / 2 | yes / yes / yes | 0 / 0 / 0 |
+| ScamSniffer blind `/2` | receipt / token / signer | 3 / 3 / 3 | yes / yes / yes | 1 / 0 / 0 |
+
+The one level change is a lowering (verified → supported) and moved nothing.
+
+## 34. H5 preserved; the presentation order is not validated
+
+The H5 injection was repeated unchanged: 1,000 verified dust lookalikes (affix 3 + 3).
+
+| Window (real candidates) | Evidence-first (pre-registered) | Presentation (affix, recency) | Similarity-only | Recency-only |
+|---|---|---|---|---|
+| ScamSniffer blind (3) | 3 | 3 | 3 | 0 |
+| pilot (6) | **3** | 6 | 6 | 0 |
+
+- **H5 stays negative.**
+- **The presentation order's 6 of 6 on the pilot is development data.** The pilot informed
+  the choice, so it is not independent validation and is not claimed as one. The order was
+  adopted because support must not act as suspicion (§33), not because of this table.
+- **Partial-history case:** under the evidence-first order, a strong but partially supported
+  candidate ranks 10,001st of 10,001 (§35). Missing evidence became burial there. The
+  presentation order keeps it at rank 1.
+
+## 35. Adversarial suite (synthetic, 10,000 flood events per scenario)
+
+| Scenario | Groups | Records | Strong rank (presentation) | Strong rank (evidence-first) | Reachable by page | Strong support | Build | Peak traced | Summary |
+|---|---|---|---|---|---|---|---|---|---|
+| 10,000 cheap lookalikes (3 + 3 dust) | 10,001 | 10,001 | **1** | 1 | yes | directly verified | 2.08 s | 16.6 MiB | 6.8 KB |
+| Repeated dust from one lookalike | 2 | 10,001 | **1** | 1 | yes | directly verified | 0.98 s | 9.0 MiB | 2.0 KB |
+| Fake-token flood | 10,001 | 10,001 | **1** | 1 | yes | directly verified | 1.86 s | 17.7 MiB | 7.1 KB |
+| Missing signer (R-SIG) | 10,001 | 10,001 | **1** | 1 | yes | directly verified | 2.07 s | 16.5 MiB | 6.9 KB |
+| Partial historical coverage | 10,001 | 10,001 | **1** | 10,001 | yes | partially supported, abstains | 2.19 s | 17.0 MiB | 7.5 KB |
+| 50 references × 200 lookalikes | 10,001 | 10,001 | **1** | 1 | yes | directly verified | 2.23 s | 16.6 MiB | 6.8 KB |
+| Multiple mechanisms (spoof + zero-value in + native) | 10,001 | 10,003 | **1** (3 mechanisms, 3 records) | 1 | yes | directly verified | 1.87 s | 16.5 MiB | 6.9 KB |
+| 10,000 identical-similarity ties (5 + 5), later | 10,001 | 10,001 | 10,001 | 10,001 | **yes** | directly verified | 2.26 s | 16.6 MiB | 6.9 KB |
+| Recency manipulation (all spam in the last block) | 10,001 | 10,001 | **1** | 1 | yes | directly verified | 2.28 s | 16.6 MiB | 6.8 KB |
+
+**Determinism:** all 9 builds produce identical digests when repeated.
+
+**Remaining weakness: ties.**
+- With equal affixes, recency decides. An attacker who plants k or more later lookalikes,
+  each as similar as the real one, pushes it off the first page.
+- At 5 + 5 hex characters, each such lookalike costs about 2⁴⁰ address-generation
+  attempts.
+- The candidate is still listed, counted in `hidden_count` and reachable by page.
+
+**Harness fix found by this suite:** the synthetic builder had given identical dust sends
+in the same block the same transaction hash, which merged them. It now adds the event index
+to the hash (tested). The evidence model was not involved.
+
+## 36. Historical correctness
+
+- The guard reads only code samples at or before the cutoff. A later EIP-7702 designator
+  leaves an earlier result byte-identical (by digest) and blocks the inference only once the
+  cutoff passes it (tested).
+- The signed set may contain later transactions. Membership is tested only for events before
+  the cutoff, and completeness covers the whole window.
+
+## 37. The lease test
+
+**Investigation:** the full-suite failure kept only the test's name, so the failing assertion
+is unknown.
+
+**Measurements on the unchanged test:**
+- 20 of 20 passed, with 4 CPU burners competing for the 4 cores.
+- Each run took 14–21 s, against 3 s idle. Nearly all of it was spawn start-up before the
+  lease was taken (6–11 s).
+- From the child taking the lease to the parent's check: 0.28–0.72 s.
+- Lease time remaining at the check: about 7.3–7.7 s of the 8 s TTL.
+- The conditional "still held" assertion ran in 15 of 15 instrumented runs.
+
+So scheduling delay before the check doesn't explain a failure.
+
+**Defects in the test that could explain it:**
+1. **Ambiguous exit code.** A child that raises also exits with code 1, so a child failure
+   passed `exitcode == 1` and then failed later at `held is not None` with no diagnosis.
+2. **Unbounded wait.** A join that timed out left a live child and failed with an unclear
+   assertion.
+3. **Wall-clock coupling.** The "still held" assertion was conditional, and it was a
+   check-then-act on the real clock: a pause over 1 s between the check and `acquire`'s own
+   clock read fails it even though the lease logic is correct.
+
+**Fix, with no assertion weakened:**
+- distinct exit codes (17: crashed holding; 3: no lease; 1: raised);
+- a 180 s bounded join that kills a hung child;
+- expiry probed with explicit clock values: held at expiry − 1 µs, still held at the expiry
+  instant, recovered with generation 2 at + 1 µs. These checks always run; before, they could
+  be skipped.
+- A new deterministic test: at the expiry instant the old owner is already fenced out and
+  nobody can take over yet, so no instant has two owners.
+
+**Result:** the rewritten test passed 15 of 15 runs under the same 4-burner contention, with
+no wall-clock waits.
+
+**Production code:** unchanged. One observation: `acquire` reads the clock before waiting on
+a busy database, so the new lease expires early by the wait time. That is safe, because
+fencing rejects late writes, and it is noted rather than changed.
+
+## 38. Validation (12.6.1)
+
+| Check | Result |
+|---|---|
+| `ruff check` / `ruff format --check` / `mypy src` | clean / formatted / clean (153 files) |
+| New tests | `tests/test_ml_signer_guards.py`: 47; `tests/integration/test_leases.py`: 1 new, 1 rewritten |
+| Full suite | **999 passed, 0 failed**, 4 deselected, in 14 min 22 s at about 1.6 GiB free RAM; the rewritten lease test passed within it |
+| Package | `uv build --offline` wheel and sdist; `scripts/inspect_dist.py` OK (wheel 190 files, sdist 398) |
+| Frozen artifacts | cohort sheet and key hashes unchanged; original incident fixtures untouched (no data file modified) |
+| CI | recorded in the PR #1 description |
+
+## 39. Readiness, limitations and decisions (12.6.1)
+
+| Change | Decision |
+|---|---|
+| R-SIG with `absence_guard`, as a non-signing proof | **Reliable for offline research.** Production integration still needs a separately approved change. It would alter production spoof signals for busy wallets, and the production detector's own `spoofed_out` definition would first need the authorization split (A2). |
+| Authorization split (`foreign_initiated_out`) | research; C0/C1 and the detector unchanged, so earlier results stay reproducible |
+| Presentation order (affix, recency, address) | offline research default; **not validated** (§34) |
+| Bounded summary and pages | research interface, ready for a UI prototype; never suppresses production warnings |
+| Lease test | fixed; no production change |
+
+**Is the candidate-evidence pipeline reliable enough for broader offline research?** Yes,
+for offline research on recorded windows:
+- signer claims are guarded and never negative from an incomplete source;
+- authorization is never assumed;
+- evidence is preserved and paged with bounded output;
+- missing evidence moves nothing;
+- outputs are deterministic and cost is linear (100,000 candidates in 18 s).
+
+**What blocks production integration:**
+1. **No independent validation.** The presentation order and the indicators are tested only
+   on synthetic data and 2 development incidents.
+2. **Authorization is unobserved.** Distinguishing an approved pull from a fabricated log
+   needs allowance and permit history, which no recording collects yet.
+3. **Legitimate intent-based settlements** (solver-signed `transferFrom` pulls) become
+   `foreign_initiated_out` groups whenever value moves. That is a false-positive source
+   with unmeasured volume.
+4. **The production detector's spoof rule** would need the authorization split and a
+   migration review before R-SIG feeds warnings.
+5. **Equal-affix ties** fall back to recency (§35).
+6. **The signed set's end boundaries** rest on the recorder's guarantee (§31).
+
+The next experiment is unchanged (§29). Phase 12.7 is not started.

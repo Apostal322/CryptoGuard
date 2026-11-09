@@ -26,6 +26,15 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Phase 12.6.1: signer-recovery safety, bounded summaries, research reliability (no RPC requests)
+- **Correction:** R-SIG proves only that the wallet did not directly sign a transaction, never that it did not authorize the movement (an allowance, a permit or an EIP-7702 delegation). A value-moving foreign-signed transfer is now `foreign_initiated_out` with `authorization = unknown`; only zero-value ones are `spoofed_out`. On the real windows, 6 value-moving untrusted-token events are relabelled, the groups and levels are unchanged, and C1 still makes 6 such spoof claims.
+- **`absence_guard`:** the absence inference requires a complete, count-consistent, nonce-contiguous signed set, and code `0x` at every sample up to the cutoff (no EIP-7702 designator or contract code). Otherwise the signer stays unknown. 20 conditions are tested. The rule still agrees 18 of 18 on the real windows.
+- **Bounded summary:** 6.8 KB at 1,000, 10,000 and 100,000 candidates, where the hidden-identity list made it 915 KB at 10,000. Digest-checked `page()` and `group_records()` give offset/limit access to all evidence.
+- **Presentation order** (affix, recency, address) reads no support level. H5 is reproduced unchanged. The order is not validated.
+- **Adversarial suite with 10,000-event floods:** the strong candidate is rank 1 in 8 of 9 scenarios, and reachable by page in all 9. Equal-affix ties fall back to recency.
+- **Lease test:** distinct child exit codes, a bounded join, expiry probes with explicit clock values, and a new boundary test. It passed 15 of 15 runs under CPU contention.
+- **Docs:** `docs/ml/amendment-12.6.1.md`; report `ML_CANDIDATE_RELIABILITY.md` §30–§39.
+
 ### Phase 12.6: candidate reliability and signer provenance (no RPC requests)
 - **Protocol 12.6** (`docs/ml/protocol-12.6.md`) was frozen first. The code was committed before the measured run.
 - **Audit:** real recordings have complete outgoing-signer coverage (18 of 18). The Phase 12.5 "signer loss" result came from masking.
