@@ -241,6 +241,7 @@ def selectors(seed: int) -> dict[str, ar.Selector]:
         "B5": s("B5"),
         "B6": s("B6", seed=seed),
         "P1": s("P1", seed=seed),
+        "P1b": s("P1", seed=seed, bucket_tie=True),  # post hoc: bucket-level ties
         "A-nosim": s("P1", seed=seed, nosim=True),
         "A-rec": s("P1", seed=seed, tie="recency"),
         "A-lam2": s("P1", seed=seed, lam=2.0),
@@ -253,7 +254,7 @@ def selectors(seed: int) -> dict[str, ar.Selector]:
 
 
 SEEDED = frozenset(
-    {"B6", "P1", "A-nosim", "A-rec", "A-lam2", "A-lam8", "A-laminf", "A-nomech", "NC-random"}
+    {"B6", "P1", "P1b", "A-nosim", "A-rec", "A-lam2", "A-lam8", "A-laminf", "A-nomech", "NC-random"}
 )
 # A-lam0 is B6 by definition (lambda = 0: no group discount); it is reported under B6.
 
@@ -999,7 +1000,7 @@ def main(
 
 # --- post-hoc checks (added after the negative controls flagged benchmark design bias) -------
 
-POSTHOC_METHODS = ("B0", "B3", "B4", "B5", "B6", "P1", "A-laminf", "A-nomech", "NC-revrec")
+POSTHOC_METHODS = ("B0", "B3", "B4", "B5", "B6", "P1", "P1b", "A-laminf", "A-nomech", "NC-revrec")
 
 
 def adaptive_scenario(

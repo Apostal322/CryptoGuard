@@ -58,6 +58,10 @@ class Selector:
     tie: str = "hash"  # P1 within-bucket ties: "hash" or "recency" (ablation A-rec)
     nosim: bool = False  # ablation A-nosim: bits := 0
     nomech: bool = False  # ablation A-nomech: every unreferenced candidate in one bucket
+    # P1b (post hoc): break ties between buckets with a keyed hash of the *bucket*. P1 as
+    # registered uses the member's hash, and a flooded bucket's leader is the minimum of many
+    # hashes, so flooding wins ties; a bucket hash is independent of bucket size.
+    bucket_tie: bool = False
 
     def __post_init__(self) -> None:
         if self.method not in METHODS:
@@ -72,7 +76,7 @@ class Selector:
         if self.method != "P1":
             return self.method
         lam = "inf" if math.isinf(self.lam) else f"{self.lam:g}"
-        parts = [f"P1[lam={lam}"]
+        parts = [f"{'P1b' if self.bucket_tie else 'P1'}[lam={lam}"]
         if self.tie != "hash":
             parts.append(f"tie={self.tie}")
         if self.nosim:
@@ -185,14 +189,15 @@ def _p1(gs: Sequence[ce.CandidateGroup], sel: Selector) -> list[ce.CandidateGrou
 
     parts = _partition(gs, lambda g: bucket(g, nomech=sel.nomech))
     keyed_rows: list[tuple[tuple[Any, ...], ce.CandidateGroup]] = []
-    for members in parts.values():
+    for key, members in parts.items():
         members.sort(key=lambda g: (-b(g), tie(g), g.lookalike))
         best = b(members[0])
+        between: tuple[Any, ...] = (keyed(sel.seed, "bucket:" + key),) if sel.bucket_tie else ()
         for j, g in enumerate(members):
             if math.isinf(sel.lam):
-                k: tuple[Any, ...] = (j, -b(g), -best, tie(g), g.lookalike)
+                k: tuple[Any, ...] = (j, -b(g), -best, *between, tie(g), g.lookalike)
             else:
-                k = (-(b(g) - sel.lam * j), -best, tie(g), g.lookalike)
+                k = (-(b(g) - sel.lam * j), -best, *between, tie(g), g.lookalike)
             keyed_rows.append((k, g))
     keyed_rows.sort(key=lambda kv: kv[0])
     return [g for _, g in keyed_rows]

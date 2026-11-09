@@ -274,3 +274,24 @@ def test_summary_size_stays_bounded_with_selection() -> None:
         10,
     )
     assert abs(len(json.dumps(big)) - len(json.dumps(small))) < 200
+
+
+def test_registered_p1_ties_favour_flooded_buckets_and_p1b_does_not() -> None:
+    """P1 breaks ties between bucket leaders by the member's hash; a flooded bucket's
+    leader is the minimum of many hashes, so a lone target loses every tie. P1b hashes the
+    bucket instead, which is independent of how many decoys a bucket holds."""
+    groups, sc = _groups("F7_recent_decoys_other_references", 200)
+    t = sc.relevant[0]
+    registered = [_rank(ar.order(groups, ar.Selector("P1", seed=s)), t) for s in range(40)]
+    fixed = [
+        _rank(ar.order(groups, ar.Selector("P1", seed=s, bucket_tie=True)), t) for s in range(40)
+    ]
+    # Each flooded leader is the minimum of 50 hashes, so the lone target trails all four
+    # with probability (50/51)^4, about 0.92 (expected about 37 of 40). With bucket hashes
+    # every position among the five leaders is equally likely (expected 8 of 40 at rank 5).
+    assert registered.count(5) >= 30
+    assert fixed.count(5) <= 20
+    assert len(set(fixed)) >= 4
+    assert max(fixed) <= 5  # still within the five bucket leaders
+    assert ar.Selector("P1", bucket_tie=True).label == "P1b[lam=4]"
+    assert ar.config_hash(ar.Selector("P1", bucket_tie=True)) != ar.config_hash(ar.Selector("P1"))
