@@ -896,9 +896,9 @@ def performance(sizes: Sequence[int]) -> list[dict[str, Any]]:
 
 def free_ram_bytes() -> int | None:
     import ctypes
-    import os
+    import sys
 
-    if os.name == "nt":
+    if sys.platform == "win32":  # mypy understands this guard on every platform
 
         class MemoryStatus(ctypes.Structure):
             _fields_ = [
