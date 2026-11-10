@@ -453,7 +453,9 @@ def leads(root: Path) -> list[dict[str, Any]]:
             have = sorted(k for k, v in ids.items() if v)
             needs = [k for k in ("victim", "harm_tx") if k not in have]
             victim = (ids.get("victim") or "").lower()
-            day = str(c["source"]["date"])[:10]
+            # the event date is the case id's suffix when it has one, else the source date
+            tail = c["case_id"][-10:]
+            day = tail if tail[4:5] == "-" and tail[7:8] == "-" else str(c["source"]["date"])[:10]
             out.append(
                 {
                     "lead": c["case_id"],

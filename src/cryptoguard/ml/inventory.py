@@ -38,6 +38,8 @@ REGISTRY: tuple[tuple[str, str, str, str, str], ...] = (
      "derived from CC BY-NC-ND and public chain data", "no", "unlabeled_candidate"),
     ("data/ml/poisoning/", "derived: Phase 11.2-11.4 reconciliation outputs",
      "derived from CC BY-NC-ND", "no (aggregate tables only)", "source-derived"),
+    ("data/ml/research/", "derived: research outputs and local re-recordings",
+     "derived (some from CC BY-NC-ND)", "no (aggregates only)", "development"),
     ("data/ml/pilot/", "option A pilot (eth.drpc.org, 2026-11-01)", "public chain data", "yes",
      "pilot outcomes; unknown is never benign"),
     ("data/ml/chain/", "PTXPhish chain features (collected)", "public chain data + PTXPhish",
@@ -48,6 +50,10 @@ REGISTRY: tuple[tuple[str, str, str, str, str], ...] = (
      "public chain data; committed", "yes", "incident case studies (used in development)"),
     ("src/cryptoguard/replay/background_cases/", "recorded random background wallets",
      "public chain data; committed", "yes", "unlabelled_background"),
+    ("src/cryptoguard/replay/campaign_cases/", "recorded campaign expansion (public chain data)",
+     "public chain data; committed", "yes", "unlabelled"),
+    ("docs/ml/incident-benchmark/cases/", "recorded Level I incident windows (Phase 12.3)",
+     "public chain data; committed", "yes", "incident case studies (development)"),
 )  # fmt: skip
 
 
