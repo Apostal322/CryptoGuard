@@ -129,6 +129,33 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     ur.add_argument(
         "--out", type=Path, default=ML_DIR / "research" / "phase12.2" / "unconfirmed-recency.json"
     )
+    brd = ml.add_parser(
+        "benchmark-readiness",
+        help="Phase 12.8 data inventory, eligibility and blind development regression (offline)",
+    )
+    brd.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.8")
+    brd.add_argument("--no-archive", action="store_true", help="skip the archive tie analysis")
+    brd.add_argument("--no-history", action="store_true", help="skip the git-history scan")
+    bpw = ml.add_parser(
+        "benchmark-power",
+        help="sample-size planning for a paired exposure comparison (assumptions are inputs)",
+    )
+    bpw.add_argument(
+        "--p-better",
+        type=float,
+        required=True,
+        help="P(a discordant incident favours the better method)",
+    )
+    bpw.add_argument(
+        "--discordance",
+        type=float,
+        required=True,
+        help="share of eligible incidents on which the two methods disagree",
+    )
+    bpw.add_argument("--eligible-rate", type=float, default=1.0)
+    bpw.add_argument("--deff", type=float, default=1.0, help="cluster design effect")
+    bpw.add_argument("--power", type=float, default=0.8)
+    bpw.add_argument("--alpha", type=float, default=0.05)
     ava = ml.add_parser(
         "adaptive-validation",
         help="Phase 12.7.1 debiased synthetic validation and adaptive attacker (offline)",
@@ -230,6 +257,35 @@ def run(args: argparse.Namespace) -> int:
     from cryptoguard.ml import ml_available
 
     # Pure-Python commands: no ml extra needed.
+    if args.ml_command == "benchmark-readiness":
+        import json
+
+        from cryptoguard.ml import benchmark_readiness
+
+        result = benchmark_readiness.main(
+            ML_DIR / "poisoning",
+            args.out,
+            archive=not args.no_archive,
+            history=not args.no_history,
+        )
+        brief = {k: result[k] for k in ("eligibility_summary", "resources")}
+        print(json.dumps(brief, indent=1, default=str))
+        return 0
+    if args.ml_command == "benchmark-power":
+        import json
+
+        from cryptoguard.ml import power
+
+        needed = power.incidents_needed(
+            args.p_better,
+            args.discordance,
+            power=args.power,
+            alpha=args.alpha,
+            eligible_rate=args.eligible_rate,
+            deff=args.deff,
+        )
+        print(json.dumps(needed, indent=1))
+        return 0
     if args.ml_command == "adaptive-validation":
         import json
 
