@@ -26,6 +26,17 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Phase 12.8: independent benchmark contract, ground-truth quality, readiness (no RPC requests)
+- **Protocol 12.8** (`docs/ml/protocol-12.8.md`) was frozen before any harness code. The code was committed before the measured run.
+- **Contracts (research only):** a five-dimension label ontology with evidence rules; a case record separate from the sealed outcome; a collector request that cannot carry an answer; data-quality severities; per-mechanism observation eligibility; independence checks.
+- **Blind harness:** `predict` has no outcome parameter, the outcome vault opens only after sealing, and a run-once ledger refuses a different rerun. Scoring gives T1–T7 with one failure class per case.
+- **Metrics with explicit denominators:** end-to-end TopK counts generation failures as misses, and a false-positive rate is refused without verified negatives.
+- **Planning tool:** `cryptoguard ml benchmark-power` computes exact paired sign-test power from stated assumptions; no sample size is hard-coded.
+- **Local data:** 16 windows, **0 independent incidents**, 0 verified negatives, 0 reviewer submissions; no window supports all mechanisms. The known miss is classified `observation_unsupported`.
+- **Measurement (archive development split):** when the paid lookalike ties a rival on similarity it is the newest in 79.0 % of 423 episodes, against 33.5 % by chance (+0.454 [0.412, 0.495]).
+- **Public-repository safety:** `ml/repo_safety.py` and a CI test; the scan is clean over 412 tracked files and 112 commits. One reviewer-blinding risk is documented.
+- **Report:** `ML_INDEPENDENT_BENCHMARK_READINESS.md`. No model was trained. Generalization evidence is BLOCKED BY DATA.
+
 ### Phase 12.7.1: debiased validation of P1b against an adaptive adversary (no RPC requests)
 - **Protocol 12.7.1** (`docs/ml/protocol-12.7.1.md`) was frozen with the generator, the evaluation code and a sealed manifest (7,200 scenarios, 5,079,472 candidates) before any selector ran. P1 and P1b were frozen by source hash and config hash.
 - **New independent generator:** random addresses, references assigned by the pipeline's own `_match`, shuffled populations, balanced target age (8 relations), mechanism (5), reference and similarity, and a null family. Fidelity: 30 of 30 rebuilt scenarios matched.
