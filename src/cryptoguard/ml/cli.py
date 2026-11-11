@@ -136,6 +136,22 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     brd.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.8")
     brd.add_argument("--no-archive", action="store_true", help="skip the archive tie analysis")
     brd.add_argument("--no-history", action="store_true", help="skip the git-history scan")
+    rbl = ml.add_parser(
+        "review-blinding",
+        help="Phase 12.9 exposure audit of the frozen review cohorts (offline; aggregates)",
+    )
+    rbl.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.9" / "blinding")
+    rbl.add_argument("--no-history", action="store_true", help="skip the git-history channel")
+    iac = ml.add_parser(
+        "incident-acquisition",
+        help="Phase 12.9 lead eligibility, pilot selection and collection manifest (no RPC)",
+    )
+    iac.add_argument("--out", type=Path, default=ML_DIR / "research" / "phase12.9" / "acquisition")
+    iac.add_argument(
+        "--write-public",
+        action="store_true",
+        help="write the public registry (citations, statuses, salted commitments only)",
+    )
     bpw = ml.add_parser(
         "benchmark-power",
         help="sample-size planning for a paired exposure comparison (assumptions are inputs)",
@@ -270,6 +286,39 @@ def run(args: argparse.Namespace) -> int:
         )
         brief = {k: result[k] for k in ("eligibility_summary", "resources")}
         print(json.dumps(brief, indent=1, default=str))
+        return 0
+    if args.ml_command in ("review-blinding", "incident-acquisition"):
+        import json
+        import subprocess
+
+        try:
+            git = subprocess.run(
+                ["git", "rev-parse", "HEAD"],  # noqa: S607
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            git = None
+        if args.ml_command == "review-blinding":
+            from cryptoguard.ml import review_blinding
+
+            summary = review_blinding.main(
+                Path(), ML_DIR / "poisoning", args.out, history=not args.no_history
+            )
+        else:
+            from cryptoguard.ml import incident_acquisition
+
+            summary = incident_acquisition.main(
+                Path(), ML_DIR / "poisoning", args.out, write_public=args.write_public, git=git
+            )
+        summary["git"] = git
+        args.out.mkdir(parents=True, exist_ok=True)
+        (args.out / "summary.json").write_text(
+            json.dumps(summary, indent=1, sort_keys=True, default=str) + "\n", encoding="utf-8"
+        )
+        print(json.dumps(summary, indent=1, sort_keys=True, default=str))
         return 0
     if args.ml_command == "benchmark-power":
         import json

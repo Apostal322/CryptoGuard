@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -155,6 +155,10 @@ class Prediction:
     burden: dict[str, Any]
     fidelity: dict[str, Any]
     digest: str
+    # Best-reference bucket per candidate (protocol 12.9, T5g). A deterministic function of
+    # the observation and the cutoff, which the digest already binds; kept out of the digest
+    # so that Phase 12.8 ledgers stay valid.
+    buckets: dict[str, str] = field(default_factory=dict)
 
 
 def _digest(payload: Mapping[str, Any]) -> str:
@@ -212,6 +216,7 @@ def predict(case: bc.BenchmarkCase, fixture: Any) -> Prediction:
         burden=burden,
         fidelity=fidelity,
         digest=_digest(body),
+        buckets={g.lookalike: ce.bucket_of(g) for g in groups},
     )
 
 
@@ -313,6 +318,24 @@ def mechanism_identified(label: str, mechanisms: Sequence[str], kinds: Sequence[
     raise ValueError(label)
 
 
+def reference_group_exposure(
+    prediction: Prediction, outcome: bc.Outcome
+) -> dict[str, dict[str, bool]] | None:
+    """T5g (protocol 12.9): within K, is there a candidate whose best-reference bucket is the
+    intended recipient? Reported apart from address exposure (T4); not assessable (None)
+    without an intended recipient."""
+    if not outcome.intended_recipient:
+        return None
+    intended = outcome.intended_recipient.lower()
+    return {
+        m: {
+            str(k): any(prediction.buckets.get(c, "").lower() == intended for c in order[:k])
+            for k in K_GRID
+        }
+        for m, order in prediction.orders.items()
+    }
+
+
 def score(
     case: bc.BenchmarkCase,
     prediction: Prediction,
@@ -365,6 +388,7 @@ def score(
         "T4_exposed": {
             m: {str(k): r is not None and r <= k for k in K_GRID} for m, r in ranks.items()
         },
+        "T5g_reference_group_exposed": reference_group_exposure(prediction, outcome),
     }
     if generated and mechanism in bc.MECHANISM_REQUIREMENTS:
         out["T5_mechanism_identified"] = mechanism_identified(
@@ -451,6 +475,17 @@ def aggregate(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             "value": round(sum(rr) / len(rr), 4) if rr else None,
             "denominator": len(rr),
         }
+    grouped = [r for r in mech_ok if r.get("T5g_reference_group_exposed") is not None]
+    out["reference_group_exposure"] = {
+        m: {
+            k: _ratio(
+                sum(r["T5g_reference_group_exposed"][m][str(k)] for r in grouped), len(grouped)
+            )
+            for k in K_GRID
+        }
+        for m in ORDERS
+    }
+    out["reference_group_not_assessable"] = len(mech_ok) - len(grouped)
     labelled = [r for r in generated if r["T5_mechanism_identified"] is not None]
     out["mechanism_identification"] = _ratio(
         sum(r["T5_mechanism_identified"] for r in labelled), len(labelled)
