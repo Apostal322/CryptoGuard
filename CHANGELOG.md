@@ -26,6 +26,15 @@ All notable changes. Versions follow semantic versioning; 0.x means interfaces m
   LightGBM text serialization, wallet-history features (infrastructure, no accuracy claim).
   Report: ML_GENERALIZATION_AUDIT.md; tables: ML_AUDIT_TABLES.md.
 
+### Phase 12.9: reviewer-blinding integrity, independent incident acquisition, pilot gate (no RPC requests)
+- **Protocol 12.9** (`docs/ml/protocol-12.9.md`) was frozen before the audit, any search or any classification.
+- **Exposure audit** (`cryptoguard ml review-blinding`) searches HEAD, git history, truncated prefixes and provenance. It reproduces the 12.8 overlap (54 identifiers, 17 files). Cohort A is 60 × R3 (public archive labels). Cohort B is 4 × R3, 30 × R2 and 1 × R1. Both cohorts are byte-identical; no reviewer kit was sent, so reviewer exposure is unknown.
+- **Reviewer protocol** (`docs/ml/reviewer-blinding-protocol.md`): whitelisted, leak-checked task payloads, opaque task ids, declarations that are never defaulted (R4 only from a declaration), and an adjudication-readiness check.
+- **Incident acquisition** (`cryptoguard ml incident-acquisition`): 7 existing and 10 new leads from a bounded search (16 searches, 17 page reads). **0 ready for recording:** 5 need identifiers, 12 rejected, and no overlap with development artifacts. Identifiers stay local; the public registry carries salted SHA-256 commitments only.
+- **Collection gate:** the job manifest, caps (2,505 per window) and an `ApprovalRecord` bound to the manifest hash. General encouragement is refused and no runner exists. The manifest is empty, so no approval is requested.
+- **Benchmark:** T5g (reference-group exposure) is added to the blind harness, separate from address exposure. Independent validation remains BLOCKED BY DATA.
+- **Report:** `ML_INDEPENDENT_INCIDENT_ACQUISITION.md`.
+
 ### Phase 12.8: independent benchmark contract, ground-truth quality, readiness (no RPC requests)
 - **Protocol 12.8** (`docs/ml/protocol-12.8.md`) was frozen before any harness code. The code was committed before the measured run.
 - **Contracts (research only):** a five-dimension label ontology with evidence rules; a case record separate from the sealed outcome; a collector request that cannot carry an answer; data-quality severities; per-mechanism observation eligibility; independence checks.
