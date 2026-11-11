@@ -83,7 +83,9 @@ evidence of common ownership ([CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md)).
 | Cross-wallet poisoning campaign analysis: canonical attempts, planting-side relationship evidence (shared planting transaction, verified signer, lookalike), conservative clustering with hub and transitivity guards, budgeted resumable expansion around planting signers and lookalikes, read-only API and UI section ([CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md)) | Experimental, **off by default** (shadow mode): real cross-wallet links found, no earlier theft warning than the existing detector |
 | Network, structural and activity-rate analyses (graph propagation, spectral features, robust burst statistics) over stored observations, coverage-aware and point in time | Experimental, **off by default**: evaluated with no measurable gain over the existing detector; available in shadow mode only (see [DETECTION_METHODS.md](DETECTION_METHODS.md)) |
 | Wallet-signed transactions (incl. native-ETH payments) located by nonce search in snapshots and scans; used by the poisoning detector and the graph; degrades to explicit "unlocated" counts without archive state | Implemented |
-| Scheduled monitoring loop, native ETH *received*, NFT/Permit2 approvals, ML | Not yet |
+| Phishing-transaction classifier (LightGBM) trained on independently labelled public data (PTXPhish, NDSS 2025) with point-in-time chain features, time-ordered and account-disjoint splits, rule and trivial baselines, run ledger, approval-gated model registry, offline generalization audit, wallet-history feature infrastructure ([ML.md](ML.md), [ML_GENERALIZATION_AUDIT.md](ML_GENERALIZATION_AUDIT.md)) | Experimental, **research-only** (`ml` extra): AP 0.999 on a development benchmark (not an untouched holdout), false-positive rate 7/43 from 12 benign senders (cluster interval 4% to 36%); the API does not score with it; never creates findings |
+| Wallet-centric address-poisoning research: typed event and label model, offline payment verification, candidate rules, point-in-time features, a safe streaming reconciliation of the Poison-Hunter and Tsuchiya et al. (USENIX Security 2025) datasets, a frozen 60-item sample with a local, blinded two-reviewer annotation workflow, and a screened pool of unlabeled hard-negative candidates with a second frozen cohort ([ML_CROSS_DATASET_VALIDATION.md](ML_CROSS_DATASET_VALIDATION.md), [ML_ANNOTATION_AUDIT.md](ML_ANNOTATION_AUDIT.md), [ML_HARD_NEGATIVE_STUDY.md](ML_HARD_NEGATIVE_STUDY.md)) | Experimental, **research-only**: no model, because the available labels cannot support a valid supervised benchmark; no human review has happened yet; third-party data stays local (CC BY-NC-ND / unlicensed) |
+| Scheduled monitoring loop, native ETH *received*, NFT/Permit2 approvals | Not yet |
 
 ## Quick start
 
@@ -199,13 +201,16 @@ uv run cryptoguard graph <address>             # relationships from the latest s
 # Historical incident replay (offline, from packaged fixtures)
 uv run cryptoguard replay list
 uv run cryptoguard replay run --write-report EVALUATION.md
-# Re-record a fixture (needs historical logs + state, e.g. https://eth.drpc.org):
-uv run cryptoguard replay record <case-id> --rpc-url <archive-capable RPC>
+# Re-record a fixture (needs historical logs + state, e.g. https://eth.drpc.org). Every live
+# replay command needs a request ledger and an approved cap; retries count, and a run that
+# reaches the cap writes nothing:
+uv run cryptoguard replay record <case-id> --rpc-url <archive-capable RPC> --ledger <file> --cap <n> [--observation 2]
+uv run cryptoguard replay find-transfers --sender <addr> [--recipient <addr>] --since <day> --until <day> --rpc-url <RPC> --ledger <file> --cap <n>
 # Evaluate the experimental analyses too (incidents + background wallets; analytics extra):
 uv run --extra analytics cryptoguard replay run --analytics --write-report EVALUATION.md
 # Background wallets: seeded random sample, then record their fixtures
-uv run cryptoguard replay sample-background --rpc-url <RPC> --seed <n> --from-block <a> --to-block <b>
-uv run cryptoguard replay record-background --rpc-url <RPC>
+uv run cryptoguard replay sample-background --rpc-url <RPC> --seed <n> --from-block <a> --to-block <b> --ledger <file> --cap <n>
+uv run cryptoguard replay record-background --rpc-url <RPC> --ledger <file> --cap <n> --max-requests <per window>
 
 # Cross-wallet campaigns (CRYPTOGUARD_CAMPAIGN_ANALYSIS=shadow)
 uv run cryptoguard campaigns analyze                 # cluster stored attempts, no RPC calls
@@ -333,11 +338,11 @@ See [SECURITY.md](SECURITY.md) for reporting and the threat model.
    wallets; more needed before any rate can be estimated). Experimental graph, spectral,
    temporal and cross-wallet campaign analyses were evaluated on top; none is enabled by
    default ([EVALUATION.md](EVALUATION.md), [CAMPAIGN_EVALUATION.md](CAMPAIGN_EVALUATION.md)).
-8. **Machine learning: deferred, deliberately.** The brief allows ML only once enough data
-   exists. It does not: 4 labelled thefts, 9 unlabelled background wallets, and no
-   independent labels for attempts or campaigns. Any classifier trained here would either
-   overfit 4 positives or learn to imitate CryptoGuard's own rules (circular). Revisit when a
-   labelled, time-split dataset exists that a deterministic baseline can be measured on.
+8. ~~Machine learning~~ (experimental, shadow mode; [ML.md](ML.md)). Not trained on
+   CryptoGuard's own 4 incidents (too few, and circular), but on an independently labelled
+   public dataset of 18,555 transactions (PTXPhish), with chain features collected under a
+   fixed request budget. Next: a benign class drawn from ordinary users rather than
+   prominent accounts, and pre-signing scoring by simulation.
 9. ~~Release quality~~: security, dependency, reproducibility and packaging review (see
    [CHANGELOG.md](CHANGELOG.md)). Not independently audited.
 

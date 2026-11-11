@@ -1,0 +1,600 @@
+{
+ "schema_version": "incident-acquisition-registry/1",
+ "protocol": "protocol-12.9",
+ "discovery": {
+  "date": "2026-11-11",
+  "searches": 16,
+  "page_reads": 17,
+  "budget": {
+   "searches": 20,
+   "page_reads": 30
+  },
+  "explorer_or_rpc_requests": 0
+ },
+ "commitment": "sha256(salt|role|lower-case identifier); one secret salt per lead, kept locally and disclosed only at unblinding",
+ "development_duplicates": [
+  {
+   "case": "usdt-50m-poisoning-2025-12-19",
+   "sources_seen": 3
+  },
+  {
+   "case": "eth-4556-poisoning-2026-01-30",
+   "sources_seen": 3
+  },
+  {
+   "case": "usdt-counterfeit-39890-2026-08-09",
+   "sources_seen": 1
+  },
+  {
+   "case": "wbtc-1155-poisoning-2024-05-03",
+   "sources_seen": 1
+  },
+  {
+   "case": "scamsniffer-763k-2025-02-20",
+   "sources_seen": 1
+  }
+ ],
+ "leads": [
+  {
+   "lead_id": "aethusdc-24m-2026-03",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "blockchain.news (flash citing PeckShieldAlert on X)",
+     "url": "https://blockchain.news/flashnews/peckshieldalert-reports-24m-crypto-theft-via-address-poisoning-attack",
+     "date": "2026-03",
+     "read": true
+    },
+    {
+     "publisher": "CCN",
+     "url": "https://www.ccn.com/news/crypto/sillytuna-crypto-24m-poisoning-attack-how-it-happened/",
+     "date": "2026-03",
+     "read": false
+    },
+    {
+     "publisher": "Coin-Turk",
+     "url": "https://en.coin-turk.com/hackers-drain-24-million-in-aethusdc-as-address-poisoning-strikes-defi-sector/",
+     "date": "2026-03",
+     "read": false
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2026-03-04/2026-03-05",
+   "amount": "about 23.6 million aEthUSDC",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "truncated",
+    "unassigned_address": "truncated",
+    "victim": "truncated"
+   },
+   "commitments": {},
+   "status": "NEEDS_IDENTIFIER_VERIFICATION",
+   "reasons": [
+    "conflicting: event date: outlets give 4 March and 5 March 2026"
+   ],
+   "cluster": "aethusdc-24m-2026-03",
+   "conflicts": [
+    "event date: outlets give 4 March and 5 March 2026"
+   ],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "amlbot-czech-50k-usdt",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "AMLBot blog (Honey Trap)",
+     "url": "https://blog.amlbot.com/honey-trap-how-address-poisoning-scammed-50k-and-how-it-was-recovered/",
+     "date": "2025-02-20",
+     "read": true
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2025",
+   "amount": "more than 50,000 USDT",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "amlbot-czech-50k-usdt",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "cyvers-1.2m-2025-03-aggregate",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "ForkLog (citing Cyvers)",
+     "url": "https://forklog.com/en/crypto-address-poisoning-nets-hackers-1-2-million-in-three-weeks/",
+     "date": "2025-03-19",
+     "read": true
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2025-03",
+   "amount": "more than 1.2 million USD across several victims",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "cyvers-1.2m-2025-03-aggregate",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "dea-usdt-55k-2023",
+   "origin": "registry:candidates.json",
+   "sources": [
+    {
+     "publisher": "Cointelegraph / The Block (citing Forbes and an FBI search warrant)",
+     "url": "https://cointelegraph.com/news/dea-loses-tether-in-address-poisoning-scam",
+     "date": "2023-08-25",
+     "read": false
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2023",
+   "amount": "about 55,000 USDT",
+   "mechanism_claimed": "token_airdrop",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "dea-usdt-55k-2023",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "eth-636k-2025-08",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "Cointelegraph (search result only)",
+     "url": "",
+     "date": "2025-08",
+     "read": false
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2025-08",
+   "amount": "about 636,000-880,000 USD",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "eth-636k-2025-08",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "phantom-chat-wbtc-2026-02",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "Cointelegraph (search result only)",
+     "url": "https://cointelegraph.com/news/phantom-chat-address-poisoning-bitcoin-phishing",
+     "date": "2026-02",
+     "read": false
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2026-02",
+   "amount": "about 3.5 wBTC",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "phantom-chat-wbtc-2026-02",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "pink-drainer-10eth-2024-06-27",
+   "origin": "registry:stage2-candidates.json",
+   "sources": [
+    {
+     "publisher": "ForkLog (citing MistTrack, X post of 2024-07-07)",
+     "url": "https://forklog.com/en/pink-drainer-hackers-fall-victim-to-address-poisoning-scam/",
+     "date": "2024-07-08",
+     "read": true
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2024-06-27",
+   "amount": "10 ETH",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "intended": "verbatim",
+    "lookalike": "truncated",
+    "victim": "verbatim"
+   },
+   "commitments": {
+    "intended": "6838b47a6b4a299fb0c3312ade65184a64bc2f277079012b6cff1540020c2be5",
+    "victim": "9e20554c94d42ea9375934f3561fc175bdb2c828301b5702098b1484b2944138"
+   },
+   "status": "NEEDS_IDENTIFIER_VERIFICATION",
+   "reasons": [
+    "harm_tx absent"
+   ],
+   "cluster": "pink-drainer-10eth-2024-06-27",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "usdt-100k-2026-08",
+   "origin": "registry:candidates.json",
+   "sources": [
+    {
+     "publisher": "crypto.news (citing a Cyvers alert on X)",
+     "url": "https://crypto.news/address-poisoning-attack-drains-100k-dollars-usdt/",
+     "date": "2026-08-11",
+     "read": true
+    },
+    {
+     "publisher": "AMBCrypto (citing Lookonchain on X)",
+     "url": "https://ambcrypto.com/crypto-address-poisoning-costs-user-100k-usdt-how-the-trap-worked/",
+     "date": "2026-08-13",
+     "read": true
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2026-08",
+   "amount": "about 100,000 USDT",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "usdt-100k-2026-08",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "usdt-100k-2026-08-13",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "AMBCrypto (citing Lookonchain on X)",
+     "url": "https://ambcrypto.com/crypto-address-poisoning-costs-user-100k-usdt-how-the-trap-worked/",
+     "date": "2026-08-13",
+     "read": true
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2026-08",
+   "amount": "more than 100,000 USDT",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "usdt-100k-2026-08",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "usdt-509k-2026-01",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "news reports citing a Cyvers alert (search results only)",
+     "url": "",
+     "date": "2026-01-16",
+     "read": false
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2026-01",
+   "amount": "about 509,000-514,000 USDT",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "usdt-509k-2026-01",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "usdt-50k-2026-10",
+   "origin": "registry:candidates.json",
+   "sources": [
+    {
+     "publisher": "crypto.news (citing a Scam Sniffer post on X)",
+     "url": "https://crypto.news/address-poisoning-user-loss-50000/",
+     "date": "2026-10-28",
+     "read": true
+    }
+   ],
+   "chain_stated": "ethereum",
+   "chain_name": null,
+   "event_date": "2026-10",
+   "amount": "about 50,000 USDT",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "usdt-50k-2026-10",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "usdt-600k-2026-02-17",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "CryptoRank feed (403); search results citing Cyvers",
+     "url": "https://cryptorank.io/news/feed/12343-victim-loses-600k-address-poisoning-attacks",
+     "date": "2026-02-17",
+     "read": false
+    }
+   ],
+   "chain_stated": "unstated",
+   "chain_name": null,
+   "event_date": "2026-02-17",
+   "amount": "about 600,000 USD",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "no identifier in any source read"
+   ],
+   "cluster": "usdt-600k-2026-02-17",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "usdt-700k-2025-04",
+   "origin": "registry:candidates.json",
+   "sources": [
+    {
+     "publisher": "Decrypt (citing PeckShield, Cyvers, AMLBot, Bubblemaps)",
+     "url": "https://decrypt.co/316412/crypto-user-loses-700000-to-address-poisoning-scam-heres-what-happened",
+     "date": "2025-04-25",
+     "read": true
+    }
+   ],
+   "chain_stated": "ethereum",
+   "chain_name": null,
+   "event_date": "2025-04",
+   "amount": "699,990 USDT",
+   "mechanism_claimed": "zero_value_transfer",
+   "identifier_status": {
+    "harm_tx": "verbatim",
+    "intended": "absent",
+    "lookalike": "absent",
+    "planting_tx": "verbatim",
+    "test_transfer_tx": "verbatim",
+    "unassigned_address": "verbatim",
+    "victim": "absent"
+   },
+   "commitments": {
+    "harm_tx": "29cc9c0e5ca7ad68122f44de767b2b5d249ec9de4aa42e7f0d9005cba255c94e",
+    "planting_tx": "6c2ccf4d83a896a137910bca74cc49b59892aaea19f4006f053fdd1d329fc19b",
+    "test_transfer_tx": "1ba65cfe36352e343cc255b9e3fc54ca1f86006cabf992a825ed386a0275a7b7",
+    "unassigned_address": "3e32195c1c8d0396ec6b77e80f28e42bc43078648e20fd0eb2f920530a5a2111"
+   },
+   "status": "NEEDS_IDENTIFIER_VERIFICATION",
+   "reasons": [
+    "victim absent"
+   ],
+   "cluster": "usdt-700k-2025-04",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "wbtc-2.38-2025-12-18",
+   "origin": "registry:candidates.json",
+   "sources": [
+    {
+     "publisher": "Bitquery",
+     "url": "https://bitquery.io/investigations/address-poisoning-ethereum",
+     "date": "2026",
+     "read": true
+    }
+   ],
+   "chain_stated": "ethereum",
+   "chain_name": null,
+   "event_date": "2025-12-18",
+   "amount": "about 2.38 WBTC (page text: $205,900 of WBTC)",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "verbatim",
+    "lookalike": "truncated",
+    "post_harm_address_1": "truncated",
+    "post_harm_address_2": "truncated",
+    "post_harm_tx_1": "verbatim",
+    "post_harm_tx_2": "verbatim",
+    "victim": "absent"
+   },
+   "commitments": {
+    "harm_tx": "94042e69cf1d1edc10027955b32cfe23bfdeb7658e8e56e5a51a683cecfcde3d",
+    "post_harm_tx_1": "4ec45162bcb73b70c8fbe011aae99af1a614498317ba7e76089f8cd7b8ebeee1",
+    "post_harm_tx_2": "22378de47a38f4608f734a72b19efae7108f9b3db3776e2999e5c24356409661"
+   },
+   "status": "NEEDS_IDENTIFIER_VERIFICATION",
+   "reasons": [
+    "victim absent"
+   ],
+   "cluster": "wbtc-2.38-2025-12-18",
+   "conflicts": [],
+   "campaign_notes": [
+    "The page labels this theft 'Same crew' as another incident it documents (a case already used in development)."
+   ]
+  },
+  {
+   "lead_id": "webacy-6.88m-usdt-2025-09",
+   "origin": "registry:stage2-candidates.json",
+   "sources": [
+    {
+     "publisher": "Webacy (From the CTO's Desk, September 2025)",
+     "url": "https://www.webacy.com/blog/from-the-ctos-desk-september-2025",
+     "date": "page shows 2026-08-17; covers September 2025",
+     "read": true
+    }
+   ],
+   "chain_stated": "ethereum",
+   "chain_name": null,
+   "event_date": "2025-09-15/2025-09-18",
+   "amount": "about 6,880,000 USDT over two bursts",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike_1": "truncated",
+    "lookalike_2": "truncated",
+    "lookalike_3": "truncated",
+    "lookalike_4": "truncated",
+    "victim": "verbatim"
+   },
+   "commitments": {
+    "victim": "46fa6f6872a25fe8a344f99b6f1627b4f4b6ba493e433b0f21330e59ae96460d"
+   },
+   "status": "NEEDS_IDENTIFIER_VERIFICATION",
+   "reasons": [
+    "harm_tx absent"
+   ],
+   "cluster": "webacy-6.88m-usdt-2025-09",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "webacy-base-25k-usdc-2026-04",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "Webacy blog (search result only)",
+     "url": "https://www.webacy.com/blog/25k-usdc-address-poisoning-attack-on-base-one-of-thousands-today",
+     "date": "2026-04",
+     "read": false
+    }
+   ],
+   "chain_stated": "other",
+   "chain_name": "Base",
+   "event_date": "2026-04",
+   "amount": "24,965 USDC",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "lookalike": "absent",
+    "victim": "absent"
+   },
+   "commitments": {},
+   "status": "REJECTED",
+   "reasons": [
+    "not Ethereum mainnet (Base)"
+   ],
+   "cluster": "webacy-base-25k-usdc-2026-04",
+   "conflicts": [],
+   "campaign_notes": []
+  },
+  {
+   "lead_id": "webacy-polygon-792k-usdc-2025-09",
+   "origin": "new:phase12.9",
+   "sources": [
+    {
+     "publisher": "Webacy (From the CTO's Desk, September 2025)",
+     "url": "https://www.webacy.com/blog/from-the-ctos-desk-september-2025",
+     "date": "page shows 2026-08-17",
+     "read": true
+    }
+   ],
+   "chain_stated": "other",
+   "chain_name": "Polygon",
+   "event_date": "2025-09-02",
+   "amount": "792,000 USDC (22 x 36,000)",
+   "mechanism_claimed": "unknown",
+   "identifier_status": {
+    "harm_tx": "absent",
+    "victim": "verbatim"
+   },
+   "commitments": {
+    "victim": "4e3e6abdb7bd900573ccd8ee7bcf4b3b25dbf3c5562a0c7e0dd9f461e77b3cf2"
+   },
+   "status": "REJECTED",
+   "reasons": [
+    "not Ethereum mainnet (Polygon)"
+   ],
+   "cluster": "webacy-polygon-792k-usdc-2025-09",
+   "conflicts": [
+    "the page lists the same address as victim and as scam recipient"
+   ],
+   "campaign_notes": []
+  }
+ ]
+}

@@ -34,6 +34,8 @@ class TransferDiscovery:
     log_counts: dict[str, int]
     sender_lookups: int
     sender_lookups_skipped: int
+    # ERC-721-shaped Transfer logs (4 topics) the scans returned; kept for ``observation/2``
+    erc721_logs: list[dict[str, object]] = dataclasses.field(default_factory=list)
 
 
 async def _tx_sender(provider: EthereumProvider, tx_hash: str) -> str | None:
@@ -85,6 +87,7 @@ async def discover_transfers(
     counts = dict.fromkeys((s.value for s in LogShape), 0)
     seen: set[tuple[str, str]] = set()
     events: list[TransferEvent] = []
+    nft_logs: list[dict[str, object]] = []
     for log in [*outgoing.logs, *incoming.logs]:
         shape, event = classify_transfer_log(log)
         identity = (str(log.get("blockHash")), str(log.get("logIndex")))
@@ -92,6 +95,8 @@ async def discover_transfers(
             continue
         seen.add(identity)
         counts[shape.value] += 1
+        if shape is LogShape.ERC721_SHAPED:
+            nft_logs.append(log)
         if event is not None and owner in (event.sender, event.recipient):
             events.append(event)
     events.sort(key=lambda e: e.position)
@@ -119,4 +124,5 @@ async def discover_transfers(
         log_counts=counts,
         sender_lookups=len(looked_up),
         sender_lookups_skipped=len(outgoing_txs) - len(looked_up),
+        erc721_logs=nft_logs,
     )

@@ -1,0 +1,203 @@
+{
+ "block_timestamps": {
+  "25696797": 1786029959,
+  "25707876": 1786163495,
+  "25718331": 1786289447,
+  "25718332": 1786289459,
+  "25718340": 1786289555,
+  "25718345": 1786289615,
+  "25718349": 1786289663,
+  "25718351": 1786289687,
+  "25718360": 1786289795,
+  "25718361": 1786289807,
+  "25718391": 1786290167,
+  "25718397": 1786290239
+ },
+ "case_id": "usdt-counterfeit-39890-2026-08-09",
+ "chain_id": 1,
+ "from_block": 25696797,
+ "method": [
+  "ERC-20 Transfer logs to and from the wallet, all tokens, the whole window (eth_getLogs).",
+  "Signer (tx.from) of every outgoing transfer's transaction (eth_getTransactionByHash).",
+  "Every wallet-signed transaction in the window, located by nonce bisection (eth_getTransactionCount) and read from its block (eth_getBlockByNumber).",
+  "Wallet code at the window start and one block before the harmful block (eth_getCode).",
+  "Timestamps of all referenced blocks (eth_getBlockByNumber)."
+ ],
+ "recorded_at": "2026-11-03T15:54:24.973504Z",
+ "recorded_with": "https://eth.drpc.org",
+ "rpc_requests": 472,
+ "sender_lookups_skipped": 0,
+ "to_block": 25718397,
+ "transfer_scan_complete": true,
+ "transfers": [
+  {
+   "block_hash": "0x56c49d38fdd06c49fcc76d4b7f375d0afff8252d5ca739734155249e3221bfce",
+   "block_number": 25707876,
+   "log_index": 1115,
+   "recipient": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "sender": "0x2767ae7E0C205425a7B7F7583c512513C527F482",
+   "token": "0x6051C1354Ccc51b4d561e43b02735DEaE64768B8",
+   "transaction_hash": "0xeb4a5e28acf1296828e9cb623d282393d557618e7043bb213e373ed50029ab9d",
+   "transaction_index": 94,
+   "tx_sender": null,
+   "value": "90000000000000"
+  },
+  {
+   "block_hash": "0x2e01abe7f3c65db2852175d22adc3a7d8e8a09aa753f96aa0e7670b769625eb9",
+   "block_number": 25718331,
+   "log_index": 226,
+   "recipient": "0x053DBA7292957341779cB0e9aae1AA7B139aDa3A",
+   "sender": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x9f8f6ecc7b3a2f294818dcb504b1667d44e1bfec4288bb8174c6740d9851c33d",
+   "transaction_index": 111,
+   "tx_sender": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "value": "115147641"
+  },
+  {
+   "block_hash": "0xb59bd2c3bf8d1e5643c04bfd9f7522b8303b329cf68570a6dad59659e691bebf",
+   "block_number": 25718332,
+   "log_index": 406,
+   "recipient": "0x053599Fa536be6c5dd2d240104334244f21DDa3a",
+   "sender": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "token": "0xaA8A56638b9f91fffa3188693731A8FCBCF40a3B",
+   "transaction_hash": "0xcfb1f0c00c464bfe645feb6ff7cd9f1888d33bd7fd6ef8973dfd09ffded004b0",
+   "transaction_index": 139,
+   "tx_sender": "0x5565F17657Cef60A02295eEdaa52d0041cEb52D6",
+   "value": "115147641"
+  },
+  {
+   "block_hash": "0x389fa86a0958d8cd66f99a727e624a20187ea5b2b98c281197ceed964a150e1b",
+   "block_number": 25718340,
+   "log_index": 617,
+   "recipient": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "sender": "0x053dcd29d6Eae2a61b800848492Ba82a008BDA3A",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x5753fdb4670a59bcb47b6badfe7b28c4927b86de1298bd82a9b67aee7cbf634c",
+   "transaction_index": 110,
+   "tx_sender": null,
+   "value": "115"
+  },
+  {
+   "block_hash": "0x389fa86a0958d8cd66f99a727e624a20187ea5b2b98c281197ceed964a150e1b",
+   "block_number": 25718340,
+   "log_index": 650,
+   "recipient": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "sender": "0x057fb29C6aFEF919810e1C2aD89F7FB5F89ADA3A",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x3b3f3976afe5041a4b4d38e7deeb25a4201b56e3501807fa3f7f7cc619c80792",
+   "transaction_index": 138,
+   "tx_sender": null,
+   "value": "115"
+  },
+  {
+   "block_hash": "0xd95bdd69cd1ad26834d26f5ee39ce573089f500d1b50cadd5ec710934f9708fe",
+   "block_number": 25718345,
+   "log_index": 408,
+   "recipient": "0x053D505aa083c6A36510D294354821B7329adA3a",
+   "sender": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0xd0a0d3d5bd0dcad02b58202a139a41300709da0c6d3d9be324067ab9370e9879",
+   "transaction_index": 180,
+   "tx_sender": "0x09CfEe647fA339133380191C8DB6b44F24500c9D",
+   "value": "0"
+  },
+  {
+   "block_hash": "0xadd115c03b4eaec77bc7b7ae3c39c57610b4a6ca6d85ca0c56768bb2ac90d1d6",
+   "block_number": 25718349,
+   "log_index": 808,
+   "recipient": "0x053dc459bade1baf76AEd6E8630823f8392FDA3A",
+   "sender": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "token": "0x647A139B234dCF9f91B1B749993604e715D3ACB8",
+   "transaction_hash": "0xf84dacfeb3a92ae3291120d954b86d89932fe31702103754cad4f8e8ac41a10d",
+   "transaction_index": 142,
+   "tx_sender": "0x1584a8EE67789d1fE161065388657Ad2f2A3c7DD",
+   "value": "115147641"
+  },
+  {
+   "block_hash": "0xf264bbf1261079bd85f0630f3c12ff0eb3d34994bca196ec527f38372093ab3e",
+   "block_number": 25718351,
+   "log_index": 581,
+   "recipient": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "sender": "0x0539231b1A6C9d9be57329df965773f97d9AdA3A",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x099bb38aee6b28d934d1732c395e8ffe2ec27ee1e6a1cd6ce1a5e0bfb36ae93a",
+   "transaction_index": 177,
+   "tx_sender": null,
+   "value": "115"
+  },
+  {
+   "block_hash": "0x2168e70df44e9b1159b36f2d8801c6cd4f0a1688e0008e49d86eb4afee1479ff",
+   "block_number": 25718360,
+   "log_index": 662,
+   "recipient": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "sender": "0x053dcd29d6Eae2a61b800848492Ba82a008BDA3A",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x2d784f2728c51778a71f1874130ed596863e4d8b8c9f1ac36ab75e452ff0fb60",
+   "transaction_index": 158,
+   "tx_sender": null,
+   "value": "115"
+  },
+  {
+   "block_hash": "0x7bc2d6f22b283e82dd5dae382d7e397b075498657d00d077b45a1603191fdfdc",
+   "block_number": 25718361,
+   "log_index": 527,
+   "recipient": "0x053dc459bade1baf76AEd6E8630823f8392FDA3A",
+   "sender": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0xa34574cc067e5e9c8ad46cb5bfa8441f68bdec64b43c4a62722a2cdc4155ad99",
+   "transaction_index": 353,
+   "tx_sender": "0xD6434D157f254276D69eDE3bd9fC805482206908",
+   "value": "0"
+  },
+  {
+   "block_hash": "0x2606589669d43dbe2fba9b82f97cd0fb03f5a96f495453e8de3ddd03bf011e5a",
+   "block_number": 25718391,
+   "log_index": 629,
+   "recipient": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "sender": "0x053D505aa083c6A36510D294354821B7329adA3a",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0xc216fa46e2d24cbed6a5936d8c8c195a03fbf7d5a79337ec725dbbbeaa8a24ce",
+   "transaction_index": 231,
+   "tx_sender": null,
+   "value": "115"
+  },
+  {
+   "block_hash": "0x335279d3e0808dfae9d454d8f012918a10485b7aff8a1b8279d15b8b99c3fe02",
+   "block_number": 25718397,
+   "log_index": 276,
+   "recipient": "0x053dc459bade1baf76AEd6E8630823f8392FDA3A",
+   "sender": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x374076fa28ed745227c28f42c5054a0bcd024c51ad7a41c17d52e7c6c24980eb",
+   "transaction_index": 101,
+   "tx_sender": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+   "value": "39889952535"
+  }
+ ],
+ "wallet": "0xB83f1c98b6D799f8eC56a002f2C0A2C343A0F50e",
+ "wallet_code_hex": {
+  "25696797": "0x",
+  "25718396": "0x"
+ },
+ "wallet_transactions": [
+  {
+   "block_number": 25718331,
+   "nonce": 5,
+   "succeeded": null,
+   "to": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x9f8f6ecc7b3a2f294818dcb504b1667d44e1bfec4288bb8174c6740d9851c33d",
+   "transaction_index": 111,
+   "value": "0"
+  },
+  {
+   "block_number": 25718397,
+   "nonce": 6,
+   "succeeded": null,
+   "to": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+   "transaction_hash": "0x374076fa28ed745227c28f42c5054a0bcd024c51ad7a41c17d52e7c6c24980eb",
+   "transaction_index": 101,
+   "value": "0"
+  }
+ ]
+}

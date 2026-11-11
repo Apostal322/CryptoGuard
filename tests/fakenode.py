@@ -94,6 +94,11 @@ class FakeNode:
         self.created_at: dict[str, int] = {}  # contract -> creation block (code absent before)
         self.created_by_tx: dict[str, str] = {}  # creation tx hash -> contract address
         self.reverted: set[str] = set()  # tx hashes whose receipt reports status 0 (no effect)
+        # Opt-in historical balances: eth_getBalance(address, block) = the set balance plus
+        # successful native transactions to it, minus those from it, plus ``credits``
+        # (internal transfers, withdrawals) up to that block. No gas is charged.
+        self.balance_history = False
+        self.credits: list[tuple[int, str, int]] = []  # (block, address, value)
 
     def plant(
         self, signer: str, token: str, transfers: list[tuple[str, str, int]], *, block: int
@@ -115,7 +120,9 @@ class FakeNode:
         self.code.setdefault(contract.lower(), bytes.fromhex("6080604052"))
         return tx_hash
 
-    def send_native(self, sender: str, to: str, value: int, *, block: int) -> str:
+    def send_native(
+        self, sender: str, to: str, value: int, *, block: int, tx_index: int = 0
+    ) -> str:
         """Record a transaction signed by ``sender`` (nonces assigned in order)."""
         sender = sender.lower()
         nonce = sum(1 for t in self.sent_txs if t["from"] == sender)
@@ -129,11 +136,23 @@ class FakeNode:
                 "nonce": hex(nonce),
                 "blockNumber": hex(block),
                 "blockHash": block_hash(block, self.fork),
-                "transactionIndex": "0x0",
+                "transactionIndex": hex(tx_index),
             }
         )
         self.tx_senders[tx_hash] = sender
         return tx_hash
+
+    def _balance_at(self, address: str, number: int) -> int:
+        total = self.balances.get(address, 0)
+        for tx in self.sent_txs:
+            if int(tx["blockNumber"], 16) > number or tx["hash"] in self.reverted:
+                continue
+            value = int(tx["value"], 16)
+            if (tx["to"] or "") == address:
+                total += value
+            if tx["from"] == address:
+                total -= value
+        return total + sum(v for b, a, v in self.credits if a == address and b <= number)
 
     # -- helpers ---------------------------------------------------------------------------
     def set_account(self, address: str, *, balance: int = 0, code: bytes = b"") -> None:
@@ -278,6 +297,8 @@ class FakeNode:
                 )
             )
         if method == "eth_getBalance":
+            if self.balance_history and params[1] != "latest":
+                return hex(self._balance_at(params[0].lower(), int(params[1], 16)))
             return hex(self.balances.get(params[0].lower(), 0))
         if method == "eth_getCode":
             address = params[0].lower()
@@ -297,6 +318,9 @@ class FakeNode:
             sent = next((t for t in self.sent_txs if t["hash"] == tx_hash), None)
             return {
                 "transactionHash": tx_hash,
+                "blockNumber": sent["blockNumber"] if sent else logs[0]["blockNumber"],
+                "from": self.tx_senders[tx_hash],
+                "to": sent["to"] if sent else (logs[0]["address"] if logs else None),
                 "blockHash": sent["blockHash"]
                 if sent
                 else (logs[0]["blockHash"] if logs else None),

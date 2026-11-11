@@ -1,0 +1,318 @@
+{
+ "description": "Frozen Phase 11 baseline. Do not edit; Phase 11.1 compares against it.",
+ "run_id": "20261029T055343Z-41bb2f56",
+ "git": "e9b49f1795e45b3b4770758496f7256f67b9c46f",
+ "feature_set_version": "ptx-features/1",
+ "dataset": {
+  "table_sha256": "afcd1e41d9d312385b019119c0415cbd511abf404b8d6e6f1b438cafd39528af",
+  "splits_sha256": "d4837df6d9cdafe4e411eda1ce3fa76020656b9092416ba513ee18fd59a04183",
+  "chain_records_sha256": "cdf92821f87507eb5ad80c3d0cd2781d9f2f82df420358f0894425267f5725ce",
+  "sample_sha256": "4d11c93f95a02a2d7dfea103c4cee9f2c9a84efbb0426e2e5d71f2145c0a134f"
+ },
+ "training_config_sha256": "10aa1aa701cb45e236e131d75adec3b0dcb887c60c7b077fdc854ff04b6a66c7",
+ "training_config": {
+  "selected": {
+   "name": "lightgbm",
+   "feature_set": "full",
+   "params": {
+    "num_leaves": 7,
+    "min_child_samples": 5
+   },
+   "threshold": 0.25162152697739393
+  },
+  "candidate_grid": [
+   [
+    "logistic_regression",
+    {
+     "C": 0.01
+    }
+   ],
+   [
+    "logistic_regression",
+    {
+     "C": 0.1
+    }
+   ],
+   [
+    "logistic_regression",
+    {
+     "C": 1.0
+    }
+   ],
+   [
+    "logistic_regression",
+    {
+     "C": 10.0
+    }
+   ],
+   [
+    "random_forest",
+    {
+     "min_samples_leaf": 1
+    }
+   ],
+   [
+    "random_forest",
+    {
+     "min_samples_leaf": 3
+    }
+   ],
+   [
+    "random_forest",
+    {
+     "min_samples_leaf": 10
+    }
+   ],
+   [
+    "lightgbm",
+    {
+     "num_leaves": 7,
+     "min_child_samples": 5
+    }
+   ],
+   [
+    "lightgbm",
+    {
+     "num_leaves": 7,
+     "min_child_samples": 20
+    }
+   ],
+   [
+    "lightgbm",
+    {
+     "num_leaves": 15,
+     "min_child_samples": 5
+    }
+   ],
+   [
+    "lightgbm",
+    {
+     "num_leaves": 15,
+     "min_child_samples": 20
+    }
+   ]
+  ],
+  "feature_sets": {
+   "full": [
+    "value_eth_log",
+    "is_zero_value",
+    "gas_limit_log",
+    "gas_price_gwei_log",
+    "is_typed_fee",
+    "input_bytes_log",
+    "input_is_bare_selector",
+    "fn_approve",
+    "fn_permit",
+    "fn_set_approval_for_all",
+    "fn_transfer",
+    "fn_transfer_from",
+    "fn_multicall",
+    "fn_seaport",
+    "fn_upgrade",
+    "fn_other",
+    "is_contract_creation",
+    "to_is_contract",
+    "to_code_size_log",
+    "to_is_delegated_eoa",
+    "to_vanity_zero_nibbles",
+    "from_vanity_zero_nibbles",
+    "sender_prior_txs_log",
+    "status_success",
+    "gas_used_ratio",
+    "n_logs",
+    "n_log_emitters",
+    "n_transfers",
+    "n_zero_value_transfers",
+    "n_transfers_not_from_sender",
+    "n_transfers_from_sender",
+    "n_transfers_to_sender",
+    "n_transfer_recipients",
+    "n_approvals",
+    "n_unlimited_approvals",
+    "n_approval_for_all_granted",
+    "max_party_affix_match"
+   ],
+   "no_identity": [
+    "value_eth_log",
+    "is_zero_value",
+    "gas_limit_log",
+    "gas_price_gwei_log",
+    "is_typed_fee",
+    "input_bytes_log",
+    "input_is_bare_selector",
+    "fn_approve",
+    "fn_permit",
+    "fn_set_approval_for_all",
+    "fn_transfer",
+    "fn_transfer_from",
+    "fn_multicall",
+    "fn_seaport",
+    "fn_upgrade",
+    "fn_other",
+    "is_contract_creation",
+    "to_is_contract",
+    "to_code_size_log",
+    "to_is_delegated_eoa",
+    "status_success",
+    "gas_used_ratio",
+    "n_logs",
+    "n_log_emitters",
+    "n_transfers",
+    "n_zero_value_transfers",
+    "n_transfers_not_from_sender",
+    "n_transfers_from_sender",
+    "n_transfers_to_sender",
+    "n_transfer_recipients",
+    "n_approvals",
+    "n_unlimited_approvals",
+    "n_approval_for_all_granted",
+    "max_party_affix_match"
+   ]
+  },
+  "seed": 20261029,
+  "split_plan": {
+   "train": 0.6,
+   "validation": 0.2
+  },
+  "features": [
+   "value_eth_log",
+   "is_zero_value",
+   "gas_limit_log",
+   "gas_price_gwei_log",
+   "is_typed_fee",
+   "input_bytes_log",
+   "input_is_bare_selector",
+   "fn_approve",
+   "fn_permit",
+   "fn_set_approval_for_all",
+   "fn_transfer",
+   "fn_transfer_from",
+   "fn_multicall",
+   "fn_seaport",
+   "fn_upgrade",
+   "fn_other",
+   "is_contract_creation",
+   "to_is_contract",
+   "to_code_size_log",
+   "to_is_delegated_eoa",
+   "to_vanity_zero_nibbles",
+   "from_vanity_zero_nibbles",
+   "sender_prior_txs_log",
+   "status_success",
+   "gas_used_ratio",
+   "n_logs",
+   "n_log_emitters",
+   "n_transfers",
+   "n_zero_value_transfers",
+   "n_transfers_not_from_sender",
+   "n_transfers_from_sender",
+   "n_transfers_to_sender",
+   "n_transfer_recipients",
+   "n_approvals",
+   "n_unlimited_approvals",
+   "n_approval_for_all_granted",
+   "max_party_affix_match"
+  ]
+ },
+ "model": {
+  "sha256": "57e1f2d719749115c73c0aab85679b5ca984dfecf0f55f2b392ba00e9296393c",
+  "serialization": "joblib (pickle)",
+  "threshold": 0.25162152697739393,
+  "lightgbm_text_max_abs_score_difference": 0.0
+ },
+ "versions": {
+  "python": "3.12.15",
+  "cryptoguard": "0.1.0",
+  "numpy": "2.5.4",
+  "pandas": "3.1.0",
+  "scikit-learn": "1.9.1",
+  "lightgbm": "4.7.0",
+  "pandera": "0.35.0"
+ },
+ "metrics": {
+  "validation": {
+   "rows": 148,
+   "positives": 116,
+   "prevalence": 0.7837837837837838,
+   "average_precision": 0.9971138383847302,
+   "ap_lift": 0.9866515025293773,
+   "roc_auc": 0.9908405172413793,
+   "log_loss": 0.07696393284613016,
+   "balanced_accuracy": 0.96875,
+   "brier": 0.019035173109007986,
+   "precision": 0.9830508474576272,
+   "recall": 1.0,
+   "f1": 0.9914529914529915,
+   "false_positive_rate": 0.0625,
+   "confusion": {
+    "tn": 30,
+    "fp": 2,
+    "fn": 0,
+    "tp": 116
+   }
+  },
+  "test": {
+   "rows": 172,
+   "positives": 129,
+   "prevalence": 0.75,
+   "average_precision": 0.9985790683722839,
+   "ap_lift": 0.9943162734891358,
+   "roc_auc": 0.9954930593113395,
+   "log_loss": 0.08725277560199958,
+   "balanced_accuracy": 0.9069767441860466,
+   "brier": 0.02408798918879566,
+   "precision": 0.9473684210526315,
+   "recall": 0.9767441860465116,
+   "f1": 0.9618320610687023,
+   "false_positive_rate": 0.16279069767441862,
+   "confusion": {
+    "tn": 36,
+    "fp": 7,
+    "fn": 3,
+    "tp": 126
+   },
+   "ci95": {
+    "average_precision": [
+     0.9959677359231381,
+     1.0
+    ],
+    "recall": [
+     0.9461434108527131,
+     1.0
+    ],
+    "false_positive_rate": [
+     0.05553030303030303,
+     0.2727272727272727
+    ]
+   },
+   "recall_by_family": {
+    "address_poisoning": 0.9464285714285714,
+    "ice_phishing": 1.0,
+    "nft_order": 1.0,
+    "payable_function": 1.0
+   }
+  }
+ },
+ "gate": {
+  "best_baseline_validation_ap": 0.922521551724138,
+  "best_baseline_test_ap": 0.8451047947171978,
+  "validation_gap_closed": 0.9627488459113998,
+  "required_gap_reduction": 0.5,
+  "validation_beats_baselines": true,
+  "test_interval_above_best_baseline": true,
+  "validated_for_shadow": true
+ },
+ "status": "test split = previously examined development benchmark (see ML_GENERALIZATION_AUDIT.md)",
+ "reproductions": [
+  {
+   "run_id": "20261029T055811Z-41bb2f56",
+   "git": "e9b49f1795e45b3b4770758496f7256f67b9c46f+dirty",
+   "identical_test_metrics": true
+  },
+  {
+   "run_id": "20261101T155743Z-1e842455",
+   "git": "91036ba02d5c0e407e54bf22c2860ef9fdb42a69",
+   "identical_test_metrics": true
+  }
+ ]
+}

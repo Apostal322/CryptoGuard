@@ -23,6 +23,13 @@ analytics = [
     "numpy>=2.5.4",
     "scipy>=1.18.1",
 ]
+ml = [
+    "lightgbm>=4.7.0",
+    "openpyxl>=3.1.5",
+    "pandas>=3.1.0",
+    "pandera>=0.35.0",
+    "scikit-learn>=1.9.1",
+]
 
 [dependency-groups]
 dev = [
@@ -33,6 +40,12 @@ dev = [
     "numpy>=2.5.4",
     "scipy>=1.18.1",
     "scipy-stubs>=1.18.1.1",
+    "scikit-learn>=1.9.1",
+    "lightgbm>=4.7.0",
+    "pandas>=3.1.0",
+    "pandera>=0.35.0",
+    "openpyxl>=3.1.5",
+    "pandas-stubs>=3.0.5.260914",
 ]
 
 [build-system]
@@ -84,5 +97,5 @@ plugins = ["pydantic.mypy"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["Crypto.*"]
+module = ["Crypto.*", "sklearn.*", "joblib.*", "lightgbm.*"]
 ignore_missing_imports = true

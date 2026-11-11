@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     campaign_runs_retained: int = Field(default=20, ge=1, le=1_000)
     campaign_expansion_max_requests: int = Field(default=600, ge=1, le=20_000)
 
+    # Experimental ML scoring of transactions (needs the ``ml`` extra and a promoted model,
+    # see ML.md). "off": endpoints refuse. "shadow": scores are returned for review and
+    # logged for drift monitoring; they never create findings or change severities.
+    ml_shadow: Literal["off", "shadow"] = "off"
+    ml_registry_path: str = "data/ml/registry.json"
+    ml_score_log_path: str = "data/ml/shadow_scores.jsonl"
+
     database_url: str = "sqlite:///./data/cryptoguard.db"
     # Lifetime of the database lease that makes snapshots (per wallet) and campaign runs
     # single-flight across processes. Must exceed the longest expected run; an overrunning
