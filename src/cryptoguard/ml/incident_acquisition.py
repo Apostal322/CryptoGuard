@@ -850,8 +850,9 @@ def main(
     (out / "collection-manifest.local.json").write_bytes(manifest_bytes(m) + b"\n")
     registry = public_registry(leads, classified, salts, meta)
     if write_public:
-        (root / PUBLIC_REGISTRY).write_text(
-            json.dumps(registry, indent=1, ensure_ascii=False) + "\n", encoding="utf-8"
+        # bytes, so the tracked file has LF endings on every platform
+        (root / PUBLIC_REGISTRY).write_bytes(
+            (json.dumps(registry, indent=1, ensure_ascii=False) + "\n").encode()
         )
     statuses = Counter(v["status"] for v in classified.values())
     return {
